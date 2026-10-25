@@ -1,5 +1,6 @@
 import { useFilters, type Segment, formatDateLabel } from '../store/filters';
 import { useState } from 'react';
+import { useT } from '../i18n';
 
 const PRESETS = [7, 14, 30, 90, 365] as const;
 const MAX_DAYS = 365; // Maximum allowed period: 1 year
@@ -13,6 +14,7 @@ function daysBetween(from: string, to: string): number {
 
 /** Sticky global filter header: period presets, custom date picker, segment toggle, archived toggle. */
 export function FilterBar(): JSX.Element {
+  const { t } = useT();
   const { from, to, segment, showArchived, setRange, setSegment, toggleArchived, preset } =
     useFilters();
   const [showCustom, setShowCustom] = useState(false);
@@ -182,14 +184,11 @@ export function FilterBar(): JSX.Element {
         <div className="group relative">
           <label className="flex cursor-pointer items-center gap-1 text-sm text-slate-600">
             <input type="checkbox" checked={showArchived} onChange={toggleArchived} />
-            Архивные цели
+            {t('filters.archivedGoals')}
           </label>
           {/* Tooltip */}
           <div className="absolute left-0 top-full z-20 mt-1 hidden w-64 rounded border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow group-hover:block">
-            <p>
-              Показывать цели Метрики, которые были удалены или заархивированы. По умолчанию —
-              только активные цели.
-            </p>
+            <p>{t('filters.archivedGoalsHint')}</p>
           </div>
         </div>
 

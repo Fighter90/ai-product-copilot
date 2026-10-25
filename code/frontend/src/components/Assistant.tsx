@@ -20,7 +20,11 @@ export function Assistant(): JSX.Element {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const end = useRef<HTMLDivElement>(null);
 
-  useEffect(() => end.current?.scrollIntoView({ behavior: 'smooth' }), [msgs, busy]);
+  // Блок вместо стрелки: scrollIntoView({behavior:'smooth'}) в реальном Chrome возвращает
+  // Promise, и React воспринимает его как cleanup-функцию → краш «destroy is not a function».
+  useEffect(() => {
+    end.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [msgs, busy]);
 
   const ask = async (q: string) => {
     const question = q.trim();

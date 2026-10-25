@@ -1,10 +1,17 @@
 import { clampRatio } from '@pca/shared';
 
-const NUM = new Intl.NumberFormat('ru-RU');
+/** Locale-aware number/date formatting: follows the interface language (pca.locale). */
+function localeTag(): 'ru-RU' | 'en-US' {
+  try {
+    return localStorage.getItem('pca.locale') === 'en' ? 'en-US' : 'ru-RU';
+  } catch {
+    return 'ru-RU';
+  }
+}
 
-/** Integer with thin-space grouping (ru-RU). */
+/** Integer with thin-space grouping, following the active locale. */
 export function formatInt(n: number): string {
-  return NUM.format(Math.round(n));
+  return new Intl.NumberFormat(localeTag()).format(Math.round(n));
 }
 
 /**

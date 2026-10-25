@@ -244,6 +244,20 @@ export const ru = {
   'help.results': 'Результаты поиска',
 
   'onboarding.title': 'С чего начать',
+  'onboarding.step1': 'Выберите период вверху страницы.',
+  'onboarding.step2': 'Посмотрите «Слабые места» — каналы с трафиком, но низкой конверсией.',
+  'onboarding.step3': 'Соберите отчёт на странице «Отчёт» и зафиксируйте гипотезы.',
+  'kpi.lowUtm': 'Низкое покрытие UTM: {pct}% (порог 70%) — часть трафика не атрибутирована.',
+  'kpi.lowUtmShort': 'Низкое покрытие UTM: {pct} (порог 70%)',
+  'kpi.ticketGoal': 'Цель (платных билетов)',
+  'digest.title': 'Дайджест за неделю',
+  'digest.visits7': 'Визиты (7 дней)',
+  'digest.goals7': 'Достижения цели (7 дней)',
+  'digest.channels': 'Каналов в работе',
+  'digest.bestChannel': 'Лучший канал',
+  'filters.archivedGoals': 'Архивные цели',
+  'filters.archivedGoalsHint':
+    'Показывать цели Метрики, которые были удалены или заархивированы. По умолчанию скрыты.',
 } as const;
 
 export type DictKey = keyof typeof ru;
@@ -487,6 +501,20 @@ export const en: Record<DictKey, string> = {
   'help.results': 'Search results',
 
   'onboarding.title': 'Getting started',
+  'onboarding.step1': 'Pick a period at the top of the page.',
+  'onboarding.step2': 'Check "Weak spots" — channels with traffic but low conversion.',
+  'onboarding.step3': 'Build a report on the "Report" page and record hypotheses.',
+  'kpi.lowUtm': 'Low UTM coverage: {pct}% (threshold 70%) — some traffic is not attributed.',
+  'kpi.lowUtmShort': 'Low UTM coverage: {pct} (threshold 70%)',
+  'kpi.ticketGoal': 'Goal (paid tickets)',
+  'digest.title': 'Weekly digest',
+  'digest.visits7': 'Visits (7 days)',
+  'digest.goals7': 'Goal reaches (7 days)',
+  'digest.channels': 'Active channels',
+  'digest.bestChannel': 'Best channel',
+  'filters.archivedGoals': 'Archived goals',
+  'filters.archivedGoalsHint':
+    'Show Metrika goals that were deleted or archived. Hidden by default.',
 };
 
 /** Metrika traffic-source names (API returns English for some, Russian for others). */

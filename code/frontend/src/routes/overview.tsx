@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useT } from '../i18n';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { ChannelStat, GeoDeviceStat, UtmStat, PageStat, B2bDeal } from '@pca/shared';
@@ -213,6 +214,7 @@ export function OverviewView({
   entryPages?: PageStat[];
   exitPages?: PageStat[];
 }): JSX.Element {
+  const { t } = useT();
   if (status === 'pending') return <p className="text-slate-500">Загрузка…</p>;
   if (status === 'error')
     return (
@@ -257,12 +259,12 @@ export function OverviewView({
 
       {lowUtm ? (
         <div role="status" className="rounded bg-amber-100 px-3 py-2 text-sm text-amber-800">
-          Низкое покрытие UTM: {utmCoveragePct}% (порог 70%) — часть трафика не атрибутирована.
+          {t('kpi.lowUtm', { pct: utmCoveragePct })}
         </div>
       ) : null}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi label="Цель (платных билетов)" value={formatInt(kpi.target)} />
+        <Kpi label={t('kpi.ticketGoal')} value={formatInt(kpi.target)} />
         <Kpi
           label={goalLabel?.title ?? 'Заявок B2C'}
           value={formatInt(kpi.applications)}
@@ -461,6 +463,7 @@ export function OverviewView({
  * localStorage; hidden once dismissed.
  */
 function OnboardingCard(): JSX.Element | null {
+  const { t } = useT();
   const [visible, setVisible] = useState(() => shouldShowOnboarding(localStorage));
   if (!visible) return null;
   const dismiss = (): void => {
@@ -477,11 +480,11 @@ function OnboardingCard(): JSX.Element | null {
       >
         ✕
       </button>
-      <h2 className="mb-2 text-base font-semibold text-indigo-900">С чего начать</h2>
+      <h2 className="mb-2 text-base font-semibold text-indigo-900">{t('onboarding.title')}</h2>
       <ol className="list-decimal space-y-1 pl-5 text-sm text-indigo-800">
-        <li>Выберите период вверху страницы.</li>
-        <li>Посмотрите «Слабые места» — каналы с трафиком, но низкой конверсией.</li>
-        <li>Соберите отчёт со страницы «Отчёт» и зафиксируйте гипотезы.</li>
+        <li>{t('onboarding.step1')}</li>
+        <li>{t('onboarding.step2')}</li>
+        <li>{t('onboarding.step3')}</li>
       </ol>
     </div>
   );
@@ -563,14 +566,15 @@ function Delta({ ratio }: { ratio: number }): JSX.Element {
 
 /** Weekly digest: a one-glance "what happened this week" card (WoW visits/applications + leaders). */
 function WeeklyDigest({ stats }: { stats: ChannelStat[] }): JSX.Element | null {
+  const { t } = useT();
   const d = weeklyDigest(stats);
   if (!d.hasData) return null;
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="mb-3 text-lg font-semibold">Дайджест за неделю</h2>
+      <h2 className="mb-3 text-lg font-semibold">{t('digest.title')}</h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <p className="text-xs text-slate-500">Визиты (7 дней)</p>
+          <p className="text-xs text-slate-500">{t('digest.visits7')}</p>
           <p className="text-xl font-semibold">{formatInt(d.visits)}</p>
           <Delta ratio={d.visitsDelta} />
         </div>
