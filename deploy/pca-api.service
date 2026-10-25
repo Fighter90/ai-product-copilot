@@ -1,0 +1,58 @@
+# systemd-юнит основного API-сервера PCA (Fastify через tsx).
+# Установка: cp deploy/pca-api.service /etc/systemd/system/ && systemctl daemon-reload
+# Логи: journalctl -u pca-api -f
+
+[Unit]
+Description=PCA backend API (Fastify via tsx, port 4000)
+Documentation=file:/opt/pca/deploy/DEPLOY.md
+# Ждём сеть: бэкенд на старте открывает SQLite и слушает порт.
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+
+# Запуск от непривилегированного пользователя (создаётся в setup-server.sh)
+User=pca
+Group=pca
+
+# Рабочий каталог: симлинк /opt/pca/backend -> /opt/pca/code/backend (создаёт deploy.sh).
+# Код и node_modules живут в /opt/pca/code/backend (pnpm-workspace: 'code/*').
+WorkingDirectory=/opt/pca/backend
+
+# Секреты и конфигурация — только из /opt/pca/.env (не хранить в юните!).
+# Тот же файл читает dotenv внутри приложения (config.ts), дублирование безвредно.
+EnvironmentFile=/opt/pca/.env
+
+# Слушаем только loopback: наружу торчит nginx, проксирующий /api -> 127.0.0.1:4000.
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+
+# tsx ставится глобально (npm i -g tsx) в setup-server.sh:
+# в prod-зависимостях его нет, а @pca/shared — сырой TS, поэтому нужен рантайм-транспилятор.
+ExecStart=/usr/bin/tsx src/server.ts
+
+# Автоперезапуск при падении. На 889 MB RAM падение без перезапуска = даунтайм.
+Restart=always
+RestartSec=5
+
+# Жёсткий предел памяти: на сервере 1 CPU / 889 MB, nginx + система тоже хотят жить.
+# При превышении юнит будет убит и перезапущен (Restart=always).
+MemoryMax=400M
+MemoryHigh=350M
+
+# Смягчение OOM-гонки: сначала убьёт не систему, а самый «тяжёлый» процесс.
+OOMScoreAdjust=200
+
+# Базовый харденинг (не мешает работе: запись нужна только в /opt/pca/data,
+# /opt при ProtectSystem=full остаётся доступным на запись).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

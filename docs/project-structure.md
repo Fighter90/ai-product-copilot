@@ -1,82 +1,119 @@
 # Структура и назначение проекта
 
-> 🇷🇺 Подробный гид по репозиторию: зачем проект, как устроены папки, что делает каждый файл
-> в `.claude/` и `.github/`. Архитектура потока данных — `architecture.md`.
+> 🇷🇺 Подробный гид по репозиторию. Архитектура и потоки данных — [architecture.md](architecture.md);
+> модель БД — [data-model.md](data-model.md); деплой — [deploy.md](deploy.md).
 
 ## Назначение проекта
 
-**ProductCamp Conversion Analytics Dashboard** — внутренний локальный инструмент трека
-«Конверсии и лидген» ProductCamp. Задача: довести продажи до **KPI 300+ платных билетов**,
-разделяя «заявку» и «оплату».
+**ProductCamp Conversion Analytics** — аналитический кабинет трека «Конверсии и лидген».
+Задача: довести продажи до **KPI 300+ платных билетов**, разделяя «заявку» и «оплату».
 
-Что делает (всё локально, одной командой `./run.sh`):
+Что делает:
 
-1. **Парсит** Яндекс.Метрику (счётчик `<COUNTER_ID>`) по OAuth и кэширует данные в SQLite
-   (offline + воспроизводимость, история по дням).
-2. **Показывает дашборд**: каналы, воронка визит→заявка→оплата, weak spots, B2B.
-3. **Ведёт гипотезы** по методологии проверки гипотез (Double Diamond + ICE = I×C×E) и фиксирует
-   решения в Decision Log.
-4. **Генерирует DOCX/PDF-отчёт** из неизменяемого snapshot — детерминированно, без выдуманных цифр.
-
-ЦА инструмента — волонтёры и команда трека (часто без backend-опыта): запуск за <10 минут.
+1. **Парсит** Яндекс.Метрику по OAuth и хранит данные в SQLite (история по дням); Live-страницы
+   показывают реальное время напрямую из Reporting API.
+2. **Кабинет** с входом по сессиям, ролями Администратор/Аналитик и журналом действий: обзор,
+   live-мониторинг, цели, воронки, трафик, поведение, KPI, «Исследуй», отчёты, B2B, DataLens.
+3. **Администрирование**: пользователи, AI-провайдеры (OpenRouter/Anthropic/YandexGPT/GigaChat),
+   настройки Метрики, интеграции, аудит.
+4. **Отчёты** DOCX/PDF из неизменяемого снапшота + RAG-ассистент по справке.
 
 ## Дерево репозитория
 
 ```
 .
 ├── code/
-│   ├── backend/      # Fastify API, Metrika-клиент, SQLite, аналитика, отчёты
-│   ├── frontend/     # React + Vite дашборд
-│   └── shared/       # общие типы, ICE_CONFIG, валидация гипотез (@pca/shared)
-├── .claude/skills/   # skill-промпты методологии (см. ниже)
-├── .github/          # workflows, шаблоны, CODEOWNERS, dependabot (см. ниже)
-├── .githooks/        # committed git-хуки (pre-commit), включаются через core.hooksPath (ADR-011)
-├── scripts/          # dev-утилиты (sync-versions.mjs — версия доков из package.json)
-├── docs/             # эта документация + ADR (decisions/) + спеки (specs/) + EN-зеркала (en/)
-├── data/             # SQLite, отчёты, экспорт DL (gitignored, кроме .gitkeep)
-├── CLAUDE.md         # контекст продукта для AI-агентов (system prompt)
-├── run.sh            # запуск одной командой
-├── CHANGELOG.md      # SemVer + Conventional Commits
-└── package.json …    # pnpm workspace (pnpm-workspace.yaml, tsconfig.base.json, eslint.config.js)
+│   ├── backend/            # Fastify API, Metrika-клиент, SQLite, AI, кабинет
+│   │   └── src/
+│   │       ├── app.ts          # сборка Fastify: guard сессий, регистрация всех роутов
+│   │       ├── server.ts       # точка входа: миграции, bootstrap-админ, LLM, listen
+│   │       ├── config.ts       # Zod-схема .env (один источник конфигурации)
+│   │       ├── auth/           # auth.ts (login/logout/me, RBAC-правила, rate limiter),
+│   │       │                   #   users-repo.ts (пользователи, сессии, audit_log)
+│   │       ├── security/       # crypto.ts: scrypt-пароли, AES-256-GCM, sha256, токены
+│   │       ├── settings/       # app-settings.ts (app_settings + шифрование секретов),
+│   │       │                   #   routes.ts (GET/POST /api/settings, DataLens-токен, чистка данных)
+│   │       ├── llm/            # providers.ts (4 провайдера + PROVIDER_META), service.ts
+│   │       │                   #   (цепочка по приоритету, ai_usage), routes.ts (/api/ai/**, /api/admin/ai/**)
+│   │       ├── metrika/        # client.ts, oauth.ts, cli-auth/sync.ts, sync-service.ts,
+│   │       │                   #   production-sync.ts, queries/ (5 срезов + ratio)
+│   │       ├── live/           # live.ts: /api/live/* — реальное время (summary, goals,
+│   │       │                   #   funnel, table-пресеты «Исследуй»)
+│   │       ├── help/           # help.ts: статьи docs/help/<lang>, поиск, POST /api/help/ask (RAG)
+│   │       ├── integrations/   # datalens.ts: CSV-датасеты, webhook-приёмник, уведомления
+│   │       ├── db/             # connection.ts (WAL+FK), migrate.ts + cli-migrate.ts,
+│   │       │   │               #   seed* (демо-данные), migrations/001..010.sql,
+│   │       │   └── repositories/  # metrics, hypotheses, decisions, b2b, snapshot
+│   │       ├── routes/         # health, metrics, hypotheses, decisions, b2b, sync, report (+settings в legacy-режиме)
+│   │       ├── report/         # snapshot-builder, production-report, ai-insights/hypotheses/decisions,
+│   │       │                   #   docx/ и pdf/ (рендеры), chart-renderer (PNG для отчёта)
+│   │       └── utils/          # мелкие общие хелперы
+│   ├── frontend/           # React + Vite кабинет
+│   │   └── src/
+│   │       ├── App.tsx         # роуты: /, /login, /help, /app/** (RequireAuth/RequireAdmin)
+│   │       ├── auth/           # AuthContext (сессия, RequireAuth/RequireAdmin)
+│   │       ├── components/     # CabinetLayout (сайдбар/топбар/колокольчик/футер с версией),
+│   │       │                   #   Assistant (RAG, правый нижний угол), charts/, ui/, DataGrid…
+│   │       ├── pages/
+│   │       │   ├── public/     # Landing, Login, HelpCenter, PublicChrome
+│   │       │   ├── app/        # Live, Goals, GoalDetail, FunnelLive, Explore, DataLens, Forbidden
+│   │       │   └── admin/      # Users, AiProviders, Metrika, Integrations, Audit
+│   │       ├── routes/         # аналитические страницы кабинета: overview, traffic, behavior,
+│   │       │                   #   funnel, goals (KPI), report-preview, history, b2b
+│   │       ├── i18n/           # dict.ts (ru/en), useT
+│   │       ├── store/          # filters.ts (период/сегмент), prefs.ts (тема, язык — localStorage)
+│   │       └── lib/            # api.ts, api-v3.ts (кабинет), echarts-theme, format, funnel,
+│   │                           #   sankey, md-to-html, download и др.
+│   └── shared/             # @pca/shared: типы, ICE_CONFIG, report-sections, валидация гипотез
+├── deploy/                 # конфигурации сервера (nginx, systemd) — см. docs/deploy.md
+├── docs/                   # эта документация: architecture, data-model, deploy, user-guide (ru/en),
+│   │                       #   runbook (ru/en), quickstart, help/ru|en (статьи справки),
+│   │                       #   decisions/ (ADR), specs/, wiki/
+├── e2e/                    # Playwright: smoke, страницы, фильтры, b2b, report, mobile
+├── QA/                     # промпты регресс/UX-тестирования
+├── scripts/                # sync-versions.mjs (версия в шапках доков)
+├── data/                   # SQLite, отчёты, экспорт (gitignored)
+├── .github/                # workflows, шаблоны, dependabot
+├── .githooks/              # pre-commit (sync-versions), включается через core.hooksPath
+├── CLAUDE.md               # контекст продукта для AI-агентов
+├── setup.sh / init.sh / run.sh   # локальный запуск: install → init (.env) → start
+└── package.json            # pnpm workspace, версия продукта (попадает в футер UI)
 ```
 
-## Папка `.claude/`
+## Ключевые модули backend (v3)
 
-`.claude/skills/` — четыре skill-промпта. Claude Code подгружает их по требованию.
+| Модуль          | Ответственность                                                                                       |
+| --------------- | ----------------------------------------------------------------------------------------------------- |
+| `auth/`         | Сессии (cookie `pca_session`, хэш в `sessions`), RBAC-правила (admin/analyst), пользователи, аудит    |
+| `security/`     | scrypt-пароли, AES-256-GCM для секретов БД (`APP_SECRET`), генерация временных паролей                |
+| `settings/`     | Runtime-настройки админа (`app_settings`) — переопределяют `.env` без рестарта; маскирование секретов |
+| `llm/`          | 4 AI-провайдера, цепочка по `priority`, шифрование ключей, статистика `ai_usage`                      |
+| `live/`         | Реальное время: summary, цели (+дубликаты/статусы), воронка PC-событий, пресеты «Исследуй»            |
+| `help/`         | Справка: markdown-статьи с front matter из `docs/help/<lang>/`, поиск, RAG-ответы `/api/help/ask`     |
+| `integrations/` | DataLens: 5 CSV-датасетов, webhook с токеном, события, колокольчик уведомлений                        |
+| `metrika/`      | OAuth-помощник, клиент (Zod, лимитер, retry), SyncService (дневные чанки, best-effort срезы)          |
+| `report/`       | Immutable-снапшот → DOCX/PDF (ГОСТ) + AI-секции через цепочку LLM                                     |
 
-| Файл                                | Назначение                                                                                           |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `skills/hypothesis-check/SKILL.md`  | структурирование problem/solution гипотез + ICE (формат, ≥3 допущения, ≥2 метода, светофор, дедлайн) |
-| `skills/synthetic-custdev/SKILL.md` | синтетический CustDev: 5 архетипов ЦА ProductCamp для «разогрева» вопросов                           |
-| `skills/market-scan/SKILL.md`       | структурированный рыночный анализ конкурирующих конференций (с источниками)                          |
-| `skills/decision-log/SKILL.md`      | шаблон DL-NNN и промпт генерации черновика                                                           |
+## Страницы фронтенда
 
-Методология из `.claude/skills/` не меняется без отметки в
-`docs/methodology-hypotheses.md` с reasoning.
+- **Публичные** (`pages/public/`): лендинг `/`, вход `/login`, справка `/help` (`HelpCenter`).
+- **Кабинет** (`/app`, `components/CabinetLayout`): Обзор, Live, Цели + GoalDetail, Воронка live,
+  Трафик, Поведение, Воронка, KPI, Исследуй (`explore/:preset`), Отчёт, История, B2B, DataLens.
+- **Админка** (`pages/admin/`, обёрнута в `RequireAdmin`): Пользователи, AI-провайдеры, Метрика,
+  Интеграции, Аудит.
+- До-v3 URL (`/traffic`, `/report`, `/settings`, …) редиректят в `/app/…`.
 
-## Папка `.github/`
+## Папка `deploy/`
 
-### Workflows (`.github/workflows/`)
+Конфигурации для сервера Ubuntu: nginx (reverse proxy + статика фронта), systemd-юниты backend,
+скрипты обновления. Пошаговая инструкция — [deploy.md](deploy.md).
 
-| Файл           | Триггер        | Что делает                                                                                                                                                                        |
-| -------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`       | push main / PR | параллельно: **quality** (ESLint + Prettier-check + typecheck), **test** (coverage, матрица Node 20/22, порог 100%), **build** (артефакт dist), **actionlint**, gate-джоб `ci-ok` |
-| `security.yml` | push main / PR | **gitleaks** (секрет-скан, CLI без лицензии) + report-only `pnpm audit`                                                                                                           |
-| `e2e.yml`      | push / PR      | Playwright smoke (chromium); отчёт-артефакт при падении                                                                                                                           |
-| `pr-lint.yml`  | PR             | заголовок PR в стиле Conventional Commits                                                                                                                                         |
-| `review.yml`   | PR             | AI code review (Claude) — пропускается, пока нет секрета `ANTHROPIC_API_KEY`                                                                                                      |
-| `release.yml`  | тег `v*.*.*`   | **verify** (полный гейт) → package (app tar.gz + frontend zip + checksums) → публикация GitHub Release                                                                            |
+## Конвенции
 
-### Прочее в `.github/`
-
-- `CODEOWNERS` — владелец по умолчанию + особый присмотр за `.claude/skills/` и методологией.
-- `dependabot.yml` — еженедельные обновления npm + github-actions; **мажорные игнорируются**
-  (стек закреплён: Fastify 4, React 18 — мажоры требуют ADR).
-- `PULL_REQUEST_TEMPLATE.md` — чек-лист (тесты/типы/линт/доки/ADR/скриншоты/методология).
-- `ISSUE_TEMPLATE/bug.md`, `ISSUE_TEMPLATE/hypothesis.md` — последний по структурированному формату гипотезы.
-
-## Корневые конфиги
-
-`pnpm-workspace.yaml` (пакеты `code/*`), `tsconfig.base.json` (strict + `noUncheckedIndexedAccess`),
-`eslint.config.js` (flat + typescript-eslint + prettier), `.prettierrc.json` / `.prettierignore`,
-`.gitleaks.toml`, `.editorconfig`, `.nvmrc`, `.env.example` (плейсхолдеры; реальный `.env` gitignored).
+- Доступ к БД — только через репозитории (`code/backend/src/db/repositories/`); миграции —
+  нумерованные SQL-файлы в `db/migrations/` (001..010).
+- Страницы фронтенда — паттерн «чистая View(status, …) + тонкий data-wrapper»; графики — ECharts
+  через общую тему (`lib/echarts-theme.ts`).
+- Тексты интерфейса — только через `i18n/dict.ts` (`useT`); ru/en.
+- Новые зависимости вне зафиксированного стека — через ADR в `docs/decisions/`.
+- Нетривиальные фичи — через спеку (`docs/specs/`): spec → review → plan → tests → impl.

@@ -34,7 +34,11 @@ export class MetrikaSchemaError extends Error {
 export interface FetchLike {
   (
     url: string,
-    init: { readonly headers: Record<string, string> },
+    init: {
+      readonly method?: string;
+      readonly headers: Record<string, string>;
+      readonly body?: string;
+    },
   ): Promise<{
     readonly ok: boolean;
     readonly status: number;
@@ -98,16 +102,51 @@ export class MetrikaClient {
 
   /** GET a Metrika endpoint, validate against `schema`, with rate-limiting + retry. */
   async get<T>(path: string, params: QueryParams, schema: z.ZodType<T>): Promise<T> {
+    return this.request(path, params, undefined, schema, { retryOnServerError: true });
+  }
+
+  /**
+   * POST a JSON body to a Metrika endpoint (Management API writes: create/archive goals).
+   * Writes are NOT retried on 5xx by default — the write may have landed server-side and a blind
+   * retry could duplicate it (e.g. two identical goals). 429 is always retried; pass
+   * `retryOnServerError` only for idempotent writes.
+   */
+  async post<T>(
+    path: string,
+    params: QueryParams,
+    body: unknown,
+    schema: z.ZodType<T>,
+    opts: { readonly retryOnServerError?: boolean } = {},
+  ): Promise<T> {
+    return this.request(path, params, body, schema, opts);
+  }
+
+  private async request<T>(
+    path: string,
+    params: QueryParams,
+    body: unknown,
+    schema: z.ZodType<T>,
+    opts: { readonly retryOnServerError?: boolean },
+  ): Promise<T> {
     const url = this.buildUrl(path, params);
+    const method = body === undefined ? 'GET' : 'POST';
 
     const exec = async (): Promise<T> => {
       const wait = this.limiter.take();
       if (wait > 0) await this.sleep(wait);
 
-      const res = await this.fetchFn(url, { headers: { Authorization: `OAuth ${this.token}` } });
+      // GET sends exactly the legacy init shape ({ headers }) — only POST adds method/body.
+      const res = await this.fetchFn(url, {
+        ...(method === 'POST' ? { method } : {}),
+        headers: {
+          Authorization: `OAuth ${this.token}`,
+          ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
+      });
       if (!res.ok) {
-        const body = await res.text();
-        throw new MetrikaHttpError(res.status, `Metrika ${res.status}: ${body.slice(0, 200)}`);
+        const text = await res.text();
+        throw new MetrikaHttpError(res.status, `Metrika ${res.status}: ${text.slice(0, 200)}`);
       }
 
       const json = await res.json();
@@ -127,7 +166,9 @@ export class MetrikaClient {
       maxMs: 5000,
       jitter: this.jitter,
       sleep: this.sleep,
-      isRetryable: (err) => err instanceof MetrikaHttpError && err.retryable,
+      isRetryable: (err) =>
+        err instanceof MetrikaHttpError &&
+        (err.status === 429 || (opts.retryOnServerError === true && err.status >= 500)),
     });
   }
 }

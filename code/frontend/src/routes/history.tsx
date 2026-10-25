@@ -54,7 +54,7 @@ export function HistoryView({
                 </td>
                 <td>
                   <Link
-                    to={`/report?snapshot=${s.id}`}
+                    to={`/app/report?snapshot=${s.id}`}
                     className="rounded bg-indigo-600 px-3 py-1 text-xs text-white hover:bg-indigo-700"
                   >
                     Просмотреть

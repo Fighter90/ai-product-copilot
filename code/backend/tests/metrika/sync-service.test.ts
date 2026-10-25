@@ -14,10 +14,28 @@ const goalsFixture = {
 const statFixture = {
   data: [{ dimensions: [{ name: 'podcast' }], metrics: [100, 90, 0.2, 65] }],
 };
+// bytime shape: data[0].metrics[i] = per-day values of metric i (one series per goal metric).
+const bytimeFixture = {
+  data: [
+    {
+      dimensions: [],
+      metrics: [
+        [1, 1, 1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 0, 0, 0],
+      ],
+    },
+  ],
+};
 
 function fakeClient(): MetrikaClient {
   return {
-    get: vi.fn(async (path: string) => (path.includes('/goals') ? goalsFixture : statFixture)),
+    get: vi.fn(async (path: string) =>
+      path.includes('/goals')
+        ? goalsFixture
+        : path.includes('bytime')
+          ? bytimeFixture
+          : statFixture,
+    ),
   } as unknown as MetrikaClient;
 }
 
@@ -113,7 +131,7 @@ describe('SyncService.syncExitPages', () => {
 });
 
 describe('SyncService.syncAll', () => {
-  it('returns a combined summary including UTM + geo/device + page + exit-page rows', async () => {
+  it('returns a combined summary including UTM + geo/device + page + exit-page + new slices', async () => {
     const summary = await svc.syncAll('2025-01-01', '2025-01-07', 80);
     expect(summary).toEqual({
       goals: 2,
@@ -124,6 +142,10 @@ describe('SyncService.syncAll', () => {
       geoDeviceRows: 1,
       pageRows: 1,
       exitPageRows: 1,
+      // bytime: both goals' series × 7 days (fixture carries 2 series of 7 daily values).
+      goalReachesRows: 14,
+      browserOsRows: 1,
+      newReturningRows: 1,
     });
   });
 
@@ -137,8 +159,8 @@ describe('SyncService.syncAll', () => {
     const client = {
       get: vi.fn(async (path: string, params?: { dimensions?: string }) => {
         if (path.includes('/goals')) return goalsFixture;
-        if (params?.dimensions?.includes('exitURL')) {
-          throw new Error('Metrika 400: invalid attribute ym:s:exitURL');
+        if (params?.dimensions?.includes('endURL')) {
+          throw new Error('Metrika 400: invalid attribute ym:s:endURL');
         }
         return statFixture;
       }),

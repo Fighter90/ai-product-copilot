@@ -13,6 +13,23 @@ import { generateHypotheses } from './ai-hypotheses';
 import { generateDecisions } from './ai-decisions';
 import { config, hasAnthropicKey } from '../config';
 
+/**
+ * AI bridge: in cabinet mode report AI calls go through the admin-configured provider chain
+ * (OpenRouter / Anthropic / YandexGPT / GigaChat) via an Anthropic-compatible fetch adapter.
+ * Without a bridge the legacy ANTHROPIC_API_KEY path from .env is used.
+ */
+export interface AiBridge {
+  readonly available: () => boolean;
+  readonly fetchFor: (purpose: string) => AnthropicFetch;
+  readonly unavailableMessage: string;
+}
+
+const legacyBridge: AiBridge = {
+  available: () => hasAnthropicKey(),
+  fetchFor: () => globalThis.fetch as unknown as AnthropicFetch,
+  unavailableMessage: 'ANTHROPIC_API_KEY не задан — запустите ./init.sh или впишите ключ в .env',
+};
+
 const REPORTS_DIR = 'data/reports';
 
 /**
@@ -22,7 +39,11 @@ const REPORTS_DIR = 'data/reports';
  *
  * Auto-generates AI hypotheses during build (if ANTHROPIC_API_KEY is set).
  */
-export function makeReportRunner(builder: SnapshotBuilder, snapshots: SnapshotRepo): ReportRunner {
+export function makeReportRunner(
+  builder: SnapshotBuilder,
+  snapshots: SnapshotRepo,
+  ai: AiBridge = legacyBridge,
+): ReportRunner {
   return {
     build: async ({ from, to }) => {
       const id = randomUUID();
@@ -37,16 +58,16 @@ export function makeReportRunner(builder: SnapshotBuilder, snapshots: SnapshotRe
       });
 
       // Fire-and-forget AI hypotheses generation (doesn't block the response)
-      if (hasAnthropicKey()) {
+      if (ai.available()) {
         generateHypotheses(snapshot, {
-          fetch: globalThis.fetch as unknown as AnthropicFetch,
+          fetch: ai.fetchFor('report-hypotheses'),
           apiKey: config.ANTHROPIC_API_KEY,
           model: config.ANTHROPIC_MODEL,
         })
           .then(async (generatedHypotheses) => {
             // Also propose Decision Log entries from the snapshot + hypotheses (best-effort).
             const generatedDecisions = await generateDecisions(snapshot, generatedHypotheses, {
-              fetch: globalThis.fetch as unknown as AnthropicFetch,
+              fetch: ai.fetchFor('report-decisions'),
               apiKey: config.ANTHROPIC_API_KEY,
               model: config.ANTHROPIC_MODEL,
             }).catch(() => undefined);
@@ -102,15 +123,15 @@ export function makeReportRunner(builder: SnapshotBuilder, snapshots: SnapshotRe
     insights: async (snapshotId) => {
       const record = snapshots.getById(snapshotId);
       if (!record) return { ok: false, reason: 'not_found', message: 'snapshot not found' };
-      if (!hasAnthropicKey()) {
+      if (!ai.available()) {
         return {
           ok: false,
           reason: 'unavailable',
-          message: 'ANTHROPIC_API_KEY не задан — запустите ./init.sh или впишите ключ в .env',
+          message: ai.unavailableMessage,
         };
       }
       const snapshot = record.payload as ReportSnapshot;
-      const narrative = await generateInsights(globalThis.fetch as unknown as AnthropicFetch, {
+      const narrative = await generateInsights(ai.fetchFor('report-insights'), {
         apiKey: config.ANTHROPIC_API_KEY,
         model: config.ANTHROPIC_MODEL,
         snapshot,
@@ -135,23 +156,23 @@ export function makeReportRunner(builder: SnapshotBuilder, snapshots: SnapshotRe
       if (existing.generatedHypotheses) {
         return { ok: true, hypotheses: existing.generatedHypotheses };
       }
-      if (!hasAnthropicKey()) {
+      if (!ai.available()) {
         return {
           ok: false,
           reason: 'unavailable',
-          message: 'ANTHROPIC_API_KEY не задан — запустите ./init.sh или впишите ключ в .env',
+          message: ai.unavailableMessage,
         };
       }
       const snapshot = record.payload as ReportSnapshot;
       const generatedHypotheses = await generateHypotheses(snapshot, {
-        fetch: globalThis.fetch as unknown as AnthropicFetch,
+        fetch: ai.fetchFor('report-hypotheses'),
         apiKey: config.ANTHROPIC_API_KEY,
         model: config.ANTHROPIC_MODEL,
       });
       // Propose Decision Log entries from the snapshot + hypotheses (best-effort — don't fail the
       // hypotheses response if decisions generation rejects).
       const generatedDecisions = await generateDecisions(snapshot, generatedHypotheses, {
-        fetch: globalThis.fetch as unknown as AnthropicFetch,
+        fetch: ai.fetchFor('report-decisions'),
         apiKey: config.ANTHROPIC_API_KEY,
         model: config.ANTHROPIC_MODEL,
       }).catch(() => undefined);

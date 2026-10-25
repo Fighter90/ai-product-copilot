@@ -10,6 +10,9 @@ import { utmBreakdown } from './queries/utm-breakdown';
 import { geoDeviceBreakdown } from './queries/geo-device-breakdown';
 import { pageBehavior } from './queries/page-behavior';
 import { exitPageBehavior } from './queries/exit-page-behavior';
+import { batchGoalIds, goalReachesByDay } from './queries/goal-reaches-by-day';
+import { browserOsBreakdown } from './queries/browser-os-breakdown';
+import { newReturningBreakdown } from './queries/new-returning';
 
 export interface SyncDeps {
   readonly client: MetrikaClient;
@@ -35,6 +38,13 @@ export interface SyncSummary {
   readonly geoDeviceRows: number;
   readonly pageRows: number;
   readonly exitPageRows: number;
+  /**
+   * (date, goal) reach pairs synced from bytime — one request per batch of ≤10 goals.
+   * Optional for backward compatibility with existing SyncSummary literals (0/undefined = skipped).
+   */
+  readonly goalReachesRows?: number;
+  readonly browserOsRows?: number;
+  readonly newReturningRows?: number;
 }
 
 /** Pulls Metrika data into SQLite: raw responses (for traceability) + derived channel stats. */
@@ -189,6 +199,84 @@ export class SyncService {
   }
 
   /**
+   * Daily reaches for EVERY goal on the counter via /stat/v1/data/bytime (group=day). One request
+   * returns the whole daily series for a batch of ≤10 goal metrics (the API's metric cap), so a
+   * 163-goal counter costs ~17 requests regardless of the period length.
+   */
+  async syncGoalReachesByDay(
+    from: string,
+    to: string,
+    goalIds: readonly number[],
+  ): Promise<{ batches: number; rows: number }> {
+    const batches = batchGoalIds(goalIds);
+    let rows = 0;
+    for (const batch of batches) {
+      const { raw, rows: batchRows } = await goalReachesByDay(this.deps.client, {
+        counterId: this.deps.counterId,
+        from,
+        to,
+        goalIds: batch,
+      });
+      this.deps.metrics.saveRawResponse({
+        endpoint: ENDPOINTS.statByTime,
+        queryHash: stableHash({ q: 'goal-reaches-by-day', goals: batch, from, to }),
+        dateFrom: from,
+        dateTo: to,
+        payload: raw,
+        fetchedAt: this.deps.now(),
+      });
+      rows += batchRows.length;
+    }
+    return { batches: batches.length, rows };
+  }
+
+  async syncBrowserOs(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
+    const chunks = dayChunks(from, to);
+    let rows = 0;
+    for (const chunk of chunks) {
+      const { raw, stats } = await browserOsBreakdown(this.deps.client, {
+        counterId: this.deps.counterId,
+        from: chunk.from,
+        to: chunk.to,
+        goalId,
+      });
+      this.deps.metrics.saveRawResponse({
+        endpoint: ENDPOINTS.statData,
+        queryHash: stableHash({ q: 'browser-os', goalId, from: chunk.from, to: chunk.to }),
+        dateFrom: chunk.from,
+        dateTo: chunk.to,
+        payload: raw,
+        fetchedAt: this.deps.now(),
+      });
+      rows += stats.length;
+    }
+    return { rows };
+  }
+
+  async syncNewReturning(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
+    const chunks = dayChunks(from, to);
+    let rows = 0;
+    for (const chunk of chunks) {
+      const { raw, stats } = await newReturningBreakdown(this.deps.client, {
+        counterId: this.deps.counterId,
+        from: chunk.from,
+        to: chunk.to,
+        goalId,
+      });
+      this.deps.metrics.saveRawResponse({
+        endpoint: ENDPOINTS.statData,
+        queryHash: stableHash({ q: 'new-returning', goalId, from: chunk.from, to: chunk.to }),
+        dateFrom: chunk.from,
+        dateTo: chunk.to,
+        payload: raw,
+        fetchedAt: this.deps.now(),
+      });
+      rows += stats.length;
+    }
+    return { rows };
+  }
+
+  /**
    * Run an optional breakdown sync best-effort: a counter-specific failure (an attribute the API
    * rejects, an unavailable goal) is logged and skipped rather than aborting the whole pipeline,
    * so the dashboard still gets every dataset that IS available. Goals + traffic stay required.
@@ -226,6 +314,19 @@ export class SyncService {
     const exitPages = await this.best('exit-pages', () =>
       this.syncExitPages(from, to, resolvedGoalId),
     );
+    const goalReaches = await this.best('goal-reaches-by-day', () =>
+      this.syncGoalReachesByDay(
+        from,
+        to,
+        goals.map((g) => g.id),
+      ),
+    );
+    const browserOs = await this.best('browser-os', () =>
+      this.syncBrowserOs(from, to, resolvedGoalId),
+    );
+    const newReturning = await this.best('new-returning', () =>
+      this.syncNewReturning(from, to, resolvedGoalId),
+    );
     return {
       goals: goals.length,
       resolvedGoalId,
@@ -235,6 +336,9 @@ export class SyncService {
       geoDeviceRows: geo.rows,
       pageRows: pages.rows,
       exitPageRows: exitPages.rows,
+      goalReachesRows: goalReaches.rows,
+      browserOsRows: browserOs.rows,
+      newReturningRows: newReturning.rows,
     };
   }
 }

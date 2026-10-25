@@ -32,7 +32,7 @@ export async function exitPageBehavior(
     ENDPOINTS.statData,
     {
       ids: opts.counterId,
-      dimensions: 'ym:s:exitURL',
+      dimensions: 'ym:s:endURL',
       metrics: pageMetrics(opts.goalId),
       date1: opts.from,
       date2: opts.to,
