@@ -1,5 +1,7 @@
 # ProductCamp Conversion Analytics
 
+[![CI](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml)
+
 > [🇷🇺 Русский](README.md) · 🇬🇧 English
 
 ![CI](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/actions/workflows/ci.yml/badge.svg)
@@ -17,7 +19,7 @@ the report.
 
 > **Campaign KPI:** 300+ **paid** tickets. Throughout the tool: **an application ≠ a payment**.
 
-> ✅ **Status: working product v3.0.0.** The cabinet ships session-based authentication,
+> ✅ **Status: working product v3.1.0.** The cabinet ships session-based authentication,
 > **Administrator / Analyst** roles, and an action audit log. Real-time monitoring: Live, Goals
 > (+ goal detail), Live funnel. Analytics: Traffic, Behavior, Funnel, KPI, Explore (presets),
 > Report, History, B2B, DataLens. Administration: Users, AI providers (OpenRouter / Anthropic /
@@ -27,15 +29,16 @@ the report.
 
 ## Screenshots
 
-> 📷 Placeholders — image files go into `docs/images/`.
+> Real screenshots of the production build (1440×900); the full set of 24 screens lives in
+> [code/frontend/public/screenshots](code/frontend/public/screenshots).
 
-| Cabinet: Overview                                     | Live                          | Live funnel                                 |
-| ----------------------------------------------------- | ----------------------------- | ------------------------------------------- |
-| ![Cabinet overview](docs/images/cabinet-overview.png) | ![Live](docs/images/live.png) | ![Live funnel](docs/images/funnel-live.png) |
+| Landing                                | Overview: on track for 300?              | Real time                        |
+| -------------------------------------- | ---------------------------------------- | -------------------------------- |
+| ![Landing](docs/images/01-landing.png) | ![Overview](docs/images/03-overview.png) | ![Live](docs/images/04-live.png) |
 
-| Report + AI                       | Administration → AI providers             | DataLens                              |
-| --------------------------------- | ----------------------------------------- | ------------------------------------- |
-| ![Report](docs/images/report.png) | ![AI providers](docs/images/admin-ai.png) | ![DataLens](docs/images/datalens.png) |
+| pc-goals funnel                                    | Report                               | RAG assistant                                  |
+| -------------------------------------------------- | ------------------------------------ | ---------------------------------------------- |
+| ![pc-goals funnel](docs/images/07-funnel-live.png) | ![Report](docs/images/13-report.png) | ![RAG assistant](docs/images/24-assistant.png) |
 
 ## Features
 

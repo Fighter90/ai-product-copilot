@@ -1,5 +1,7 @@
 # ProductCamp Conversion Analytics
 
+[![CI](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml)
+
 > 🇷🇺 Русский · [🇬🇧 English](README.en.md)
 
 ![CI](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/actions/workflows/ci.yml/badge.svg)
@@ -16,7 +18,7 @@
 
 > **KPI кампании:** 300+ **платных** билетов. Везде в инструменте: **заявка ≠ оплата**.
 
-> ✅ **Статус: рабочий продукт v3.0.0.** Личный кабинет: аутентификация по сессиям, роли
+> ✅ **Статус: рабочий продукт v3.1.0.** Личный кабинет: аутентификация по сессиям, роли
 > **Администратор / Аналитик**, журнал действий (аудит). Мониторинг реального времени: Live,
 > Цели (+деталь цели), Воронка live. Аналитика: Трафик, Поведение, Воронка, KPI, Исследуй
 > (пресеты), Отчёт, История, B2B, DataLens. Админка: Пользователи, AI-провайдеры
@@ -26,15 +28,16 @@
 
 ## Скриншоты
 
-> 📷 Плейсхолдеры — файлы добавляются в `docs/images/`.
+> Реальные скриншоты прод-версии (1440×900); полный набор из 24 экранов — в
+> [code/frontend/public/screenshots](code/frontend/public/screenshots).
 
-| Кабинет: Обзор                                      | Live                          | Воронка live                                 |
-| --------------------------------------------------- | ----------------------------- | -------------------------------------------- |
-| ![Обзор кабинета](docs/images/cabinet-overview.png) | ![Live](docs/images/live.png) | ![Воронка live](docs/images/funnel-live.png) |
+| Лендинг                                | Обзор: успеваем к 300?                | Реальное время                   |
+| -------------------------------------- | ------------------------------------- | -------------------------------- |
+| ![Лендинг](docs/images/01-landing.png) | ![Обзор](docs/images/03-overview.png) | ![Live](docs/images/04-live.png) |
 
-| Отчёт + AI                       | Администрирование → AI-провайдеры          | DataLens                              |
-| -------------------------------- | ------------------------------------------ | ------------------------------------- |
-| ![Отчёт](docs/images/report.png) | ![AI-провайдеры](docs/images/admin-ai.png) | ![DataLens](docs/images/datalens.png) |
+| Воронка pc-goals                                    | Отчёт                               | RAG-ассистент                                  |
+| --------------------------------------------------- | ----------------------------------- | ---------------------------------------------- |
+| ![Воронка pc-goals](docs/images/07-funnel-live.png) | ![Отчёт](docs/images/13-report.png) | ![RAG-ассистент](docs/images/24-assistant.png) |
 
 ## Возможности
 

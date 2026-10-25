@@ -251,3 +251,100 @@ cat /opt/pca/logs/monitor.log                              # «неудача #3
 
 Если монитор перезапустил API, а он снова падает — причину искать в
 `journalctl -u pca-api -n 50` (см. раздел «Частые проблемы»).
+
+## 6. Офсайт-копирование бэкапов (Mac владельца)
+
+Сервер и его бэкапы живут в одном дата-центре (Timeweb, `5.129.219.145`):
+если VDS выйдет из строя, будет заблокирована или ДЦ накроется — вместе с ней
+пропадут и база, и все 14 локальных копий из `/opt/pca/backups/`. Поэтому
+свежий бэкап нужно регулярно забирать на машину за пределами дата-центра.
+
+Для этого есть `scripts/pull-backup.sh` (запускается с Mac, сервер только
+читает — ничего на нём не меняет). Скрипт:
+
+- находит самый свежий `/opt/pca/backups/*.db.gz` и скачивает его в `~/Backups/pca/`
+  под тем же именем (через временный файл — недокачка не подменит хорошую копию);
+- проверяет размер (> 10 КБ) и целостность (`gunzip -t`), бракованные удаляет;
+- пишет журнал `~/Backups/pca/pull.log`;
+- хранит локально не более **30** копий (более старые удаляет);
+- идемпотентен: повторный запуск в тот же день не качает повторно.
+
+Хост/ключ настраиваются через env: `PCA_HOST` (по умолчанию `root@5.129.219.145`),
+`PCA_KEY` (по умолчанию `~/.ssh/pca_deploy`).
+
+### 6.1 Разовый запуск
+
+```bash
+./scripts/pull-backup.sh
+# нестандартный хост или ключ:
+PCA_HOST=root@другой-host PCA_KEY=~/.ssh/другой_ключ ./scripts/pull-backup.sh
+```
+
+### 6.2 Расписание: ежедневно в 06:00
+
+**Вариант 1 — launchd (рекомендуется на Mac).** Cron пропускает запуск, если
+машина в этот момент спит; launchd выполнит пропущенное при пробуждении.
+
+Создать `~/Library/LaunchAgents/ru.dashboardcamp.pca-pull-backup.plist`
+(путь к репозиторию подставьте свой):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ru.dashboardcamp.pca-pull-backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/sergejemelanov/Projects/ai-product-copilot/scripts/pull-backup.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>6</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key><string>/Users/sergejemelanov/Backups/pca/launchd.log</string>
+  <key>StandardErrorPath</key><string>/Users/sergejemelanov/Backups/pca/launchd.log</string>
+</dict>
+</plist>
+```
+
+Зарегистрировать и проверить:
+
+```bash
+mkdir -p ~/Backups/pca
+launchctl load ~/Library/LaunchAgents/ru.dashboardcamp.pca-pull-backup.plist
+launchctl list | grep pca-pull        # джоб в списке
+./scripts/pull-backup.sh; tail ~/Backups/pca/pull.log   # ручная проверка пути
+```
+
+**Вариант 2 — cron:**
+
+```bash
+crontab -e
+# добавьте строку (путь к репозиторию подставьте свой):
+0 6 * * * /Users/sergejemelanov/Projects/ai-product-copilot/scripts/pull-backup.sh >> "$HOME/Backups/pca/cron.log" 2>&1
+```
+
+Что должно быть на Mac: SSH-ключ `~/.ssh/pca_deploy` с доступом root@прод
+(проверка: `ssh -i ~/.ssh/pca_deploy root@5.129.219.145 'echo ok'`), и чтобы
+в 06:00 машина была включена (или launchd догонит при пробуждении).
+Работает ли расписание — видно по `tail ~/Backups/pca/pull.log`: запись
+«загружаю … / готово …» должна появляться ежедневно около 06:00.
+
+### 6.3 Восстановление из офсайт-копии
+
+Порядок тот же, что в разделе 5.2, но сначала копию нужно вернуть на сервер:
+
+```bash
+scp -i ~/.ssh/pca_deploy ~/Backups/pca/pca-YYYYMMDD-HHMMSS.db.gz \
+  root@5.129.219.145:/opt/pca/backups/
+```
+
+Дальше — раздел 5.2 (остановить `pca-api`, распаковать в
+`/opt/pca/data/productcamp.sqlite`, удалить `-wal`/`-shm`, `integrity_check`,
+старт, health-check). Напоминание: секреты в бэкапах БД не хранятся —
+`/opt/pca/.env` держите в отдельной надёжной копии (см. раздел 5.2).

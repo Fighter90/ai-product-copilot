@@ -6,6 +6,42 @@
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-26
+
+### Added
+
+- **Справка ×2.5 (RU/EN).** 30 статей (15×2): workflow по шагам, кейсы, таблицы, «частые
+  проблемы»; новые разделы «Метрики и формулы» и «Как устроен продукт». 60+ скриншотов
+  прода встроены в статьи (`/screenshots/*`, рендер изображений в `mdToHtml` — только
+  корневые пути). `scripts/capture-help-shots.mjs` — съёмка скриншотов прода.
+- **Отчёты по ГОСТ-2 (по эталону заказчика).** Титул без UUID, СОДЕРЖАНИЕ как поле TOC
+  (F9), ПЕРЕЧЕНЬ РИСУНКОВ, ОБОЗНАЧЕНИЯ И ТЕРМИНЫ (16), ВВЕДЕНИЕ, УПРАВЛЕНЧЕСКОЕ РЕЗЮМЕ —
+  фронт-материя без сквозной нумерации; 8 таблиц с рамками (KPI, каналы, UTM, гео/
+  устройства, страницы, ICE, Decision Log); подписи «Рисунок N — …»; чёрные капс-H1;
+  точные поля 1134/850/1134/1701 twips. PDF-зеркало: якорное содержание, 43 страницы.
+  `scripts/verify-report-gost.mjs` — 14 автоматических проверок DOCX (baseline FAIL=7 →
+  PASS=14). Спека: `openspec/changes/report-gost-v2`.
+- **OpenSpec.** Каталог `openspec/` (README-процесс, AGENTS.md, шаблон changes/_template),
+  мигрированы спеки 001/002/014 → `specs/{dual-goal-kpi, product-overhaul, report-gost}`.
+- **Человекочитаемые идентификаторы отчётов (ANA-39).** История: «Отчёт 12.10–25.10.2026»
+  вместо UUID (хелперы `formatSnapshotName`/`shortSnapshotId` с тестами).
+
+### Fixed
+
+- **Крах ассистента (белый экран SPA).** `useEffect(() => scrollIntoView({behavior:'smooth'}))`
+  возвращал Promise — React звал его как cleanup (`destroy is not a function`), сносилось
+  всё дерево. Воспроизводилось кликом в ассистенте (E2E: 3/3). Добавлен `ErrorBoundary`.
+- **Язык/тема.** Locale-aware `formatInt` (ru-RU/en-US); хардкод RU-строк переведён на
+  ключи i18n (онбординг, дайджест, UTM-баннер, архивные цели, фильтры).
+- **`parseCookies`**: часть « =value» создавала пустой ключ-мусор.
+- **`temporaryPassword`** возвращается только для сгенерированных паролей.
+- **npm `prepare`** не падает вне git-репозитория (rsync-деплой); trailing comma в JSON.
+
+### Changed
+
+- CI: GitHub Actions — гейты (format/lint/typecheck/tests) на push main/feat/** и PR,
+  pnpm из `packageManager`, concurrency cancel-in-progress.
+
 ## [3.0.0] - 2026-10-25
 
 ### Added
