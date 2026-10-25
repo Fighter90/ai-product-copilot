@@ -1,6 +1,6 @@
 import {
   AlignmentType,
-  convertMillimetersToTwip,
+  BorderStyle,
   Document,
   Footer,
   HeadingLevel,
@@ -11,11 +11,45 @@ import {
   Table,
   TableCell,
   TableRow,
+  TableOfContents,
   TextRun,
   WidthType,
 } from 'docx';
 import type { ReportSnapshot } from '@pca/shared';
-import { reportSections } from './sections';
+import { reportSections, isFrontMatter, type ReportSection } from './sections';
+
+/**
+ * ГОСТ-2 layout (эталон заказчика, поля в twips):
+ *  - Page margins exactly top=1134 (20мм), right=850 (15мм), bottom=1134, left=1701 (30мм) —
+ *    explicit integers (lib's mm→twip converter rounds 20мм to 1133, breaking the reference).
+ *  - Title page fully centered: track line 13pt, «АНАЛИТИЧЕСКИЙ ОТЧЁТ» 20pt bold, subtitle 13pt,
+ *    period/sources/credits 11pt, year at the bottom via a large `spacing.before`. The snapshot
+ *    UUID is NOT shown here (human wording only); it lives in the data appendix section.
+ *  - «СОДЕРЖАНИЕ» — a real Word TOC field (hyperlinks, heading levels 1–2) so page numbers
+ *    appear once fields are updated (F9 / auto via `features.updateFields`), plus a small hint.
+ *  - «ПЕРЕЧЕНЬ РИСУНКОВ» — list of figure captions (section caption or auto-generated
+ *    «Рисунок N — заголовок»), matching the captions rendered under each embedded chart.
+ *  - Section headings H1 black 14pt bold ALL-CAPS «N ЗАГОЛОВОК» (through numbering, no dot after
+ *    the number); headings starting with «Приложение» are kept verbatim (no number, no caps).
+ *    «## »-prefixed lines render as H2 (13pt, black) — numbering assumed present in the text.
+ *  - Tables: every cell bordered (single, 4, black); header row bold.
+ *  - Chart captions: centered italic 12pt under each image.
+ *  - Defaults: Times New Roman 14pt, 1.5 line spacing (line=360), justified body, page number
+ *    centered in the footer. Heading styles are forced to black (overrides the lib's blue).
+ *
+ * Content is deterministic (see reportSections); the .docx container carries zip timestamps, so
+ * byte-identity is approximated via content-determinism.
+ * Supports markdown tables, **bold**, *italic*, and `code` inline formatting.
+ */
+
+/** Single black border for table cells (ГОСТ: таблицы в рамке). */
+const CELL_BORDER = { style: BorderStyle.SINGLE, size: 4, color: '000000' } as const;
+const CELL_BORDERS = {
+  top: CELL_BORDER,
+  bottom: CELL_BORDER,
+  left: CELL_BORDER,
+  right: CELL_BORDER,
+} as const;
 
 /** Parse inline markdown: **bold**, *italic*, `code`. Exported for unit coverage of the
  * empty-string fallback (callers normally pass non-empty text). */
@@ -67,12 +101,14 @@ function parseTable(lines: string[], startIdx: number): { table: Table; consumed
     .filter((r) => !r.startsWith('|---') && !r.startsWith('| ***'))
     .map((r) => r.split('|').filter((c) => c.trim() !== ''));
 
+  // Header cells: plain bold runs (headers are short labels; inline markup is not expected there).
   const headerRow = new TableRow({
     children: headerCells.map(
       (cell) =>
         new TableCell({
-          children: [new Paragraph({ children: parseInline(cell.trim()) })],
+          children: [new Paragraph({ children: [new TextRun({ text: cell.trim(), bold: true })] })],
           shading: { fill: 'F8FAFC', type: 'clear' },
+          borders: CELL_BORDERS,
         }),
     ),
   });
@@ -84,6 +120,7 @@ function parseTable(lines: string[], startIdx: number): { table: Table; consumed
           (cell) =>
             new TableCell({
               children: [new Paragraph({ children: parseInline(cell.trim()) })],
+              borders: CELL_BORDERS,
             }),
         ),
       }),
@@ -98,18 +135,20 @@ function parseTable(lines: string[], startIdx: number): { table: Table; consumed
   };
 }
 
+/** Appendix sections («Приложение …») are rendered verbatim: no through number, no caps. */
+function isAppendixHeading(heading: string): boolean {
+  return /^приложение/i.test(heading);
+}
+
 /**
- * Render a snapshot to a DOCX buffer, formatted to a ГОСТ-style document: Times New Roman 14pt with
- * 1.5 line spacing, A4 ГОСТ margins (left 30mm, right 15mm, top/bottom 20mm), a centered title page,
- * numbered sections and a page-number footer. Content is deterministic (see reportSections); the
- * .docx container carries zip timestamps, so byte-identity is approximated via content-determinism.
- *
- * Supports markdown tables, **bold**, *italic*, and `code` inline formatting.
+ * Render a snapshot to a DOCX buffer in the ГОСТ-2 reference layout (see file JSDoc for the full
+ * field/typography spec). Title page → СОДЕРЖАНИЕ (TOC field) → ПЕРЕЧЕНЬ РИСУНКОВ → numbered
+ * black-caps sections with bordered tables, embedded charts and italic captions.
  */
 export async function buildDocx(snapshot: ReportSnapshot): Promise<Buffer> {
   const sections = reportSections(snapshot);
-  const body = sections.slice(1); // section 0 is replaced by a proper GOST title page
-  const children: (Paragraph | Table)[] = [];
+  const body = sections.slice(1); // section 0 is replaced by the ГОСТ title page
+  const children: (Paragraph | Table | TableOfContents)[] = [];
 
   // Vertical gaps on the title page are expressed via `spacing.before` (twips), NOT runs of empty
   // paragraphs — so the audit never sees 2+ consecutive blank paragraphs (D-EMPTY-PAGE).
@@ -123,40 +162,71 @@ export async function buildDocx(snapshot: ReportSnapshot): Promise<Buffer> {
     ? snapshot.generatedAt.slice(0, 4)
     : snapshot.period.from.slice(0, 4);
 
-  // ---- ГОСТ title page (Р 7.32-2017): org on top, work title centred, snapshot id + year below ----
+  // ---- ГОСТ-2 title page: everything centered; no UUID (it lives in the data appendix) ----
   children.push(
-    centered('ProductCamp', 32, true, 1440),
-    centered('Трек «Конверсии и лидген»', 28),
-    centered('Аналитический отчёт по конверсиям и лидгену', 36, true, 2600),
-    centered(`за период ${snapshot.period.from} — ${snapshot.period.to}`, 28, false, 280),
-    centered(`Идентификатор среза данных: ${snapshot.id}`, 24, false, 3600),
-    centered(`Сформирован: ${snapshot.generatedAt}`, 24),
-    centered(`Цель: ${snapshot.kpi.target} оплаченных билетов`, 24),
-    centered(year, 24, false, 720),
+    centered('ProductCamp · Трек «Конверсии и лидген»', 26, false, 1440),
+    centered('АНАЛИТИЧЕСКИЙ ОТЧЁТ', 40, true, 3600),
+    centered('по данным веб-аналитики Яндекс.Метрики', 26, false, 120),
+    centered(`Период данных: ${snapshot.period.from} — ${snapshot.period.to}`, 22, false, 2400),
+    centered('Источники: Reporting API Яндекс.Метрики; данные счётчика ProductCamp', 22),
+    centered('Подготовлено: ProductCamp Analytics Copilot · версия отчёта ГОСТ-2', 22),
+    centered(`${year} г.`, 22, false, 3600),
   );
 
-  // ---- Содержание (manual TOC of numbered sections) ----
+  // ---- СОДЕРЖАНИЕ: real Word TOC field (pages appear after field update — F9 or on open) ----
   children.push(
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
       alignment: AlignmentType.CENTER,
       pageBreakBefore: true,
-      children: [new TextRun('Содержание')],
+      children: [new TextRun('СОДЕРЖАНИЕ')],
+    }),
+    new TableOfContents('Содержание', { hyperlink: true, headingStyleRange: '1-2' }),
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: 'Обновите поле (F9), чтобы проставились страницы',
+          italics: true,
+          size: 20,
+        }),
+      ],
     }),
   );
-  body.forEach((s, j) =>
-    children.push(new Paragraph({ children: [new TextRun(`${j + 1}. ${s.heading}`)] })),
-  );
 
-  // ---- Body sections (numbered, each on a new page) ----
-  body.forEach((section, j) => {
+  // ---- Figure numbering: sections with an embedded chart, in document order. The caption text
+  // (custom or auto «Рисунок N — заголовок») is shared by ПЕРЕЧЕНЬ РИСУНКОВ and under-chart captions.
+  let figureNo = 0;
+  const figureCaptions: (string | undefined)[] = body.map((section) => {
+    if (!section.chartId || !snapshot.charts?.[section.chartId]) return undefined;
+    figureNo += 1;
+    const auto = `Рисунок ${figureNo} — ${section.heading}`;
+    return section.caption ?? auto;
+  });
+  const figures = figureCaptions.filter((c): c is string => c !== undefined);
+
+  // ---- ПЕРЕЧЕНЬ РИСУНКОВ ----
+  children.push(
+    new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      alignment: AlignmentType.CENTER,
+      pageBreakBefore: true,
+      children: [new TextRun('ПЕРЕЧЕНЬ РИСУНКОВ')],
+    }),
+  );
+  figures.forEach((caption) => children.push(new Paragraph({ children: [new TextRun(caption)] })));
+
+  // ---- Body sections: H1 «N ЗАГОЛОВОК» caps black (front matter — без номера; appendix verbatim), each on a new page ----
+  let sectionNo = 0;
+  body.forEach((section: ReportSection, sectionIdx: number) => {
+    const numbered = !isAppendixHeading(section.heading) && !isFrontMatter(section.heading);
+    const title = numbered ? `${++sectionNo}. ${section.heading.toUpperCase()}` : section.heading;
     children.push(
       new Paragraph({
         heading: HeadingLevel.HEADING_1,
         alignment: AlignmentType.LEFT,
         pageBreakBefore: true,
         spacing: { after: 120 },
-        children: [new TextRun(`${j + 1}. ${section.heading}`)],
+        children: [new TextRun(title)],
       }),
     );
 
@@ -166,7 +236,7 @@ export async function buildDocx(snapshot: ReportSnapshot): Promise<Buffer> {
       children.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { after: 120 },
+          spacing: { after: 60 },
           children: [
             new ImageRun({
               type: 'png',
@@ -175,11 +245,23 @@ export async function buildDocx(snapshot: ReportSnapshot): Promise<Buffer> {
             }),
           ],
         }),
+        // ГОСТ figure caption: centered, italic, 12pt, identical text to ПЕРЕЧЕНЬ РИСУНКОВ.
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 160 },
+          children: [
+            new TextRun({
+              text: figureCaptions[sectionIdx] ?? `Рисунок — ${section.heading}`,
+              italics: true,
+              size: 24,
+            }),
+          ],
+        }),
       );
     }
 
-    // Process lines: tables, bullet lists, justified paragraphs. Collapse blank runs and trim
-    // leading/trailing blanks so the document has no empty filler blocks.
+    // Process lines: tables, H2 subheadings, bullet lists, justified paragraphs. Collapse blank
+    // runs and trim leading/trailing blanks so the document has no empty filler blocks.
     const lines = section.lines;
     let lineIdx = 0;
     let emittedInSection = false;
@@ -206,7 +288,16 @@ export async function buildDocx(snapshot: ReportSnapshot): Promise<Buffer> {
           children.push(new Paragraph({ spacing: { after: 120 }, children: [] }));
           pendingBlank = false;
         }
-        if (line.startsWith('- ') || line.startsWith('* ')) {
+        if (line.startsWith('## ')) {
+          // H2 support (numbering N.M is already in the text); flat sections rarely hit this.
+          children.push(
+            new Paragraph({
+              heading: HeadingLevel.HEADING_2,
+              spacing: { before: 120, after: 80 },
+              children: [new TextRun(line.slice(3))],
+            }),
+          );
+        } else if (line.startsWith('- ') || line.startsWith('* ')) {
           children.push(
             new Paragraph({ children: parseInline(line.slice(2)), bullet: { level: 0 } }),
           );
@@ -224,25 +315,32 @@ export async function buildDocx(snapshot: ReportSnapshot): Promise<Buffer> {
   const doc = new Document({
     creator: 'ProductCamp Analytics',
     title: `ProductCamp report ${snapshot.id}`,
-    // ГОСТ defaults: Times New Roman 14pt (size is half-points → 28), 1.5 line spacing (240 × 1.5).
+    // Ask Word to refresh fields (TOC page numbers) when the document is opened.
+    features: { updateFields: true },
+    // ГОСТ defaults: Times New Roman 14pt (size is half-points → 28), 1.5 line spacing (240 × 1.5);
+    // all heading levels forced to black (the lib's built-in blues — 2E74B5/1F4D78 — must never
+    // leak into styles.xml), sizes descending from H1 14pt / H2 13pt.
     styles: {
       default: {
         document: {
           run: { font: 'Times New Roman', size: 28 },
           paragraph: { spacing: { line: 360 } },
         },
+        title: { run: { color: '000000', size: 40, bold: true } },
+        heading1: { run: { color: '000000', size: 28, bold: true } },
+        heading2: { run: { color: '000000', size: 26, bold: true } },
+        heading3: { run: { color: '000000', size: 24, bold: true } },
+        heading4: { run: { color: '000000', size: 24, bold: true } },
+        heading5: { run: { color: '000000', size: 22, bold: true } },
+        heading6: { run: { color: '000000', size: 22, bold: true } },
       },
     },
     sections: [
       {
         properties: {
           page: {
-            margin: {
-              top: convertMillimetersToTwip(20),
-              bottom: convertMillimetersToTwip(20),
-              left: convertMillimetersToTwip(30),
-              right: convertMillimetersToTwip(15),
-            },
+            // ГОСТ margins in twips, exact reference values (20мм→1134, 15мм→850, 30мм→1701).
+            margin: { top: 1134, bottom: 1134, left: 1701, right: 850 },
           },
         },
         footers: {

@@ -17,15 +17,13 @@ import { chartRecommendation, REPORT_CHART_TITLES } from './report-charts';
 import {
   BUCKET_LABEL,
   CATEGORY_LABEL,
+  DECISION_OUTCOME_LABEL,
   KIND_LABEL,
   METHOD_LABEL,
   STATUS_LABEL,
   channelTotals,
-  geoLine,
-  pageLine,
   pct,
   priorityLine,
-  utmLine,
   hypothesisStatement,
   aiHypothesisSections,
   aiDecisionSections,
@@ -36,6 +34,45 @@ export interface ReportSection {
   readonly lines: string[];
   /** When set and snapshot.charts has this id, renderers embed the chart PNG at the top of the section. */
   readonly chartId?: ReportChartId;
+  /** ГОСТ-style figure caption rendered under the embedded chart («Рисунок N — …»). */
+  readonly caption?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Markdown-table helpers. The DOCX/PDF builders parse `| a | b |` lines: a table
+// needs a header row + a separator row, and the separator MUST start with `|---`
+// (no space) so the renderers filter it out instead of printing a row of dashes.
+// Cell text must never contain a raw `|` — everything goes through {@link cell}.
+// ---------------------------------------------------------------------------
+
+/** Make a string safe for a table cell: no raw pipes (they would split the row). */
+function cell(value: string): string {
+  return value.replace(/\|/g, '/');
+}
+
+/** One markdown-table data row: `| a | b |`. */
+function row(...cells: string[]): string {
+  return `| ${cells.map((c) => cell(c)).join(' | ')} |`;
+}
+
+/** Table header row + separator row (exactly two lines). */
+function tableHeader(...headers: string[]): string[] {
+  return [row(...headers), `|${headers.map(() => '---').join('|')}|`];
+}
+
+/** Percentage with one decimal, «—» when there is no denominator (never a fake 0.0%). */
+function pctOrDash(numerator: number, denominator: number): string {
+  return denominator > 0 ? `${((numerator / denominator) * 100).toFixed(1)}%` : '—';
+}
+
+/** Percentage number without the «%» sign (the unit lives in the column header), one decimal. */
+function pctNum(numerator: number, denominator: number): string {
+  return denominator > 0 ? ((numerator / denominator) * 100).toFixed(1) : '—';
+}
+
+/** Strip a leading self-number («1. », «2) ») — the builder adds ГОСТ through-numbering itself. */
+function stripOrdinalPrefix(heading: string): string {
+  return heading.replace(/^\d+[.)]\s+/, '');
 }
 
 /** Per-chart 🟢/🔴 interpretation block (FINAL §6.3), appended below each chart's section. */
@@ -89,7 +126,7 @@ function parseChunkedNarrative(narrative: string): ReportSection[] {
 }
 
 /** A full per-hypothesis section: every hypothesis field spelled out for the report reader. */
-function hypothesisDetail(h: Hypothesis, ordinal: number): ReportSection {
+function hypothesisDetail(h: Hypothesis): ReportSection {
   const phase = h.diamondPhase === 'define' ? 'Define (проблема)' : 'Develop (решение)';
   const lines: string[] = [
     `Формулировка: ${hypothesisStatement(h)}`,
@@ -143,7 +180,9 @@ function hypothesisDetail(h: Hypothesis, ordinal: number): ReportSection {
     }
   }
 
-  return { heading: `${ordinal}. ${h.title}`, lines };
+  // No leading ordinal — the builder adds ГОСТ through-numbering (D-DOUBLE-NUM). The
+  // «(гипотеза)» suffix distinguishes data-driven cards from AI narrative sections.
+  return { heading: `${h.title} (гипотеза)`, lines };
 }
 
 /** An expanded Decision Log entry: findings, evidence quotes, rationale and next step. */
@@ -170,7 +209,158 @@ function decisionDetail(d: Decision): ReportSection {
   lines.push(
     `Решение принял: ${d.decidedBy}${d.participants ? ` · участники: ${d.participants}` : ''}`,
   );
-  return { heading: `${d.number} — итог проверки`, lines };
+  return { heading: `${d.number}: итог проверки`, lines };
+}
+
+/** «ОБОЗНАЧЕНИЯ, ТЕРМИНЫ И СОКРАЩЕНИЯ» — только сокращения; принципы методологии живут в
+ * «Глоссарии и принципах», здесь их намеренно не дублируем. */
+function designationsSection(): ReportSection {
+  return {
+    heading: 'ОБОЗНАЧЕНИЯ, ТЕРМИНЫ И СОКРАЩЕНИЯ',
+    lines: [
+      ...tableHeader('Термин', 'Расшифровка'),
+      row(
+        'KPI',
+        'Key Performance Indicator — ключевой показатель эффективности; здесь — цель по оплаченным билетам за период',
+      ),
+      row(
+        'CR',
+        'Conversion Rate — конверсия: доля визитов, достигших цели (заявки/визиты или оплаты/визиты), в %',
+      ),
+      row(
+        'UTM',
+        'Urchin Tracking Module — метки источника трафика в ссылке (source / medium / campaign)',
+      ),
+      row(
+        'ICE',
+        'Impact × Confidence × Ease — балл приоритета гипотезы (произведение, 1–1000); каждый параметр обосновывается',
+      ),
+      row(
+        'DL',
+        'Decision Log — журнал решений: что проверяли, что узнали, исход и следующий шаг (записи вида DL-NNN)',
+      ),
+      row(
+        'B2B',
+        'Business-to-Business — корпоративные билеты; ведутся вручную (b2b_manual), оплаты зачитываются к цели',
+      ),
+      row(
+        'B2C',
+        'Business-to-Consumer — розничные посетители; их заявки — достижения целей Метрики',
+      ),
+      row(
+        'DOCX',
+        'Формат выгрузки отчёта (Word) — строится из того же среза данных, что PDF и экран',
+      ),
+      row('PDF', 'Печатный формат отчёта — рендерится из ГОСТ-HTML по тому же срезу данных'),
+      row(
+        'Gap',
+        'Разрыв до цели: сколько оплаченных билетов не хватает до KPI (цель − зачтённые оплаты)',
+      ),
+      row(
+        'WoW',
+        'Week over Week — сравнение с предыдущей неделей; на дашбордах проекта, в отчёт входит через период среза',
+      ),
+      row(
+        'Snapshot',
+        'Срез данных — неизменяемый снимок всех цифр за период с уникальным ИД; DOCX, PDF и экран строятся из него',
+      ),
+      row(
+        'pc-goals',
+        'JS-скрипт событий билетной воронки на productcamp.ru: этапы от «увидел билеты» до «оставил контакты»',
+      ),
+      row('ГЧ', 'Главы и части отчёта: разделы документа нумеруются сквозно по ГОСТ Р 7.32-2017'),
+      row(
+        'CRM (СРМ)',
+        'Система управления взаимоотношениями с клиентами; B2B-сделки проекта ведутся вручную в приложении',
+      ),
+      row('Bounce', 'Отказ — визит с одного экрана без действий; bounce rate — доля таких визитов'),
+    ],
+  };
+}
+
+/** «ВВЕДЕНИЕ» — назначение, источники, период, состав, ключевые оговорки. */
+function introductionSection(s: ReportSnapshot): ReportSection {
+  return {
+    heading: 'ВВЕДЕНИЕ',
+    lines: [
+      'Назначение: аналитический отчёт по конверсиям и лидгену трека ProductCamp — как трафик превращается в заявки и оплаты, какие гипотезы роста проверены и что делать дальше.',
+      'Источники данных: Яндекс Метрика (Reporting API; дневные агрегаты по каналам, UTM, гео, устройствам и страницам), счётчик ProductCamp; ручной B2B-пайплайн (b2b_manual); гипотезы и Decision Log приложения.',
+      `Период отчёта: ${s.period.from} — ${s.period.to} (срез данных ${s.id} от ${s.generatedAt}).`,
+      'Состав: обозначения → управленческое резюме → краткие итоги → методология → воронка и каналы → приоритизация и карточки гипотез → Decision Log → разрезы (UTM, гео, страницы) → приложение с данными.',
+      'Ключевая оговорка: заявка ≠ оплата. Заявка — достижение цели Метрики, оплата — фактически оплаченный билет; эти метрики нигде не суммируются.',
+      'Анти-галлюцинация: каждая цифра восходит к зафиксированному срезу (raw_responses в SQLite); в рендер-пути нет LLM и текущего времени — DOCX, PDF и экран строятся из одного среза и идентичны.',
+    ],
+  };
+}
+
+/** «УПРАВЛЕНЧЕСКОЕ РЕЗЮМЕ» — 6–10 выводов, каждый выведен из цифр снапшота (никаких внешних чисел). */
+function executiveSummarySection(s: ReportSnapshot): ReportSection {
+  const problems = s.hypotheses.problems;
+  const solutions = s.hypotheses.solutions;
+  const visits = s.funnel.visits;
+  const credited = s.kpi.target - s.kpi.gap;
+  const lines: string[] = [];
+
+  lines.push(
+    `- Цель периода — ${s.kpi.target} оплаченных билетов; зачтено ${credited} (выполнение ${pctNum(credited, s.kpi.target)}%), gap — ${s.kpi.gap}.`,
+  );
+  lines.push(
+    `- Воронка: ${visits} визитов → ${s.funnel.b2cApplications} заявок B2C (CR ${pctOrDash(s.funnel.b2cApplications, visits)}) → ${s.kpi.b2bPaidTickets} оплаченных билетов B2B.`,
+  );
+
+  // Best / worst channel by CR among channels with visits — everything derived from snapshot rows.
+  const withCr = channelTotals(s.channels)
+    .filter((t) => t.visits > 0)
+    .map((t) => ({ ...t, cr: t.goalReaches / t.visits }))
+    .sort((a, b) => b.cr - a.cr);
+  const best = withCr[0];
+  const worst = withCr.length > 1 ? withCr[withCr.length - 1] : undefined;
+
+  if (best) {
+    lines.push(
+      `- Лучший канал по CR: ${best.channel} — ${pctNum(best.goalReaches, best.visits)}% заявок с ${best.visits} визитов.`,
+    );
+  }
+  if (worst && worst.channel !== best?.channel) {
+    lines.push(
+      `- Слабейший канал по CR: ${worst.channel} — ${pctNum(worst.goalReaches, worst.visits)}% заявок с ${worst.visits} визитов.`,
+    );
+  }
+
+  if (visits > 0) {
+    const bounceVisits = s.channels.reduce((a, c) => a + c.bounceRate * c.visits, 0);
+    lines.push(
+      `- Отказы: ${pctNum(bounceVisits, visits)}% визитов — средневзвешенный bounce rate по каналам.`,
+    );
+  }
+
+  if (s.b2bSummary.dealsCount > 0) {
+    lines.push(
+      `- B2B-вклад: оплачено ${s.b2bSummary.paidTickets} из ${s.b2bSummary.totalTickets} билетов по ${s.b2bSummary.dealsCount} сделкам; в работе ещё ${s.funnel.b2bPipelineTickets}.`,
+    );
+  }
+
+  // Main risk: positive gap, amplified by a high-volume channel converting below the overall CR.
+  const overallCr = visits > 0 ? s.funnel.b2cApplications / visits : 0;
+  const risky = withCr.filter((t) => t.cr < overallCr).sort((a, b) => b.visits - a.visits)[0];
+  if (s.kpi.gap > 0) {
+    lines.push(
+      risky
+        ? `- Главный риск: gap ${s.kpi.gap} билетов — заявка ≠ оплата; канал «${risky.channel}» даёт ${risky.visits} визитов при CR ${pctNum(risky.goalReaches, risky.visits)}% ниже общего.`
+        : `- Главный риск: gap ${s.kpi.gap} билетов — заявка ≠ оплата, заявки без оплат цель не двигают.`,
+    );
+  }
+
+  lines.push(
+    best
+      ? `- Главный рычаг: перераспределить бюджет в «${best.channel}» (лучший CR) и поднять конверсию объёмных каналов с низким CR.`
+      : '- Главный рычаг: запустить трафик и первые проверки гипотез — данных по каналам пока нет.',
+  );
+  lines.push(
+    `- Гипотезы: ${problems.length} проблемных + ${solutions.length} решенческих в приоритизации; закрытых проверок — ${s.decisions.length} (Decision Log).`,
+  );
+
+  return { heading: 'УПРАВЛЕНЧЕСКОЕ РЕЗЮМЕ', lines };
 }
 
 /** B2B summary section. */
@@ -309,8 +499,24 @@ function channelAnalysisSection(s: ReportSnapshot): ReportSection {
     }
   }
 
+  lines.push(
+    '',
+    'Детально (топ-10 по визитам):',
+    ...tableHeader('Канал', 'Визиты', 'Заявки', 'CR %'),
+  );
+  for (const t of totals.slice(0, 10)) {
+    lines.push(
+      row(t.channel, String(t.visits), String(t.goalReaches), pctNum(t.goalReaches, t.visits)),
+    );
+  }
+
   lines.push(...chartBlock(s, 'channelBar'));
-  return { heading: 'Каналы: трафик и конверсия', lines, chartId: 'channelBar' };
+  return {
+    heading: 'Каналы: трафик и конверсия',
+    lines,
+    chartId: 'channelBar',
+    caption: 'Рисунок 1 — Воронка конверсии',
+  };
 }
 
 /**
@@ -383,6 +589,9 @@ export function reportSections(s: ReportSnapshot): ReportSection[] {
         'Каждая цифра прослеживается до raw_responses в SQLite (анти-галлюцинация).',
       ],
     },
+    designationsSection(),
+    introductionSection(s),
+    executiveSummarySection(s),
     {
       heading: 'Краткие итоги',
       lines: [
@@ -397,6 +606,16 @@ export function reportSections(s: ReportSnapshot): ReportSection[] {
         '',
         `Гипотез в работе: ${problems.length} проблемных + ${solutions.length} решенческих.`,
         `Закрытых проверок (Decision Log): ${s.decisions.length}.`,
+        '',
+        'Ключевые цифры периода:',
+        ...tableHeader('Показатель', 'Значение'),
+        row('Цель периода (оплаченных билетов)', String(s.kpi.target)),
+        row('Заявки B2C (достижения цели Метрики)', String(s.kpi.b2cApplications)),
+        row('Оплачено B2B (билетов)', String(s.kpi.b2bPaidTickets)),
+        row('Зачтено к цели (оплаченные билеты)', String(s.kpi.target - s.kpi.gap)),
+        row('Gap до цели (билетов)', String(s.kpi.gap)),
+        row('CR общий (заявки / визиты)', pctOrDash(s.kpi.b2cApplications, s.funnel.visits)),
+        row('CR оплаты (оплачено / визиты)', pctOrDash(s.kpi.b2bPaidTickets, s.funnel.visits)),
       ],
     },
     {
@@ -448,6 +667,7 @@ export function reportSections(s: ReportSnapshot): ReportSection[] {
   sections.push({
     heading: 'Воронка: визит → заявка → оплата',
     chartId: 'funnel',
+    caption: 'Рисунок 2 — Воронка: визит → заявка → оплата',
     lines: [
       `1) Визиты (сумма по каналам за период): ${totalVisits}`,
       `2) Заявки B2C (достижения цели): ${s.kpi.b2cApplications} — конверсия визит→заявка ${pct(
@@ -467,6 +687,7 @@ export function reportSections(s: ReportSnapshot): ReportSection[] {
   sections.push({
     heading: 'Каналы: структура трафика',
     chartId: 'channelMix',
+    caption: 'Рисунок 3 — Структура трафика по каналам',
     lines:
       channelTotals(s.channels).length === 0
         ? ['Нет данных по каналам за период.']
@@ -494,6 +715,13 @@ export function reportSections(s: ReportSnapshot): ReportSection[] {
       lines: [
         'Все гипотезы, отсортированы по убыванию ICE. Сверху — то, что бьём первым:',
         '',
+        ...tableHeader('Гипотеза', 'I', 'C', 'E', 'ICE'),
+        ...allByPriority.map((h) =>
+          row(h.title, String(h.impact), String(h.confidence), String(h.ease), String(h.iceScore)),
+        ),
+        '',
+        'Детально (формулировки, статусы и дедлайны):',
+        '',
         ...allByPriority.map((h, i) => priorityLine(h, i + 1)),
       ],
     });
@@ -505,7 +733,7 @@ export function reportSections(s: ReportSnapshot): ReportSection[] {
         ...problems.map((h, i) => `  ${i + 1}) ${h.title} [ICE ${h.iceScore}]`),
       ],
     });
-    sections.push(...problems.map((h, i) => hypothesisDetail(h, i + 1)));
+    sections.push(...problems.map((h) => hypothesisDetail(h)));
 
     sections.push({
       heading: 'Develop — решенческие гипотезы (обзор)',
@@ -514,24 +742,51 @@ export function reportSections(s: ReportSnapshot): ReportSection[] {
         ...solutions.map((h, i) => `  ${i + 1}) ${h.title} [ICE ${h.iceScore}]`),
       ],
     });
-    sections.push(...solutions.map((h, i) => hypothesisDetail(h, problems.length + i + 1)));
+    sections.push(...solutions.map((h) => hypothesisDetail(h)));
   }
 
   // AI-generated hypotheses — only when they exist
   if (hasAiHypotheses) {
-    sections.push(...aiHypothesisSections(s.generatedHypotheses));
+    // Ordinals are stripped from card headings — the builder adds ГОСТ through-numbering.
+    sections.push(
+      ...aiHypothesisSections(s.generatedHypotheses).map((sec) => ({
+        ...sec,
+        heading: stripOrdinalPrefix(sec.heading),
+      })),
+    );
   }
 
   // AI-proposed decisions — only when they exist (helper returns [] otherwise)
-  sections.push(...aiDecisionSections(s.generatedDecisions));
+  sections.push(
+    ...aiDecisionSections(s.generatedDecisions).map((sec) => ({
+      ...sec,
+      heading: stripOrdinalPrefix(sec.heading),
+    })),
+  );
 
   // Decision Log — always show
+  const hypothesisTitleById = new Map(
+    [...problems, ...solutions].map((h) => [h.id, h.title] as const),
+  );
   sections.push({
     heading: 'Deliver — Decision Log (обзор)',
     lines:
       s.decisions.length === 0
         ? ['Завершённых проверок пока нет.']
-        : [`Зафиксировано ${s.decisions.length} решений. Детали каждого — ниже.`],
+        : [
+            `Зафиксировано ${s.decisions.length} решений. Детали каждого — ниже.`,
+            '',
+            ...tableHeader('ID', 'Гипотеза', 'Статус', 'Решение'),
+            ...s.decisions.map((d) => {
+              const title = hypothesisTitleById.get(d.hypothesisId);
+              return row(
+                d.number,
+                title ? `#${d.hypothesisId} ${title}` : `#${d.hypothesisId}`,
+                DECISION_OUTCOME_LABEL[d.outcome],
+                d.nextStep,
+              );
+            }),
+          ],
   });
   sections.push(...s.decisions.map(decisionDetail));
 
@@ -550,30 +805,66 @@ export function reportSections(s: ReportSnapshot): ReportSection[] {
     }
   }
 
+  // Breakdown sections as markdown tables (rendered as real tables in DOCX/PDF/HTML).
+  const geoBreakdown = (() => {
+    if (s.breakdowns.geoDevice.length === 0) {
+      return { heading: 'Топ гео + устройства', lines: ['Нет данных гео/устройств за период.'] };
+    }
+    const totalGeo = s.breakdowns.geoDevice.reduce((a, g) => a + g.visits, 0);
+    const byCountry = new Map<string, number>();
+    const byDevice = new Map<string, number>();
+    for (const g of s.breakdowns.geoDevice) {
+      byCountry.set(g.country, (byCountry.get(g.country) ?? 0) + g.visits);
+      byDevice.set(g.device, (byDevice.get(g.device) ?? 0) + g.visits);
+    }
+    const countries = [...byCountry.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const devices = [...byDevice.entries()].sort((a, b) => b[1] - a[1]);
+    return {
+      heading: 'Топ гео + устройства',
+      lines: [
+        'Гео (топ-10 по визитам, суммарно по всем устройствам):',
+        '',
+        ...tableHeader('Гео', 'Визиты'),
+        ...countries.map(([country, geoVisits]) => row(country, String(geoVisits))),
+        '',
+        'Устройства (доля — от визитов в гео-разрезе):',
+        '',
+        ...tableHeader('Устройство', 'Визиты', 'Доля %'),
+        ...devices.map(([device, deviceVisits]) =>
+          row(device, String(deviceVisits), pctNum(deviceVisits, totalGeo)),
+        ),
+      ],
+    };
+  })();
+
+  const pagesTable = (rows: ReportSnapshot['breakdowns']['entryPages'], empty: string): string[] =>
+    rows.length === 0
+      ? [empty]
+      : [
+          ...tableHeader('Страница', 'Визиты'),
+          ...rows.slice(0, 10).map((p) => row(p.page, String(p.visits))),
+        ];
+
   sections.push(
     {
       heading: 'Топ источников UTM',
       lines: s.breakdowns.utm.length
-        ? s.breakdowns.utm.map(utmLine)
+        ? [
+            'Топ источников трафика по визитам (топ-15, агрегировано по source/medium):',
+            '',
+            ...tableHeader('Источник (source)', 'Medium', 'Визиты'),
+            ...s.breakdowns.utm.slice(0, 15).map((u) => row(u.source, u.medium, String(u.visits))),
+          ]
         : ['Нет данных UTM за период.'],
     },
-    {
-      heading: 'Топ гео + устройства',
-      lines: s.breakdowns.geoDevice.length
-        ? s.breakdowns.geoDevice.map(geoLine)
-        : ['Нет данных гео/устройств за период.'],
-    },
+    geoBreakdown,
     {
       heading: 'Топ страниц входа',
-      lines: s.breakdowns.entryPages.length
-        ? s.breakdowns.entryPages.map(pageLine)
-        : ['Нет данных по страницам входа за период.'],
+      lines: pagesTable(s.breakdowns.entryPages, 'Нет данных по страницам входа за период.'),
     },
     {
       heading: 'Топ страниц выхода',
-      lines: s.breakdowns.exitPages.length
-        ? s.breakdowns.exitPages.map(pageLine)
-        : ['Нет данных по страницам выхода за период.'],
+      lines: pagesTable(s.breakdowns.exitPages, 'Нет данных по страницам выхода за период.'),
     },
     {
       heading: 'Дорожная карта: что делаем дальше',

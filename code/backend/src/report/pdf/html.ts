@@ -1,5 +1,6 @@
 import type { ReportSnapshot } from '@pca/shared';
 import { reportSections } from '../docx/sections';
+import { isFrontMatter } from '../docx/sections';
 
 /** Parse inline markdown to HTML: **bold**, *italic*, `code`. */
 function inlineToHtml(text: string): string {
@@ -57,9 +58,14 @@ function renderTable(lines: string[], startIdx: number): { html: string; consume
 
 /**
  * Deterministic print-ready HTML for a snapshot (same content as the DOCX), formatted to a
- * ГОСТ-style document: A4 with ГОСТ margins (left 30mm), Times New Roman 14pt / 1.5 line spacing,
- * a centered title page, a table of contents («Содержание»), and numbered sections. Puppeteer
- * renders this to PDF; keeping it a pure function makes the report content fully testable.
+ * ГОСТ-style document (ГОСТ-2 layout, mirroring the DOCX): A4 with ГОСТ margins (left 30mm),
+ * Times New Roman 14pt / 1.5 line spacing, a centered title page (org + «АНАЛИТИЧЕСКИЙ ОТЧЁТ»,
+ * period/sources/prepared-by block, year at the bottom — no snapshot UUID, which lives in the data
+ * appendix), «СОДЕРЖАНИЕ» with anchor links to each section, «ПЕРЕЧЕНЬ РИСУНКОВ» on its own page,
+ * and numbered sections («1. ЗАГОЛОВОК», caps applied in JS so the text stays copyable; sections
+ * whose heading starts with «Приложение» are neither numbered nor upper-cased). Charts carry a
+ * centred italic caption («Рисунок N — …»). Chromium renders this to PDF; keeping it a pure
+ * function makes the report content fully testable.
  *
  * Supports markdown tables, **bold**, *italic*, and `code` inline formatting.
  */
@@ -69,30 +75,74 @@ export function reportHtml(snapshot: ReportSnapshot): string {
   const year = /^\d{4}/.test(snapshot.generatedAt)
     ? snapshot.generatedAt.slice(0, 4)
     : snapshot.period.from.slice(0, 4);
-  const toc = body.map((s, j) => `<li>${j + 1}. ${escapeHtml(s.heading)}</li>`).join('');
 
-  // ГОСТ Р 7.32-2017 title page: org on top, work title centred, snapshot id + year below.
+  // ГОСТ Р 7.32-2017: applications («Приложение …») are neither numbered nor upper-cased.
+  // Front matter (обозначения/введение/резюме) — тоже без сквозного номера (см. эталон).
+  const isAppendix = (heading: string): boolean => heading.startsWith('Приложение');
+
+  // Heading labels: «N. ЗАГОЛОВОК» — caps via toUpperCase in JS (CSS text-transform stays `none`,
+  // so the copied text keeps the caps); appendix and front-matter headings pass through literally.
+  let sectionNo = 0;
+  const labels = body.map((sec) =>
+    isAppendix(sec.heading) || isFrontMatter(sec.heading)
+      ? sec.heading
+      : `${++sectionNo}. ${sec.heading.toUpperCase()}`,
+  );
+
+  // Figure captions for sections with a chartId, keyed by section index. `n` counts every charted
+  // section sequentially; a section-level `caption` (ГОСТ-подпись from report-sections) only
+  // replaces the fallback text «Рисунок N — <заголовок>», numbering stays stable.
+  let figureNo = 0;
+  const figureCaptions = new Map<number, string>();
+  body.forEach((sec, j) => {
+    if (!sec.chartId) return;
+    const n = ++figureNo;
+    const caption = sec.caption ?? `Рисунок ${n} — ${sec.heading}`;
+    figureCaptions.set(j, caption);
+  });
+
+  // TOC with anchor links to `#sec-N` (Chromium preserves internal links in the PDF).
+  const toc = body
+    .map((_, j) => `<li><a href="#sec-${j + 1}">${escapeHtml(labels[j]!)}</a></li>`)
+    .join('');
+
+  // ГОСТ-2 title page: org + track on top, work title centred, period/sources/prepared-by block,
+  // year at the bottom. The snapshot UUID deliberately stays off the cover (data appendix only).
   const cover =
     `<section class="cover">` +
     `<div class="cover-org">ProductCamp<br><span class="cover-track">Трек «Конверсии и лидген»</span></div>` +
-    `<div class="cover-title">Аналитический отчёт по конверсиям и лидгену</div>` +
-    `<div class="cover-sub">за период ${escapeHtml(snapshot.period.from)} — ${escapeHtml(snapshot.period.to)}</div>` +
+    `<div class="cover-title">АНАЛИТИЧЕСКИЙ ОТЧЁТ</div>` +
+    `<div class="cover-sub">по данным веб-аналитики Яндекс.Метрики</div>` +
     `<div class="cover-meta">` +
-    `Идентификатор среза данных: ${escapeHtml(snapshot.id)}<br>` +
-    `Сформирован: ${escapeHtml(snapshot.generatedAt)}<br>` +
-    `Цель: ${snapshot.kpi.target} оплаченных билетов<br>${escapeHtml(year)}` +
-    `</div></section>` +
-    `<section class="toc"><h2>Содержание</h2><ol>${toc}</ol></section>`;
+    `Период данных: ${escapeHtml(snapshot.period.from)} — ${escapeHtml(snapshot.period.to)}<br>` +
+    `Источники: Reporting API Яндекс.Метрики; данные счётчика ProductCamp<br>` +
+    `Подготовлено: ProductCamp Analytics Copilot · версия отчёта ГОСТ-2` +
+    `</div>` +
+    `<div class="cover-year">${escapeHtml(year)}</div>` +
+    `</section>` +
+    // Static PDF: the TOC is plain anchor links + a small-print note (no updatable-field note).
+    `<section class="toc"><h2>СОДЕРЖАНИЕ</h2><ol>${toc}</ol>` +
+    `<p class="note">Примечание: содержание сформировано по заголовкам разделов отчёта.</p></section>` +
+    // «ПЕРЕЧЕНЬ РИСУНКОВ» on its own page (only when the document has figures).
+    (figureCaptions.size > 0
+      ? `<section class="lof"><h2>ПЕРЕЧЕНЬ РИСУНКОВ</h2><ul>${[...figureCaptions.values()]
+          .map((c) => `<li>${escapeHtml(c)}</li>`)
+          .join('')}</ul></section>`
+      : '');
 
   let sectionsHtml = '';
   body.forEach((sec, j) => {
-    const heading = `${j + 1}. ${escapeHtml(sec.heading)}`;
+    const heading = labels[j]!;
     const lines = sec.lines;
-    // Embed the section's chart PNG (FINAL §6.4), if rendered into the snapshot.
+    // Embed the section's chart PNG (FINAL §6.4), if rendered into the snapshot, with its ГОСТ
+    // caption («Рисунок N — …») centred in italics right below the image.
     const chartBase64 = sec.chartId ? snapshot.charts?.[sec.chartId] : undefined;
-    let content = chartBase64
-      ? `<p class="chart"><img alt="${escapeHtml(sec.heading)}" src="data:image/png;base64,${chartBase64}"></p>`
-      : '';
+    const figureCaption = figureCaptions.get(j);
+    let content =
+      chartBase64 && figureCaption
+        ? `<p class="chart"><img alt="${escapeHtml(figureCaption)}" src="data:image/png;base64,${chartBase64}"></p>` +
+          `<p class="caption">${escapeHtml(figureCaption)}</p>`
+        : '';
     let lineIdx = 0;
 
     while (lineIdx < lines.length) {
@@ -140,7 +190,7 @@ export function reportHtml(snapshot: ReportSnapshot): string {
       .replace(/^(<p class="sp"><\/p>\s*)+/, '')
       .replace(/(<p class="sp"><\/p>\s*)+$/, '');
 
-    sectionsHtml += `<section class="brk"><h1>${heading}</h1>${content}</section>`;
+    sectionsHtml += `<section class="brk" id="sec-${j + 1}"><h1>${escapeHtml(heading)}</h1>${content}</section>`;
   });
 
   const bodyHtml = cover + sectionsHtml;
@@ -157,13 +207,21 @@ export function reportHtml(snapshot: ReportSnapshot): string {
     '.cover-track{font-size:13pt;font-weight:normal}',
     '.cover-title{font-size:20pt;font-weight:bold;margin-top:55mm;padding:0 10mm}',
     '.cover-sub{font-size:14pt;margin-top:6mm}',
-    '.cover-meta{font-size:12pt;margin-top:auto;line-height:1.6}',
-    '.toc{page-break-after:always}.toc h2{text-align:center;font-size:14pt}',
+    '.cover-meta{font-size:12pt;margin-top:30mm;line-height:1.8}',
+    '.cover-year{font-size:12pt;margin-top:auto}',
+    '.toc,.lof{page-break-after:always}',
+    '.toc h2,.lof h2{text-align:center;font-size:14pt}',
     '.toc ol{list-style:none;padding:0}.toc li{margin:2mm 0}',
-    'h1{font-size:14pt;font-weight:bold;margin:0 0 4mm}',
+    '.toc a{color:#000;text-decoration:none}',
+    '.toc .note{font-size:10pt;margin-top:10mm;text-align:left}',
+    '.lof ul{list-style:none;padding:0}.lof li{margin:2mm 0}',
+    'h1{font-size:14pt;font-weight:bold;color:#000;text-transform:none;margin:0 0 4mm}',
+    'h2{color:#000}',
     'section.brk{page-break-before:always}p.sp{height:6pt;margin:0}',
     'p{margin:0;white-space:pre-wrap}',
+    'p.caption{font-style:italic;text-align:center;font-size:12pt;margin:4pt 0 8pt}',
     'table{width:100%;border-collapse:collapse;margin:8pt 0}',
+    'thead{display:table-header-group}',
     'th,td{border:1px solid #333;padding:4pt 8pt;text-align:left;font-size:12pt}',
     'th{background:#f5f5f5;font-weight:bold}',
     'ul{margin:4pt 0;padding-left:20pt}',

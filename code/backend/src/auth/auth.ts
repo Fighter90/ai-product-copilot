@@ -19,6 +19,7 @@ export function parseCookies(header: string | undefined): Record<string, string>
     const i = part.indexOf('=');
     if (i <= 0) continue;
     const k = part.slice(0, i).trim();
+    if (!k) continue; // « =value»: пробел перед «=» давал пустой ключ-мусор
     const v = part.slice(i + 1).trim();
     try {
       out[k] = decodeURIComponent(v);
@@ -244,6 +245,7 @@ export function registerAuth(app: FastifyInstance, opts: AuthOptions): void {
     const body = CreateUser.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid body', code: 'BAD_INPUT' });
     const password = body.data.password ?? randomPassword();
+    const generated = !body.data.password; // generated → возвращаем один раз; явный — не возвращаем
     let user;
     try {
       // create() is the single source of truth: UNIQUE constraint → 409 (no TOCTOU gap).
@@ -256,7 +258,10 @@ export function registerAuth(app: FastifyInstance, opts: AuthOptions): void {
     }
     opts.users.audit(req.user!, 'users.create', user.email, { role: user.role });
     // The temporary password is returned exactly once so the admin can hand it over.
-    return reply.code(201).send({ user: publicUser(user), temporaryPassword: password });
+    return reply.code(201).send({
+      user: publicUser(user),
+      ...(generated ? { temporaryPassword: password } : {}),
+    });
   });
 
   const PatchUser = z.object({
