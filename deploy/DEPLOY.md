@@ -153,14 +153,101 @@ free -m && df -h /
 | Синк не сработал                        | `journalctl -u pca-sync.service`; токен/каунтер заданы? (`.env` или «Администрирование» в UI)         |
 | Старая версия фронта в браузере         | index.html отдаётся с no-cache; если всё же кэш — Ctrl+Shift+R                                        |
 
-## 5. Бэкап и восстановление
+## 5. Бэкапы и мониторинг
+
+Файлы в `deploy/`:
+
+| Файл                  | Что делает                                                                                                                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `backup.sh`           | Ночной бэкап: `sqlite3 .backup` (консистентный срез живой WAL-базы, НЕ `cp`) → gzip → `/opt/pca/backups/pca-YYYYMMDD-HHMMSS.db.gz`; хранит 14 копий; `flock` от параллельного запуска; лог `/opt/pca/backups/backup.log` |
+| `pca-backup.service`  | oneshot-юнит от пользователя `pca`, `Nice=10`                                                                                                                                                                            |
+| `pca-backup.timer`    | Ежедневно **04:30**, `Persistent=true` (догонит после простоя)                                                                                                                                                           |
+| `health-monitor.sh`   | Разовая проверка `http://127.0.0.1:4000/api/health`; 3 неудачи **подряд** → `systemctl restart pca-api` + запись в `/opt/pca/logs/monitor.log`; `/` заполнен >85% → предупреждение в лог (один раз при переходе порога)  |
+| `pca-monitor.service` | oneshot-юнит **от root** (должен уметь рестартить `pca-api`), `Nice=10`                                                                                                                                                  |
+| `pca-monitor.timer`   | Каждые 5 минут (`*:0/5`)                                                                                                                                                                                                 |
+
+Успешные проверки монитор в лог не пишет — только неудачи, рестарты и проблемы с диском.
+
+### 5.1 Установка на сервер (один раз)
+
+`deploy.sh` при каждом деплое сам ставит все `pca-*.service|timer` из `deploy/`
+в `/etc/systemd/system` (свежая копия скриптов кладётся в `/tmp/pca-deploy`), но
+**включить таймеры** и разложить скрипты на постоянное место нужно один раз вручную:
 
 ```bash
-# Всё состояние приложения — два артефакта:
-ssh root@5.129.219.145 \
-  'tar czf /root/pca-backup-$(date +%F).tgz -C /opt/pca data .env'
-# + копия на локальную машину: scp root@5.129.219.145:/root/pca-backup-*.tgz .
+ssh root@5.129.219.145
+
+# sqlite3 нужен и бэкапу, и восстановлению (в базовой Ubuntu его нет):
+apt-get install -y sqlite3
+
+# Скрипты — на постоянное место (deploy.sh кладёт свежие копии в /tmp/pca-deploy;
+# если деплой ещё не делался: rsync -av deploy/ root@5.129.219.145:/tmp/pca-deploy/):
+install -d -m 755 /opt/pca/deploy /opt/pca/backups /opt/pca/logs
+install -m 755 -o root -g root /tmp/pca-deploy/backup.sh         /opt/pca/deploy/backup.sh
+install -m 755 -o root -g root /tmp/pca-deploy/health-monitor.sh /opt/pca/deploy/health-monitor.sh
+chown pca:pca /opt/pca/backups /opt/pca/logs   # бэкап пишет пользователь pca
+
+# Юниты ставятся автоматически при ./deploy/deploy.sh; вручную — так:
+#   install -m 644 /tmp/pca-deploy/pca-backup.* /tmp/pca-deploy/pca-monitor.* /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now pca-backup.timer pca-monitor.timer
 ```
 
-Восстановление: распаковать в `/opt/pca`, выставить `chown -R pca:pca /opt/pca`,
-`systemctl restart pca-api`.
+Замечания по безопасности: `health-monitor.sh` выполняется от root, поэтому
+владелец скрипта — `root:root` (не `pca`, иначе пользователь `pca` мог бы
+подменить root-скрипт). Секретов в скриптах и юнитах нет — только пути.
+
+### 5.2 Восстановление из бэкапа
+
+```bash
+ssh root@5.129.219.145
+
+# 1) Выбираем копию (свежие сверху):
+ls -lt /opt/pca/backups/
+
+# 2) Останавливаем API (и, при желании, синк — он перезапустится сам):
+systemctl stop pca-api.service
+
+# 3) Подменяем базу. -wal/-shm от старой базы ОБЯЗАТЕЛЬНО удалить, пока API
+#    остановлен: иначе SQLite примессажит новую базу чужим WAL-журналом.
+gunzip -c /opt/pca/backups/pca-YYYYMMDD-HHMMSS.db.gz > /opt/pca/data/productcamp.sqlite
+rm -f /opt/pca/data/productcamp.sqlite-wal /opt/pca/data/productcamp.sqlite-shm
+sqlite3 /opt/pca/data/productcamp.sqlite 'PRAGMA integrity_check;'   # должно вывести: ok
+chown pca:pca /opt/pca/data/productcamp.sqlite
+
+# 4) Старт и проверка:
+systemctl start pca-api.service
+curl -s http://127.0.0.1:4000/api/health | jq
+```
+
+Помимо локальных копий, раз в стоит забирать бэкап за пределы сервера
+(VDS не вечна):
+
+```bash
+# с локальной машины — свежий бэкап + .env (секреты в бэкапах не хранятся!):
+scp root@5.129.219.145:/opt/pca/backups/pca-$(date +%F)*.db.gz .
+scp root@5.129.219.145:/opt/pca/.env .
+```
+
+### 5.3 Как проверить, что работает
+
+```bash
+systemctl list-timers pca-backup.timer pca-monitor.timer   # расписания и последний/следующий запуск
+
+# Ручной прогон бэкапа + лог и результат:
+systemctl start pca-backup.service
+tail -n 20 /opt/pca/backups/backup.log
+ls -lh /opt/pca/backups/                                   # pca-YYYYMMDD-HHMMSS.db.gz, максимум 14 шт.
+
+# Ручной прогон монитора + лог:
+systemctl start pca-monitor.service
+journalctl -u pca-monitor.service -n 20 --no-pager
+cat /opt/pca/logs/monitor.log
+
+# Симуляция отказа API (монитор сам перезапустит после 3 неудач, ~15 минут):
+systemctl stop pca-api && sleep 900 && systemctl status pca-api --no-pager
+cat /opt/pca/logs/monitor.log                              # «неудача #3 … перезапускаю pca-api»
+```
+
+Если монитор перезапустил API, а он снова падает — причину искать в
+`journalctl -u pca-api -n 50` (см. раздел «Частые проблемы»).

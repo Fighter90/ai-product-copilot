@@ -1,0 +1,20 @@
+# Таймер: ежедневный бэкап SQLite в 04:30 по локальному времени сервера.
+# Включение: systemctl enable --now pca-backup.timer
+# Проверка:  systemctl list-timers pca-backup.timer
+
+[Unit]
+Description=Run PCA SQLite backup daily at 04:30
+
+[Timer]
+# Каждый день в 04:30. Слот выбран в стороне от синка Метрики (00/3:00)
+# и от утреннего трафика.
+OnCalendar=*-*-* 04:30:00
+
+# Если сервер был выключен в момент запуска (ночь, перезагрузка) —
+# догнать бэкап сразу после старта.
+Persistent=true
+
+Unit=pca-backup.service
+
+[Install]
+WantedBy=timers.target
