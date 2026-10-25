@@ -140,4 +140,15 @@ describe('mdToHtml', () => {
     expect(html).not.toContain('**');
     expect(html).not.toContain('##');
   });
+
+  it('renders site-relative images with a caption, but blocks absolute/foreign URLs', () => {
+    const ok = mdToHtml('![Обзор](/screenshots/03-overview.png)');
+    expect(ok).toContain('<figure><img src="/screenshots/03-overview.png"');
+    expect(ok).toContain('<figcaption>Обзор</figcaption>');
+
+    // Только корневые пути: внешние и data-/javascript-URL не превращаются в <img>.
+    expect(mdToHtml('![x](https://evil.com/x.png)')).not.toContain('<img');
+    expect(mdToHtml('![x](data:text/html;base64,AAA)')).not.toContain('<img');
+    expect(mdToHtml('![x](javascript:alert(1))')).not.toContain('<img');
+  });
 });

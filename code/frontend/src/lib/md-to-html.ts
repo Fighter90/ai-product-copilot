@@ -121,6 +121,21 @@ export function mdToHtml(md: string): string {
     }
 
     flushList();
+    // Images: ONLY site-relative paths (/screenshots/…), so docs can embed product screenshots.
+    // Everything else (http://, data:, javascript:) is intentionally not rendered.
+    const img = /^!\[([^\]]*)\]\((\/[^)\s]+)\)$/.exec(trimmed);
+    if (img) {
+      flushList();
+      const caption = img[1]!.trim();
+      html.push(
+        `<figure><img src="${img[2]}" alt="${caption}" loading="lazy"/>${
+          caption ? `<figcaption>${caption}</figcaption>` : ''
+        }</figure>`,
+      );
+      continue;
+    }
+
+    flushList();
     html.push(`<p>${inlineFormat(trimmed)}</p>`);
   }
 

@@ -255,3 +255,24 @@
   display: block;
   margin: 0.5rem 0;
 }
+
+/* Скриншоты в справке (mdToHtml → figure > img с корневыми путями /screenshots/…) */
+.ai-narrative figure,
+.help-body figure {
+  margin: 1rem 0;
+}
+.ai-narrative figure img,
+.help-body figure img {
+  width: 100%;
+  height: auto;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 8%);
+}
+.ai-narrative figcaption,
+.help-body figcaption {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: rgb(var(--c-muted));
+  text-align: center;
+}
