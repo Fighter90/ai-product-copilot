@@ -1,6 +1,5 @@
-// Снятие скриншотов прода для документации/справки. Запуск: node scripts/capture-help-shots.mjs
-import { chromium } // playwright резолвится из pnpm-стора; при отсутствии — `pnpm add -w -D playwright`
-import { chromium } from 'playwright';;
+// Снятие скриншотов прода для документации/справки. Запуск: PCA_PASSWORD=... node scripts/capture-help-shots.mjs
+import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 
 const BASE = 'https://dashboardcamp.ru';
