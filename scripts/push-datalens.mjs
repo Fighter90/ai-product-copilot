@@ -12,7 +12,7 @@
 //
 // Спека API: https://api.datalens.tech/ (POST https://api.datalens.tech/rpc/<метод>,
 // заголовки: Authorization: Bearer <IAM>, x-dl-api-version: 1|2, Content-Type: application/json).
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 
 const IAM = process.env.DATALENS_IAM_TOKEN || '';
 const ORG = process.env.DATALENS_ORG_ID || '';

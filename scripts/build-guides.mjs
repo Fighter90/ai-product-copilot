@@ -578,7 +578,7 @@ function commandPath(cmd) {
 /** Убрать эмодзи и иные символы вне Times New Roman — иначе xelatex оставит пустые боксы. */
 function stripEmoji(text) {
   return text.replace(
-    /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0E}\u{FE0F}\u{200D}]/gu,
+    /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]|\u{FE0E}|\u{FE0F}|\u{200D}/gu,
     '',
   );
 }
