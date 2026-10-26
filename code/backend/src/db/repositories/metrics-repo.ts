@@ -138,6 +138,13 @@ function toChannelStat(r: ChannelRow): ChannelStat {
 }
 
 /** Repository for Metrika-derived data: goals, raw API responses, channel stats. */
+/** Rows removed by resetSyncedWindow(), keyed by table — see snapshotWindow(). */
+export interface SyncedWindowBackup {
+  readonly from: string;
+  readonly to: string;
+  readonly tables: Record<string, Record<string, unknown>[]>;
+}
+
 export class MetricsRepo {
   constructor(private readonly db: DB) {}
 
@@ -249,6 +256,57 @@ export class MetricsRepo {
       this.db.prepare('DELETE FROM goals').run();
     });
     tx();
+  }
+
+  /** In-memory copy of everything resetSyncedWindow() would delete — restored if a sync fails. */
+  snapshotWindow(from: string, to: string): SyncedWindowBackup {
+    const tables: Record<string, Record<string, unknown>[]> = {};
+    for (const t of MetricsRepo.DERIVED_STAT_TABLES) {
+      tables[t] = this.db
+        .prepare(`SELECT * FROM ${t} WHERE date >= ? AND date <= ?`)
+        .all(from, to) as Record<string, unknown>[];
+    }
+    tables.raw_responses = this.db
+      .prepare('SELECT * FROM raw_responses WHERE date_from >= ? AND date_to <= ?')
+      .all(from, to) as Record<string, unknown>[];
+    tables.goals = this.db.prepare('SELECT * FROM goals').all() as Record<string, unknown>[];
+    return { from, to, tables };
+  }
+
+  /**
+   * Put back one table's window rows from a backup (the window part of that table is replaced).
+   * Used when a sync step failed after the window was wiped — a failed/quota-limited sync must
+   * never leave the cabinet with less data than before.
+   */
+  restoreWindowTable(backup: SyncedWindowBackup, table: string): void {
+    const rows = backup.tables[table];
+    if (!rows) return;
+    const tx = this.db.transaction(() => {
+      if (table === 'goals') this.db.prepare('DELETE FROM goals').run();
+      else if (table === 'raw_responses') {
+        this.db
+          .prepare('DELETE FROM raw_responses WHERE date_from >= ? AND date_to <= ?')
+          .run(backup.from, backup.to);
+      } else {
+        this.db
+          .prepare(`DELETE FROM ${table} WHERE date >= ? AND date <= ?`)
+          .run(backup.from, backup.to);
+      }
+      for (const r of rows) {
+        const cols = Object.keys(r);
+        this.db
+          .prepare(
+            `INSERT OR REPLACE INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`,
+          )
+          .run(...cols.map((c) => r[c]));
+      }
+    });
+    tx();
+  }
+
+  /** Restore the whole window (all tables) from a backup. */
+  restoreWindow(backup: SyncedWindowBackup): void {
+    for (const t of Object.keys(backup.tables)) this.restoreWindowTable(backup, t);
   }
 
   upsertChannelStats(rows: readonly ChannelStat[]): void {

@@ -337,12 +337,23 @@ export class SyncService {
     // INSERT OR REPLACE alone can't dedupe), while history outside the window survives — the
     // scheduled 14-day sync used to erase everything older (only 14 days were ever available).
     // User-entered data (b2b/hypotheses/decisions/snapshots) is never touched.
+    // Keep an in-memory copy of the window: if the required traffic step fails (e.g. Metrika 429
+    // quota) everything is restored; optional steps that come back empty after a failure get their
+    // own table restored below. A failed sync must never leave less data than before.
+    const backup = this.deps.metrics.snapshotWindow(from, to);
     this.deps.metrics.resetSyncedWindow(from, to);
     this.deps.metrics.upsertGoals(goals);
     // Auto-detect the KPI goal when the caller didn't pin one — so the user never hand-picks a
     // GOAL_ID. An explicit goalId always wins; otherwise pick the payment/purchase goal.
     const resolvedGoalId = goalId ?? selectPrimaryGoal(goals)?.id;
-    const { days, rows } = await this.syncTraffic(from, to, resolvedGoalId);
+    let traffic: { days: number; rows: number };
+    try {
+      traffic = await this.syncTraffic(from, to, resolvedGoalId);
+    } catch (err) {
+      this.deps.metrics.restoreWindow(backup);
+      throw err;
+    }
+    const { days, rows } = traffic;
     const utm = await this.best('utm', () => this.syncUtm(from, to, resolvedGoalId));
     const geo = await this.best('geo-device', () => this.syncGeoDevice(from, to, resolvedGoalId));
     const pages = await this.best('pages', () => this.syncPages(from, to, resolvedGoalId));
@@ -362,6 +373,18 @@ export class SyncService {
     const newReturning = await this.best('new-returning', () =>
       this.syncNewReturning(from, to, resolvedGoalId),
     );
+    // Optional step failed (best() → 0 rows) where the window previously had data → restore it.
+    const optional: Array<[string, number]> = [
+      ['utm_stats', utm.rows],
+      ['geo_device_stats', geo.rows],
+      ['page_stats', pages.rows],
+      ['exit_page_stats', exitPages.rows],
+    ];
+    for (const [table, n] of optional) {
+      if (n === 0 && (backup.tables[table]?.length ?? 0) > 0) {
+        this.deps.metrics.restoreWindowTable(backup, table);
+      }
+    }
     return {
       goals: goals.length,
       resolvedGoalId,

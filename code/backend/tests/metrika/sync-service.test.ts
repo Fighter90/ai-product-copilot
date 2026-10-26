@@ -296,3 +296,62 @@ describe('SyncService.syncAll', () => {
     expect(metrics.listGoals(true).length).toBeGreaterThan(0);
   });
 });
+
+describe('SyncService.syncAll — failure safety (Metrika 429 quota)', () => {
+  it('restores the whole window when the required traffic step fails after the wipe', async () => {
+    await svc.syncAll('2025-01-01', '2025-01-07', 80);
+    const before = {
+      channels: metrics.listChannelStats().length,
+      utm: metrics.listUtmStats().length,
+      pages: metrics.listPageStats().length,
+      goals: metrics.listGoals(true).length,
+    };
+    expect(before.channels).toBeGreaterThan(0);
+
+    const quota = Object.assign(new Error('Metrika 429: quota_requests_by_uid'), { status: 429 });
+    const client = {
+      get: vi.fn(async (path: string) => {
+        if (path.includes('/goals')) return goalsFixture;
+        throw quota;
+      }),
+    } as unknown as MetrikaClient;
+    const failing = new SyncService({
+      client,
+      metrics,
+      counterId: 12345678,
+      archivedThreshold: 77,
+      now: () => 'T',
+    });
+    await expect(failing.syncAll('2025-01-01', '2025-01-07', 80)).rejects.toThrow(/429/);
+
+    expect(metrics.listChannelStats()).toHaveLength(before.channels);
+    expect(metrics.listUtmStats()).toHaveLength(before.utm);
+    expect(metrics.listPageStats()).toHaveLength(before.pages);
+    expect(metrics.listGoals(true)).toHaveLength(before.goals);
+  });
+
+  it('restores an optional table whose step failed (0 rows) when it had data before', async () => {
+    await svc.syncAll('2025-01-01', '2025-01-07', 80);
+    const utmBefore = metrics.listUtmStats().length;
+    expect(utmBefore).toBeGreaterThan(0);
+    const client = {
+      get: vi.fn(async (path: string, params?: { dimensions?: string }) => {
+        if (path.includes('/goals')) return goalsFixture;
+        if (params?.dimensions?.includes('UTMSource')) throw new Error('Metrika 429');
+        return path.includes('bytime') ? bytimeFixture : statFixture;
+      }),
+    } as unknown as MetrikaClient;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const partial = new SyncService({
+      client,
+      metrics,
+      counterId: 12345678,
+      archivedThreshold: 77,
+      now: () => 'T',
+    });
+    const summary = await partial.syncAll('2025-01-01', '2025-01-07', 80);
+    expect(summary.utmRows).toBe(0);
+    expect(metrics.listUtmStats()).toHaveLength(utmBefore);
+    warn.mockRestore();
+  });
+});
