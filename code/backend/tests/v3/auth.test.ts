@@ -53,14 +53,17 @@ describe('isPublicPath', () => {
     }
   });
 
-  it('keeps /api/help/ask behind auth (costs LLM tokens)', () => {
-    expect(isPublicPath('/api/help/ask')).toBe(false);
-    expect(isPublicPath('/api/help/ask/')).toBe(false);
+  it('keeps /api/help/ask public (product decision) — including trailing slash', () => {
+    // Пользовательское решение: ассистент отвечает и гостю. Расход LLM ограничен
+    // IP-limiter в help.ts (20 вопросов / 10 минут) и nginx limit_req.
+    expect(isPublicPath('/api/help/ask')).toBe(true);
+    expect(isPublicPath('/api/help/ask/')).toBe(true);
+    expect(isPublicPath('/api/help/articles')).toBe(true);
   });
 
   it('query strings do not bypass the guard', () => {
     expect(isPublicPath('/api/auth/me?x=1')).toBe(false);
-    expect(isPublicPath('/api/help/ask?lang=en')).toBe(false);
+    expect(isPublicPath('/api/help/ask?lang=en')).toBe(true); // query не обходит, ask теперь публичен
   });
 
   it('everything else under /api requires a session', () => {

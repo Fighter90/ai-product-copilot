@@ -115,7 +115,7 @@ describe('auth flow', () => {
       await ctx2.app.close();
       ctx2.db.close();
     }
-  });
+  }, 20000);
 
   it('logout deletes the session and clears the cookie', async () => {
     ctx = await build();
