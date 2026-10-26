@@ -293,6 +293,8 @@ export const ru = {
   'filters.archivedGoals': 'Архивные цели',
   'filters.archivedGoalsHint':
     'Показывать цели Метрики, которые были удалены или заархивированы. По умолчанию скрыты.',
+  'seg.b2bHint':
+    'Сегмент B2B: трафик Метрики по корпоративным каналам не размечен — B2B учитывается сделками на странице «B2B-сделки» и вкладкой B2B на KPI.',
 
   // filters (ANA-49)
   'flt.open': 'Фильтры',
@@ -608,6 +610,8 @@ export const en: Record<DictKey, string> = {
   'filters.archivedGoals': 'Archived goals',
   'filters.archivedGoalsHint':
     'Show Metrika goals that were deleted or archived. Hidden by default.',
+  'seg.b2bHint':
+    'B2B segment: corporate traffic is not tagged in Metrika — B2B is tracked as deals on the B2B deals page and the B2B tab on KPI.',
 
   // filters (ANA-49)
   'flt.open': 'Filters',

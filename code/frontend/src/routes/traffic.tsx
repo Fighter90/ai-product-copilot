@@ -140,6 +140,7 @@ export function TrafficView({
   stats: ChannelStat[];
   utm: UtmStat[];
 }): JSX.Element {
+  const { segment } = useFilters();
   const { t } = useT();
   const [sankeyOpen, setSankeyOpen] = useState(false);
   if (status === 'pending') return <p className="text-slate-500">Загрузка…</p>;
@@ -160,9 +161,18 @@ export function TrafficView({
 
   return (
     <section className="space-y-6">
-      {cov.low ? (
+      {/* ANA-17: в сегменте без UTM-разметки (напр. b2b) оценка покрытия не имеет смысла */}
+      {cov.low && utm.length > 0 ? (
         <div role="status" className="rounded bg-amber-100 px-3 py-2 text-sm text-amber-800">
           {t('kpi.lowUtmShort', { pct: formatPercent(cov.ratio) })}
+        </div>
+      ) : null}
+      {segment === 'b2b' ? (
+        <div
+          role="status"
+          className="rounded border border-indigo-200 bg-indigo-50/60 px-3 py-2 text-sm text-indigo-800"
+        >
+          {t('seg.b2bHint')}
         </div>
       ) : null}
 

@@ -257,7 +257,7 @@ export function OverviewView({
         </p>
       ) : null}
 
-      {lowUtm ? (
+      {lowUtm && (utm?.length ?? 0) > 0 ? (
         <div role="status" className="rounded bg-amber-100 px-3 py-2 text-sm text-amber-800">
           {t('kpi.lowUtm', { pct: utmCoveragePct })}
         </div>
