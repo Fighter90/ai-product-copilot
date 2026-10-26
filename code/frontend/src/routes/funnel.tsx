@@ -11,37 +11,21 @@ import { EmptyState } from '../components/EmptyState';
 import { channelRows } from '../lib/traffic';
 import { funnelByChannelOption } from '../lib/funnel-by-channel';
 import { byCountry, audienceBarOption } from '../lib/audience';
+import { localizeChart } from '../lib/chart-i18n';
+import { InsightBadge } from '../components/InsightBadge';
+import { useT, channelName, type DictKey } from '../i18n';
+import type { Locale } from '../store/prefs';
 
-/** Insight badge with green/red indicator */
-function InsightBadge({
-  type,
-  text,
-}: {
-  type: 'good' | 'warning' | 'info';
-  text: string;
-}): JSX.Element {
-  const colors =
-    type === 'good'
-      ? 'bg-green-100 text-green-800'
-      : type === 'warning'
-        ? 'bg-red-100 text-red-800'
-        : 'bg-blue-100 text-blue-800';
-  const icon = type === 'good' ? '✅' : type === 'warning' ? '🔴' : 'ℹ️';
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${colors}`}>
-      <span className="mr-1">{icon}</span> {text}
-    </span>
-  );
-}
+type TFn = ReturnType<typeof useT>['t'];
 
 /** Bar chart for channel conversion rates */
-function channelCrOption(channels: ChannelStat[]): object {
+function channelCrOption(channels: ChannelStat[], t: TFn, locale: Locale): object {
   const rows = channelRows(channels)
     .filter((r) => r.visits > 20)
     .sort((a, b) => a.conversionRate - b.conversionRate);
   return {
     title: {
-      text: 'Конверсия каналов (CR заявки/визиты)',
+      text: t('an.fn.chart.channelCr'),
       left: 'center',
       textStyle: { fontSize: 13 },
     },
@@ -54,7 +38,7 @@ function channelCrOption(channels: ChannelStat[]): object {
     },
     grid: { left: 120, right: 16, top: 32, bottom: 28 },
     xAxis: { type: 'value', axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%` } },
-    yAxis: { type: 'category', data: rows.map((r) => r.channel) },
+    yAxis: { type: 'category', data: rows.map((r) => channelName(r.channel, locale)) },
     series: [
       {
         name: 'CR',
@@ -82,6 +66,7 @@ function funnelChartOption(
   reaches: number,
   b2bTickets: number,
   b2bPaid: number,
+  t: TFn,
 ): object {
   return {
     tooltip: {
@@ -90,7 +75,7 @@ function funnelChartOption(
     },
     series: [
       {
-        name: 'Воронка',
+        name: t('an.fn.funnel'),
         type: 'funnel',
         width: '80%',
         left: '10%',
@@ -109,10 +94,10 @@ function funnelChartOption(
           fontSize: 11,
         },
         data: [
-          { name: 'Визиты', value: visits, itemStyle: { color: '#6366f1' } },
-          { name: 'Заявки B2C', value: reaches, itemStyle: { color: '#8b5cf6' } },
+          { name: t('an.col.visits'), value: visits, itemStyle: { color: '#6366f1' } },
+          { name: t('an.fn.b2cApps'), value: reaches, itemStyle: { color: '#8b5cf6' } },
           { name: 'B2B pipeline', value: b2bTickets, itemStyle: { color: '#f59e0b' } },
-          { name: 'Оплачено B2B', value: b2bPaid, itemStyle: { color: '#22c55e' } },
+          { name: t('an.fn.b2bPaid'), value: b2bPaid, itemStyle: { color: '#22c55e' } },
         ],
       },
     ],
@@ -131,6 +116,7 @@ function FunnelLossAnalysis({
   b2bTickets: number;
   b2bPaid: number;
 }): JSX.Element {
+  const { t } = useT();
   const lostAtApplication = visits - reaches;
   const lostAtPipeline = reaches - b2bTickets;
   const lostAtPayment = b2bTickets - b2bPaid;
@@ -140,23 +126,26 @@ function FunnelLossAnalysis({
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 className="mb-2 text-sm font-semibold text-slate-700">Анализ потерь в воронке</h3>
+      <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('an.fn.loss.title')}</h3>
       <div className="space-y-2 text-sm text-slate-600">
         <div className="flex items-center justify-between">
-          <span>Потеряно на этапе заявки:</span>
+          <span>{t('an.fn.loss.application')}</span>
           <span className="font-medium">
-            {formatInt(lostAtApplication)} визитов ({formatPercent(applicationLossRate / 100)})
+            {t('an.fn.loss.visits', {
+              n: formatInt(lostAtApplication),
+              pct: formatPercent(applicationLossRate / 100),
+            })}
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span>Потеряно на этапе B2B pipeline:</span>
+          <span>{t('an.fn.loss.pipeline')}</span>
           <span className="font-medium">
             {formatInt(Math.max(0, lostAtPipeline))} (
             {formatPercent(Math.max(0, pipelineLossRate) / 100)})
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span>Потеряно на этапе оплаты:</span>
+          <span>{t('an.fn.loss.payment')}</span>
           <span className="font-medium">
             {formatInt(Math.max(0, lostAtPayment))} (
             {formatPercent(Math.max(0, paymentLossRate) / 100)})
@@ -181,11 +170,12 @@ export function FunnelView({
   geoDevice: GeoDeviceStat[];
   pages: PageStat[];
 }): JSX.Element {
-  if (status === 'pending') return <p className="text-slate-500">Загрузка…</p>;
+  const { t, locale } = useT();
+  if (status === 'pending') return <p className="text-slate-500">{t('common.loading')}</p>;
   if (status === 'error')
     return (
       <p role="alert" className="text-red-700">
-        Не удалось загрузить данные. Запустите sync и проверьте backend.
+        {t('an.fn.error')}
       </p>
     );
 
@@ -220,21 +210,21 @@ export function FunnelView({
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="text-xs text-slate-500">Визитов</div>
+          <div className="text-xs text-slate-500">{t('an.visitsCount')}</div>
           <div className="text-xl font-bold">{formatInt(visits)}</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="text-xs text-slate-500">Заявок B2C</div>
+          <div className="text-xs text-slate-500">{t('an.fn.b2cAppsCount')}</div>
           <div className="text-xl font-bold">{formatInt(reaches)}</div>
           <div className="text-xs text-slate-500">CR {formatPercent(appConversionRate)}</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
           <div className="text-xs text-slate-500">B2B pipeline</div>
           <div className="text-xl font-bold">{formatInt(b2bTickets)}</div>
-          <div className="text-xs text-slate-500">{b2bDealsCount} сделок</div>
+          <div className="text-xs text-slate-500">{t('an.dealsN', { n: b2bDealsCount })}</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="text-xs text-slate-500">Оплачено B2B</div>
+          <div className="text-xs text-slate-500">{t('an.fn.b2bPaid')}</div>
           <div className="text-xl font-bold">{formatInt(b2bPaid)}</div>
           <div className="text-xs text-slate-500">CR {formatPercent(paymentConversionRate)}</div>
         </div>
@@ -242,43 +232,41 @@ export function FunnelView({
 
       {/* Key insights */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="mb-2 text-sm font-semibold text-slate-700">Ключевые наблюдения</h3>
+        <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('an.keyInsights')}</h3>
         <div className="flex flex-wrap gap-2">
           {appConversionRate > 0.02 ? (
             <InsightBadge
               type="good"
-              text={`CR заявка/визит ${formatPercent(appConversionRate)} — хороший`}
+              text={t('ins.appCrGood', { cr: formatPercent(appConversionRate) })}
             />
           ) : (
             <InsightBadge
               type="warning"
-              text={`CR заявка/визит ${formatPercent(appConversionRate)} — низкий, цель > 2%`}
+              icon="🔴"
+              text={t('ins.appCrLow', { cr: formatPercent(appConversionRate) })}
             />
           )}
           {b2bPaid > 0 ? (
-            <InsightBadge
-              type="good"
-              text={`B2B приносит ${formatInt(b2bPaid)} оплаченных билетов`}
-            />
+            <InsightBadge type="good" text={t('ins.b2bPaid', { n: formatInt(b2bPaid) })} />
           ) : (
-            <InsightBadge type="warning" text="B2B = 0 оплат — нужно запустить активные продажи" />
+            <InsightBadge type="warning" icon="🔴" text={t('ins.b2bZero')} />
           )}
           {b2bDealsCount > 0 ? (
-            <InsightBadge type="info" text={`${b2bDealsCount} B2B сделок в работе`} />
+            <InsightBadge type="info" text={t('ins.b2bDeals', { n: b2bDealsCount })} />
           ) : (
-            <InsightBadge type="warning" text="Нет B2B сделок — воронка не запущена" />
+            <InsightBadge type="warning" icon="🔴" text={t('ins.b2bNoDeals')} />
           )}
         </div>
       </div>
 
       {/* Funnel chart */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="mb-2 text-lg font-semibold">Воронка конверсии</h3>
-        <EChart option={funnelChartOption(visits, reaches, b2bTickets, b2bPaid)} />
+        <h3 className="mb-2 text-lg font-semibold">{t('an.fn.conversionFunnel')}</h3>
+        <EChart option={funnelChartOption(visits, reaches, b2bTickets, b2bPaid, t)} />
         <ChartCaption
-          correct="Ступени визит→заявка строятся из channel_stats; ступени билетов/оплат — из b2b_manual."
-          caveat="Если B2B-данные не введены вручную, нижние ступени воронки занижены и не отражают реальные оплаты."
-          advice="Заполняйте b2b_manual после каждой сделки, чтобы воронка показывала путь до оплаты, а не только до заявки."
+          correct={t('cap.fn.funnel.correct')}
+          caveat={t('cap.fn.funnel.caveat')}
+          advice={t('cap.fn.funnel.advice')}
         />
       </div>
 
@@ -292,34 +280,39 @@ export function FunnelView({
 
       {/* Channel conversion chart */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <EChart option={channelCrOption(stats)} />
+        <EChart option={channelCrOption(stats, t, locale)} />
         <ChartCaption
-          correct="CR = заявки / визиты по каждому каналу, значение ограничено диапазоном [0; 100%]."
-          caveat="При малом числе визитов CR статистически шумный — один-два события сильно меняют процент."
-          advice="Принимайте решения по CR каналов с ≥30 визитами; остальные считайте ориентировочными."
+          correct={t('cap.fn.cr.correct')}
+          caveat={t('cap.fn.cr.caveat')}
+          advice={t('cap.fn.cr.advice')}
         />
       </div>
 
       {/* Funnel by channel: visits vs applications */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="mb-2 text-lg font-semibold">Воронка по каналам: визиты vs заявки</h3>
-        <EChart option={funnelByChannelOption(stats)} />
+        <h3 className="mb-2 text-lg font-semibold">{t('an.fn.byChannel')}</h3>
+        <EChart
+          option={localizeChart(funnelByChannelOption(stats), {
+            series: [t('an.col.visits'), t('an.col.applications')],
+            category: (c) => channelName(c, locale),
+          })}
+        />
         <ChartCaption
-          correct="Рядом стоят столбцы визитов и заявок по топ-каналам — видно, кто доводит до заявки, а кто даёт трафик «вхолостую»."
-          caveat="Показаны только топ-каналы по визитам; «длинный хвост» мелких источников в график не попадает."
-          advice="Канал с большим разрывом «визиты ≫ заявки» — кандидат на гипотезу о качестве трафика."
+          correct={t('cap.fn.byCh.correct')}
+          caveat={t('cap.fn.byCh.caveat')}
+          advice={t('cap.fn.byCh.advice')}
         />
       </div>
 
       {/* Geo breakdown */}
       {geoRows.length > 0 && (
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <h3 className="mb-2 text-lg font-semibold">Конверсия по странам</h3>
-          <EChart option={audienceBarOption(geoRows, 'Заявки по странам')} />
+          <h3 className="mb-2 text-lg font-semibold">{t('an.fn.geo')}</h3>
+          <EChart option={audienceBarOption(geoRows, t('an.fn.geoChart'))} />
           <ChartCaption
-            correct="Заявки в разбивке по странам из geo_device_stats — отражает реальную географию аудитории."
-            caveat="Метрика определяет страну по IP; VPN и мобильные операторы могут искажать гео."
-            advice="Используйте для языка и таргетинга кампаний, но не как единственный признак сегмента."
+            correct={t('cap.fn.geo.correct')}
+            caveat={t('cap.fn.geo.caveat')}
+            advice={t('cap.fn.geo.advice')}
           />
         </div>
       )}
@@ -327,23 +320,29 @@ export function FunnelView({
       {/* B2B deals by stage */}
       {dealsByStage.size > 0 && (
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <h3 className="mb-2 text-sm font-semibold text-slate-700">B2B сделки по этапам</h3>
+          <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('an.fn.stages')}</h3>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {[
-              { stage: 'lead', label: 'Лид', color: 'bg-slate-100' },
-              { stage: 'negotiation', label: 'Переговоры', color: 'bg-amber-100' },
-              { stage: 'invoiced', label: 'Счёт выставлен', color: 'bg-blue-100' },
-              { stage: 'paid', label: 'Оплачено', color: 'bg-green-100' },
-            ].map(({ stage, label, color }) => {
+            {(
+              [
+                { stage: 'lead', label: 'kpi.whatif.b2b.stageLead', color: 'bg-slate-100' },
+                {
+                  stage: 'negotiation',
+                  label: 'kpi.whatif.b2b.stageNegotiation',
+                  color: 'bg-amber-100',
+                },
+                { stage: 'invoiced', label: 'an.fn.stageInvoiced', color: 'bg-blue-100' },
+                { stage: 'paid', label: 'kpi.whatif.b2b.stagePaid', color: 'bg-green-100' },
+              ] satisfies Array<{ stage: string; label: DictKey; color: string }>
+            ).map(({ stage, label, color }) => {
               const data = dealsByStage.get(stage);
               return (
                 <div key={stage} className={`rounded-lg p-3 ${color}`}>
-                  <div className="text-xs text-slate-500">{label}</div>
+                  <div className="text-xs text-slate-500">{t(label)}</div>
                   <div className="text-lg font-bold">
-                    {data ? `${formatInt(data.tickets)} билетов` : '0'}
+                    {data ? t('an.ticketsN', { n: formatInt(data.tickets) }) : '0'}
                   </div>
                   <div className="text-xs text-slate-500">
-                    {data ? `${data.count} сделок` : '0 сделок'}
+                    {t('an.dealsN', { n: data ? data.count : 0 })}
                   </div>
                 </div>
               );
@@ -354,29 +353,37 @@ export function FunnelView({
 
       {/* Page insights */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="mb-2 text-sm font-semibold text-slate-700">Проблемные страницы</h3>
+        <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('an.fn.problemPages')}</h3>
         <div className="space-y-2 text-sm text-slate-600">
           {highBouncePages.length > 0 ? (
             <div>
-              <p className="font-medium text-red-700">Высокий bounce rate (&gt; 40%):</p>
+              <p className="font-medium text-red-700">{t('an.fn.highBounce')}</p>
               <ul className="mt-1 list-inside list-disc">
                 {highBouncePages.slice(0, 5).map((p, i) => (
                   <li key={`${p.page}-${i}`}>
-                    {p.page} — {formatPercent(p.bounceRate)} при {formatInt(p.visits)} визитах
+                    {t('an.fn.pageLine', {
+                      page: p.page,
+                      pct: formatPercent(p.bounceRate),
+                      visits: formatInt(p.visits),
+                    })}
                   </li>
                 ))}
               </ul>
             </div>
           ) : (
-            <p className="text-green-700">✅ Нет страниц с критическим bounce rate.</p>
+            <p className="text-green-700">{`✅ ${t('an.fn.noHighBounce')}`}</p>
           )}
           {lowCrPages.length > 0 && (
             <div>
-              <p className="mt-2 font-medium text-amber-700">Низкий CR (&lt; 0.5%):</p>
+              <p className="mt-2 font-medium text-amber-700">{t('an.fn.lowCr')}</p>
               <ul className="mt-1 list-inside list-disc">
                 {lowCrPages.slice(0, 5).map((p, i) => (
                   <li key={`${p.page}-${i}`}>
-                    {p.page} — {formatPercent(p.conversionRate)} при {formatInt(p.visits)} визитах
+                    {t('an.fn.pageLine', {
+                      page: p.page,
+                      pct: formatPercent(p.conversionRate),
+                      visits: formatInt(p.visits),
+                    })}
                   </li>
                 ))}
               </ul>
@@ -387,14 +394,14 @@ export function FunnelView({
 
       {/* Recommendations */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="mb-2 text-sm font-semibold text-slate-700">Рекомендации</h3>
+        <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('an.recommendations')}</h3>
         <ul className="space-y-2 text-sm text-slate-600">
           {appConversionRate < 0.01 && (
             <li className="flex items-start gap-2">
               <span className="text-red-500">🔴</span>
               <span>
-                <b>CR {formatPercent(appConversionRate)} — критически низкий.</b> Проверить
-                посадочные страницы, упростить форму заявки, добавить социальное доказательство.
+                <b>{t('an.rec.crCritical', { cr: formatPercent(appConversionRate) })}</b>{' '}
+                {t('an.rec.crCriticalBody')}
               </span>
             </li>
           )}
@@ -402,8 +409,7 @@ export function FunnelView({
             <li className="flex items-start gap-2">
               <span className="text-red-500">🔴</span>
               <span>
-                <b>B2B = 0 оплат.</b> Запустить активные продажи: составить список целевых компаний,
-                отправить персональные офферы, назначить встречи.
+                <b>{t('an.rec.b2bZero')}</b> {t('an.fn.rec.b2bZeroBody')}
               </span>
             </li>
           )}
@@ -411,8 +417,8 @@ export function FunnelView({
             <li className="flex items-start gap-2">
               <span className="text-amber-500">🟡</span>
               <span>
-                <b>{highBouncePages.length} страниц с bounce &gt; 40%.</b> Упростить контент,
-                добавить CTA, проверить мобильную версию.
+                <b>{t('an.fn.rec.bounce', { n: highBouncePages.length })}</b>{' '}
+                {t('an.rec.bounceBody')}
               </span>
             </li>
           )}
@@ -420,8 +426,8 @@ export function FunnelView({
             <li className="flex items-start gap-2">
               <span className="text-green-500">🟢</span>
               <span>
-                <b>CR {formatPercent(appConversionRate)} — хороший уровень.</b> Масштабировать
-                трафик на каналы с лучшим CR.
+                <b>{t('an.rec.crGood', { cr: formatPercent(appConversionRate) })}</b>{' '}
+                {t('an.rec.crGoodBody')}
               </span>
             </li>
           )}

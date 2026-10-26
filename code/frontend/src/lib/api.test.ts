@@ -110,3 +110,17 @@ describe('api client', () => {
     await expect(api.hypotheses()).rejects.toBeInstanceOf(ApiError);
   });
 });
+
+describe('readableError', () => {
+  it('replaces proxy HTML pages with a short message, keeps JSON bodies', async () => {
+    const { readableError } = await import('./api');
+    window.localStorage.setItem('pca.locale', 'ru');
+    expect(
+      readableError(504, '<html><head><title>504 Gateway Time-out</title></head></html>'),
+    ).toMatch(/не ответил вовремя \(504\)/);
+    expect(readableError(429, '<html>x</html>')).toMatch(/429/);
+    expect(readableError(400, '{"error":"invalid body"}')).toBe('{"error":"invalid body"}');
+    window.localStorage.setItem('pca.locale', 'en');
+    expect(readableError(503, '<html/>')).toMatch(/temporarily unavailable \(503\)/);
+  });
+});

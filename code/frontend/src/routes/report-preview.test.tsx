@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { ReportSnapshot } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
+import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 vi.mock('../lib/api', () => ({
   api: { buildSnapshot: vi.fn(), generateInsights: vi.fn() },
@@ -135,7 +136,7 @@ describe('ReportPreviewView', () => {
 
   it('shows funnel summary with CR hint when visits > 0', () => {
     render(<ReportPreviewView {...baseProps} snapshot={snapshotWithData} />);
-    expect(screen.getByText('Визиты')).toBeInTheDocument();
+    expect(screen.getAllByText('Визиты')[0]).toBeInTheDocument();
     expect(screen.getByText('Воронка → Заявки')).toBeInTheDocument();
     // CR hint appears in the funnel section - use getAllByText since it also appears in report sections
     expect(screen.getAllByText(/CR 5\.0%/).length).toBeGreaterThanOrEqual(1);
@@ -151,8 +152,63 @@ describe('ReportPreviewView', () => {
     expect(screen.getByText(/2 сделок/)).toBeInTheDocument();
     // «35 билетов» встречается и в B2B-сводке, и в итоговой строке после переименования терминов (ANA-19)
     expect(screen.getAllByText(/35 билетов/).length).toBeGreaterThanOrEqual(1);
-    // "paid" appears in multiple places, so use getAllByText
-    expect(screen.getAllByText(/paid/).length).toBeGreaterThanOrEqual(1);
+    // Deal stages are localised in the preview strip (raw «paid» stays in the report document).
+    expect(screen.getByText('Оплачено: 20 (1)')).toBeInTheDocument();
+    expect(screen.getByText('Лид: 15 (1)')).toBeInTheDocument();
+  });
+});
+
+describe('ReportPreviewView (EN locale)', () => {
+  beforeEach(() => setTestLocale('en'));
+  afterEach(() => setTestLocale('ru'));
+
+  // The full report body comes from the shared Russian report document (identical to DOCX/PDF).
+  const ignore = ['article section'];
+
+  it('renders the empty state without Cyrillic', () => {
+    const { container } = render(<ReportPreviewView {...baseProps} />);
+    expect(screen.getByRole('button', { name: 'Build data snapshot' })).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+
+  it('renders the snapshot summary, draft and AI states without Cyrillic', () => {
+    const { container, rerender } = render(
+      <ReportPreviewView
+        {...baseProps}
+        snapshot={
+          {
+            ...snapshotWithData,
+            generatedHypotheses: { problems: [], solutions: [] },
+          } as ReportSnapshot
+        }
+        prefillSeed={{ segment: 'Students', trouble: 'Drop-off' }}
+      />,
+    );
+    expect(screen.getByText('Hypothesis draft')).toBeInTheDocument();
+    expect(screen.getByText('Paid: 20 (1)')).toBeInTheDocument();
+    expect(screen.getByText('B2C applications')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Rebuild report' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Full report' })).toBeInTheDocument();
+    expectNoCyrillic(container, { ignore });
+
+    rerender(<ReportPreviewView {...baseProps} snapshot={snapshotWithData} insightsPending />);
+    expect(screen.getByText('Preparing data')).toBeInTheDocument();
+    expectNoCyrillic(container, { ignore });
+
+    rerender(
+      <ReportPreviewView
+        {...baseProps}
+        snapshot={snapshotWithData}
+        narrative="Summary: growth."
+        insightsError="no key"
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('AI analysis unavailable: no key');
+    expect(screen.getByRole('button', { name: 'AI analysis generated' })).toHaveAttribute(
+      'title',
+      'AI analysis has already been generated for this snapshot',
+    );
+    expectNoCyrillic(container, { ignore });
   });
 });
 
@@ -180,5 +236,14 @@ describe('ReportPreview (wrapper)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
     expect(await screen.findByText(/AI: рост заявок/)).toBeInTheDocument();
     expect(vi.mocked(api.generateInsights).mock.calls[0]?.[0]).toBe('snap-1');
+  });
+});
+
+describe('ReportFullView markdown tables', () => {
+  it('renders pipe tables as <table>, not raw "| … |" text', async () => {
+    const { ReportFullView } = await import('./report-preview');
+    const { container } = render(<ReportFullView snapshot={snapshotWithData} />);
+    expect(container.querySelector('article table')).not.toBeNull();
+    expect(container.textContent ?? '').not.toMatch(/\|\s*-{3,}\s*\|/);
   });
 });

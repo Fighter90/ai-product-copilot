@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { BookOpen, Search } from 'lucide-react';
 import { v3 } from '../../lib/api-v3';
@@ -8,24 +8,84 @@ import { mdToHtml } from '../../lib/md-to-html';
 import { PublicFooter, PublicHeader } from './PublicChrome';
 import { Skeleton } from '../../components/ui';
 
-/** Extract `##` headings for the "On this page" list. */
-export function headings(md: string): Array<{ id: string; text: string }> {
-  return Array.from(md.matchAll(/^##\s+(.+)$/gm)).map((m, i) => ({
-    id: `h-${i}`,
-    text: m[1]!.trim(),
-  }));
+export interface TocItem {
+  id: string;
+  text: string;
+  /** 2 = markdown `##`, 3 = markdown `###`. */
+  depth: 2 | 3;
 }
 
-/** Inject ids into rendered <h2> so the TOC can link to them. */
-function withAnchors(html: string): string {
-  let i = 0;
-  return html.replace(/<h2>/g, () => `<h2 id="h-${i++}" class="scroll-mt-24">`);
+/**
+ * URL-fragment slug: lower-case letters (any script, Cyrillic included), digits and hyphens only —
+ * so the value is also safe inside an HTML attribute.
+ */
+export function slugify(text: string): string {
+  const slug = text
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .trim()
+    .replace(/[\s-]+/g, '-')
+    .slice(0, 80)
+    .replace(/^-+|-+$/g, '');
+  return slug || 'section';
+}
+
+const decodeEntities = (s: string): string =>
+  s
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&');
+
+/**
+ * Render an article and give every heading a unique slug id. mdToHtml maps markdown `#`→h2,
+ * `##`→h3, `###`→h4; the "On this page" list holds `##`/`###` (h3/h4), built from the same pass
+ * so TOC links and heading ids can never drift apart.
+ */
+export function renderArticle(md: string): { html: string; toc: TocItem[] } {
+  const used = new Set<string>();
+  const toc: TocItem[] = [];
+  const html = mdToHtml(md).replace(
+    /<h([2-6])>([\s\S]*?)<\/h\1>/g,
+    (_m, level: string, inner: string) => {
+      const text = decodeEntities(inner.replace(/<[^>]*>/g, '')).trim();
+      const base = slugify(text);
+      let id = base;
+      for (let n = 2; used.has(id); n++) id = `${base}-${n}`;
+      used.add(id);
+      const depth = Number(level) - 1;
+      if (depth === 2 || depth === 3) toc.push({ id, text, depth });
+      return `<h${level} id="${id}" class="scroll-mt-24">${inner}</h${level}>`;
+    },
+  );
+  return { html, toc };
+}
+
+/** `#%D0%B0` → `а`; empty string when there is no fragment. */
+function hashId(hash: string): string {
+  const raw = hash.replace(/^#/, '');
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function scrollToId(id: string): boolean {
+  const el = id ? document.getElementById(id) : null;
+  if (!el) return false;
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  el.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  return true;
 }
 
 /** Public help centre: contents (left), article (centre), on-this-page (right), full-text search. */
 export function HelpCenter(): JSX.Element {
   const { t, locale } = useT();
   const { slug } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [query, setQuery] = useState('');
   const list = useQuery({
     queryKey: ['help', 'list', locale],
@@ -50,7 +110,59 @@ export function HelpCenter(): JSX.Element {
     return [...m.entries()];
   }, [list.data]);
 
-  const toc = article.data ? headings(article.data.markdown) : [];
+  const markdown = article.data?.markdown;
+  const rendered = useMemo(
+    () => (markdown === undefined ? null : renderArticle(markdown)),
+    [markdown],
+  );
+  const toc = rendered?.toc ?? [];
+
+  // Deep links (/help/x#section), back/forward and in-page anchors: scroll once the heading exists.
+  useEffect(() => {
+    if (rendered) scrollToId(hashId(location.hash));
+  }, [location.hash, rendered]);
+
+  // Client-side navigation keeps the scroll position — start a new article at the top.
+  const lastPath = useRef(location.pathname);
+  useEffect(() => {
+    if (lastPath.current === location.pathname) return;
+    lastPath.current = location.pathname;
+    if (!location.hash) window.scrollTo?.({ top: 0 });
+  }, [location.pathname, location.hash]);
+
+  /**
+   * Event delegation for links inside rendered markdown and the TOC: same-origin links go through
+   * the router (no full reload), `#anchors` scroll smoothly and update the URL hash. Modified
+   * clicks, middle clicks, `target=_blank`, downloads and other origins keep native behaviour.
+   */
+  const onLinkClick = (e: MouseEvent<HTMLElement>): void => {
+    if (e.defaultPrevented || e.button !== 0) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target instanceof Element ? e.target.closest('a') : null;
+    if (!a || !e.currentTarget.contains(a)) return;
+    const target = a.getAttribute('target');
+    if ((target && target !== '_self') || a.hasAttribute('download')) return;
+    const href = a.getAttribute('href');
+    if (!href) return;
+    const here = `${window.location.origin}${location.pathname}${location.search}`;
+    let url: URL;
+    try {
+      url = new URL(href, here);
+    } catch {
+      return;
+    }
+    if (url.origin !== window.location.origin) return;
+    e.preventDefault();
+    const samePage = url.pathname === location.pathname && url.search === location.search;
+    if (samePage) {
+      if (!url.hash) return;
+      // Same hash again: the location won't change, so scroll here; otherwise the effect does.
+      if (hashId(url.hash) === hashId(location.hash)) scrollToId(hashId(url.hash));
+      else navigate({ pathname: location.pathname, search: location.search, hash: url.hash });
+      return;
+    }
+    navigate(url.pathname + url.search + url.hash);
+  };
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -134,10 +246,11 @@ export function HelpCenter(): JSX.Element {
           <article className="min-w-0">
             {article.isLoading && <Skeleton className="h-96" />}
             {article.isError && <div className="text-muted">{t('help.notFound')}</div>}
-            {article.data && (
+            {rendered && (
               <div
                 className="ai-narrative max-w-3xl animate-fade-in"
-                dangerouslySetInnerHTML={{ __html: withAnchors(mdToHtml(article.data.markdown)) }}
+                onClick={onLinkClick}
+                dangerouslySetInnerHTML={{ __html: rendered.html }}
               />
             )}
             <div className="mt-12 max-w-3xl rounded-card border border-accent/30 bg-accent/5 p-4 text-sm">
@@ -151,9 +264,9 @@ export function HelpCenter(): JSX.Element {
                 <div className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
                   {t('help.onThisPage')}
                 </div>
-                <ul className="space-y-1.5 text-sm">
+                <ul className="space-y-1.5 text-sm" onClick={onLinkClick}>
                   {toc.map((h) => (
-                    <li key={h.id}>
+                    <li key={h.id} className={h.depth === 3 ? 'pl-3 text-xs' : undefined}>
                       <a href={`#${h.id}`} className="text-muted hover:text-accent">
                         {h.text}
                       </a>

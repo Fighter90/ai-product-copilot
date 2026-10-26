@@ -490,7 +490,7 @@ export function Landing(): JSX.Element {
             <div data-speed="-0.12" className="absolute right-[12%] top-[24%]">
               <div className="card animate-float w-56 p-4 shadow-2xl backdrop-blur">
                 <div className="text-[10px] uppercase tracking-widest text-muted">
-                  reg_step1 · заказы
+                  {locale === 'en' ? 'reg_step1 · orders' : 'reg_step1 · заказы'}
                 </div>
                 <div className="mt-1 text-3xl font-bold">15</div>
                 <div className="mt-2 flex h-8 items-end gap-1">
@@ -507,9 +507,11 @@ export function Landing(): JSX.Element {
             <div data-speed="-0.25" className="absolute right-[30%] top-[58%]">
               <div className="card animate-float w-48 p-4 shadow-2xl [animation-delay:1.5s]">
                 <div className="text-[10px] uppercase tracking-widest text-muted">
-                  CR визит → заказ
+                  {locale === 'en' ? 'CR visit → order' : 'CR визит → заказ'}
                 </div>
-                <div className="mt-1 text-3xl font-bold text-accent">1,3%</div>
+                <div className="mt-1 text-3xl font-bold text-accent">
+                  {locale === 'en' ? '1.3%' : '1,3%'}
+                </div>
               </div>
             </div>
             <div data-speed="-0.06" className="absolute right-[6%] top-[62%]">
@@ -517,7 +519,9 @@ export function Landing(): JSX.Element {
                 <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted">
                   <Bot className="h-3 w-3" /> AI · ICE 512
                 </div>
-                <div className="mt-1 text-sm leading-snug">Упростить корзину для мобильных</div>
+                <div className="mt-1 text-sm leading-snug">
+                  {locale === 'en' ? 'Simplify the mobile cart' : 'Упростить корзину для мобильных'}
+                </div>
               </div>
             </div>
           </div>

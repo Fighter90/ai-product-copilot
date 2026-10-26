@@ -3,6 +3,7 @@ import { screen, fireEvent, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { CabinetLayout } from './CabinetLayout';
 import { renderWithProviders } from '../test/utils';
+import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 // API-клиент CabinetLayout/фильтров мокаем целиком: сеть в тестах не нужна.
 vi.mock('../lib/api-v3', () => ({
@@ -10,6 +11,7 @@ vi.mock('../lib/api-v3', () => ({
     notifications: vi.fn(async () => []),
     readNotifications: vi.fn(async () => ({ ok: true as const })),
     updateMe: vi.fn(async () => ({ user: null })),
+    changePassword: vi.fn(async () => ({ ok: true as const })),
   },
 }));
 
@@ -128,5 +130,50 @@ describe('CabinetLayout', () => {
     // Соседний пункт не активен.
     const overview = within(drawerNav).getByRole('link', { name: 'Обзор' });
     expect(overview).not.toHaveAttribute('aria-current');
+  });
+});
+
+describe('CabinetLayout user menu', () => {
+  it('opens «Сменить пароль» from the user menu and closes the menu on Escape', () => {
+    renderCabinet();
+    const trigger = screen.getByRole('button', { name: 'Меню пользователя' });
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const menu = screen.getByRole('menu');
+    expect(within(menu).getByText('analyst@pca.io')).toBeInTheDocument();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Сменить пароль' }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByLabelText('Текущий пароль')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('signs out from the menu and closes it on an outside click', () => {
+    renderCabinet();
+    fireEvent.click(screen.getByRole('button', { name: 'Меню пользователя' }));
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Меню пользователя' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Выйти' }));
+    expect(logout).toHaveBeenCalled();
+  });
+
+  it('header, menu and password dialog have no Cyrillic in English (user data aside)', () => {
+    setTestLocale('en');
+    try {
+      renderCabinet();
+      fireEvent.click(screen.getByRole('button', { name: 'User menu' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Change password' }));
+      // The mocked user name «Тест Аналитик» is data, not UI copy.
+      expectNoCyrillic(document.body, { ignore: ['[data-user-data]'] });
+    } finally {
+      setTestLocale('ru');
+    }
   });
 });

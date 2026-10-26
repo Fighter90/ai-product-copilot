@@ -2,14 +2,20 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { formatInt } from '../lib/format';
+import { fmtDate, translate, useT } from '../i18n';
+import type { Locale } from '../store/prefs';
 
 type QueryStatus = 'pending' | 'error' | 'success';
 
-/** 'YYYY-MM-DD' → 'dd.MM' (или 'dd.MM.yyyy'). Строковый парсинг — без сдвигов часовых поясов. */
-function formatDay(iso: string, withYear = false): string {
+/**
+ * 'YYYY-MM-DD' → 'dd.MM' (или 'dd.MM.yyyy'; в EN — 'dd/MM/yyyy'). Строковый парсинг — без
+ * сдвигов часовых поясов.
+ */
+function formatDay(iso: string, withYear = false, locale: Locale = 'ru'): string {
   const [y, m, d] = iso.split('-');
   if (!y || !m || !d) return iso;
-  return withYear ? `${d}.${m}.${y}` : `${d}.${m}`;
+  const sep = locale === 'ru' ? '.' : '/';
+  return withYear ? `${d}${sep}${m}${sep}${y}` : `${d}${sep}${m}`;
 }
 
 /**
@@ -17,9 +23,15 @@ function formatDay(iso: string, withYear = false): string {
  * Год указывается один раз в конце, если годы совпадают; иначе у обеих дат —
  * «Отчёт 25.12.2025–10.01.2026».
  */
-export function formatSnapshotName(dateFrom: string, dateTo: string): string {
+export function formatSnapshotName(
+  dateFrom: string,
+  dateTo: string,
+  locale: Locale = 'ru',
+): string {
   const sameYear = dateFrom.slice(0, 4) === dateTo.slice(0, 4);
-  return `Отчёт ${formatDay(dateFrom, !sameYear)}–${formatDay(dateTo, true)}`;
+  return translate(locale, 'hist.name', {
+    range: `${formatDay(dateFrom, !sameYear, locale)}–${formatDay(dateTo, true, locale)}`,
+  });
 }
 
 /** Короткий UUID для прослеживаемости к данным: 'a1b2c3d4…'. */
@@ -35,11 +47,12 @@ export function HistoryView({
   status: QueryStatus;
   snapshots: Array<{ id: string; generatedAt: string; dateFrom: string; dateTo: string }>;
 }): JSX.Element {
-  if (status === 'pending') return <p className="text-slate-500">Загрузка…</p>;
+  const { t, locale } = useT();
+  if (status === 'pending') return <p className="text-slate-500">{t('common.loading')}</p>;
   if (status === 'error')
     return (
       <p role="alert" className="text-red-700">
-        Не удалось загрузить историю отчётов.
+        {t('hist.error')}
       </p>
     );
 
@@ -49,21 +62,21 @@ export function HistoryView({
         role="status"
         className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500"
       >
-        Отчётов пока нет. Сформируйте срез данных на странице Report.
+        {t('hist.empty')}
       </div>
     );
 
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-semibold">История отчётов</h2>
-      <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="История отчётов">
+      <h2 className="text-lg font-semibold">{t('hist.title')}</h2>
+      <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={t('hist.title')}>
         <table className="w-full min-w-[32rem] text-sm">
           <thead>
             <tr className="text-left text-slate-500">
-              <th className="py-1">Отчёт</th>
-              <th>Сформирован</th>
-              <th>Период</th>
-              <th>Действие</th>
+              <th className="py-1">{t('hist.col.report')}</th>
+              <th>{t('hist.col.generated')}</th>
+              <th>{t('hist.col.period')}</th>
+              <th>{t('hist.col.action')}</th>
             </tr>
           </thead>
           <tbody>
@@ -74,22 +87,22 @@ export function HistoryView({
                     to={`/app/report?snapshot=${s.id}`}
                     className="font-medium text-indigo-700 hover:underline"
                   >
-                    {formatSnapshotName(s.dateFrom, s.dateTo)}
+                    {formatSnapshotName(s.dateFrom, s.dateTo, locale)}
                   </Link>
                   <div className="font-mono text-[10px] text-slate-400" title={s.id}>
                     {shortSnapshotId(s.id)}
                   </div>
                 </td>
-                <td>{new Date(s.generatedAt).toLocaleString('ru-RU')}</td>
+                <td>{fmtDate(s.generatedAt, locale, true)}</td>
                 <td>
-                  {s.dateFrom} — {s.dateTo}
+                  {fmtDate(s.dateFrom, locale)} — {fmtDate(s.dateTo, locale)}
                 </td>
                 <td>
                   <Link
                     to={`/app/report?snapshot=${s.id}`}
                     className="rounded bg-indigo-600 px-3 py-1 text-xs text-white hover:bg-indigo-700"
                   >
-                    Просмотреть
+                    {t('hist.view')}
                   </Link>
                 </td>
               </tr>
@@ -97,7 +110,9 @@ export function HistoryView({
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-500">Всего отчётов: {formatInt(snapshots.length)}</p>
+      <p className="text-xs text-slate-500">
+        {t('hist.total', { n: formatInt(snapshots.length) })}
+      </p>
     </section>
   );
 }

@@ -61,7 +61,7 @@ export function LiveBar({
         type="button"
         className="btn-ghost px-2.5 py-1 text-xs"
         onClick={onRefresh}
-        aria-label="refresh"
+        aria-label={t('an.live.refresh')}
       >
         <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
       </button>

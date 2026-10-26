@@ -1,0 +1,103 @@
+import { describe, it, expect, afterEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import type { B2bDeal } from '@pca/shared';
+import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
+import { GoalsView } from './goals';
+
+const deals: B2bDeal[] = [
+  {
+    id: 1,
+    company: 'Acme',
+    tickets: 20,
+    stage: 'paid',
+    dateAdded: '2025-01-01',
+    amountRub: 100000,
+  },
+  { id: 2, company: 'Beta', tickets: 10, stage: 'invoiced', dateAdded: '2025-01-02' },
+  { id: 3, company: 'Gamma', tickets: 5, stage: 'negotiation', dateAdded: '2025-01-03' },
+  { id: 4, company: 'Delta', tickets: 5, stage: 'lead', dateAdded: '2025-01-04' },
+];
+
+const points = [
+  { date: '2025-01-01', visits: 100, reaches: 2 },
+  { date: '2025-01-02', visits: 120, reaches: 3 },
+];
+
+function view(over: Partial<Parameters<typeof GoalsView>[0]> = {}) {
+  return render(
+    <GoalsView
+      status="success"
+      target={300}
+      b2cApplications={40}
+      b2bPaid={20}
+      b2bPipeline={20}
+      totalVisits={2000}
+      overallCR={0.015}
+      deals={deals}
+      points={points}
+      to="2025-01-02"
+      {...over}
+    />,
+  );
+}
+
+describe('KPI & forecast (GoalsView)', () => {
+  afterEach(() => setTestLocale('ru'));
+
+  it('keeps the Russian wording in ru', () => {
+    view();
+    expect(screen.getByText('Цели ProductCamp')).toBeInTheDocument();
+    expect(screen.getByText('Главная цель: 300 платных билетов')).toBeInTheDocument();
+    expect(screen.getByText('Выставлен счёт')).toBeInTheDocument();
+  });
+
+  it('renders without Cyrillic in English (application goal, B2B paid)', () => {
+    setTestLocale('en');
+    const { container } = view();
+    expect(screen.getByText('ProductCamp goals')).toBeInTheDocument();
+    expect(screen.getByText('B2C applications (Metrika): 40')).toBeInTheDocument();
+    expect(screen.getByText('Invoiced')).toBeInTheDocument();
+    expect(screen.getByText(/below the 2% target/)).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+
+  it('renders without Cyrillic in English (purchase goal, no B2B, low CR)', () => {
+    setTestLocale('en');
+    const { container } = view({
+      b2bPaid: 0,
+      deals: [],
+      overallCR: 0.005,
+      goalLabel: {
+        title: 'Заказов',
+        isPaid: true,
+        showApplicationsCaveat: false,
+        showEstimate: false,
+      },
+    });
+    expect(screen.getByText('Orders (Metrika): 40')).toBeInTheDocument();
+    expect(screen.getByText(/critically low/)).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+
+  it('keeps loading and error states in English', () => {
+    setTestLocale('en');
+    const { container, rerender } = view({ status: 'pending' });
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    rerender(
+      <GoalsView
+        status="error"
+        target={300}
+        b2cApplications={0}
+        b2bPaid={0}
+        b2bPipeline={0}
+        totalVisits={0}
+        overallCR={0}
+        deals={[]}
+        points={[]}
+        to="2025-01-02"
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Failed to load goal data.');
+    expectNoCyrillic(container);
+  });
+});

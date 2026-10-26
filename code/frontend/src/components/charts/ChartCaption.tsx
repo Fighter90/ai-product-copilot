@@ -1,3 +1,5 @@
+import { useT } from '../../i18n';
+
 /**
  * Caption block rendered under a chart: what the chart shows correctly, what to be
  * careful about (data caveats), and a recommendation. Keeps every chart self-explanatory
@@ -13,20 +15,21 @@ export interface ChartCaptionProps {
 }
 
 export function ChartCaption({ correct, caveat, advice }: ChartCaptionProps): JSX.Element {
+  const { t } = useT();
   return (
     <dl className="mt-3 space-y-1 rounded-md bg-slate-50 px-3 py-2 text-xs leading-relaxed">
       <div className="flex gap-2">
-        <dt className="shrink-0 font-medium text-green-700">🟢 Корректно</dt>
+        <dt className="shrink-0 font-medium text-green-700">{`🟢 ${t('cap.correct')}`}</dt>
         <dd className="text-slate-600">{correct}</dd>
       </div>
       {caveat ? (
         <div className="flex gap-2">
-          <dt className="shrink-0 font-medium text-red-700">🔴 Внимание</dt>
+          <dt className="shrink-0 font-medium text-red-700">{`🔴 ${t('cap.caveat')}`}</dt>
           <dd className="text-slate-600">{caveat}</dd>
         </div>
       ) : null}
       <div className="flex gap-2">
-        <dt className="shrink-0 font-medium text-indigo-700">💡 Рекомендация</dt>
+        <dt className="shrink-0 font-medium text-indigo-700">{`💡 ${t('cap.advice')}`}</dt>
         <dd className="text-slate-600">{advice}</dd>
       </div>
     </dl>

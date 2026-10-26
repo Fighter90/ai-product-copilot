@@ -5,7 +5,10 @@ import { Link } from 'react-router-dom';
 import type { ChannelStat, UtmStat } from '@pca/shared';
 import { api } from '../lib/api';
 import { useFilters } from '../store/filters';
-import { useT } from '../i18n';
+import { useT, channelName } from '../i18n';
+import type { Locale } from '../store/prefs';
+import { InsightBadge } from '../components/InsightBadge';
+import { localizeChart } from '../lib/chart-i18n';
 import { formatInt, formatPercent } from '../lib/format';
 import {
   channelBarOption,
@@ -23,43 +26,28 @@ import { EmptyState } from '../components/EmptyState';
 import { filterBySegment, filterUtmBySegment } from '../lib/segment-filter';
 import { buildHypothesisUrl } from '../lib/hypothesis-prefill';
 
-/** Insight badge with green/red indicator */
-function InsightBadge({
-  type,
-  text,
-}: {
-  type: 'good' | 'warning' | 'info';
-  text: string;
-}): JSX.Element {
-  const colors =
-    type === 'good'
-      ? 'bg-green-100 text-green-800'
-      : type === 'warning'
-        ? 'bg-red-100 text-red-800'
-        : 'bg-blue-100 text-blue-800';
-  const icon = type === 'good' ? '✅' : type === 'warning' ? '⚠️' : 'ℹ️';
-  return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${colors}`}>
-      {icon} {text}
-    </span>
-  );
-}
+type TFn = ReturnType<typeof useT>['t'];
 
 /** Compute channel insights */
-function computeChannelInsights(stats: ChannelStat[]): JSX.Element[] {
+function computeChannelInsights(stats: ChannelStat[], t: TFn, locale: Locale): JSX.Element[] {
   const insights: JSX.Element[] = [];
   const rows = channelRows(stats);
   const overallCR =
     rows.reduce((a, r) => a + r.goalReaches, 0) / rows.reduce((a, r) => a + r.visits, 0) || 0;
 
   for (const r of rows) {
+    const channel = channelName(r.channel, locale);
     // High CR - good
     if (r.conversionRate > overallCR * 1.5 && r.visits > 30) {
       insights.push(
         <InsightBadge
           key={`cr-good-${r.channel}`}
           type="good"
-          text={`${r.channel}: CR ${formatPercent(r.conversionRate)} — выше среднего (${formatPercent(overallCR)}), масштабировать`}
+          text={t('ins.channelCrAbove', {
+            channel,
+            cr: formatPercent(r.conversionRate),
+            avg: formatPercent(overallCR),
+          })}
         />,
       );
     }
@@ -69,17 +57,24 @@ function computeChannelInsights(stats: ChannelStat[]): JSX.Element[] {
         <span key={`cr-bad-${r.channel}`} className="inline-flex items-center gap-1">
           <InsightBadge
             type="warning"
-            text={`${r.channel}: CR ${formatPercent(r.conversionRate)} — ниже среднего при ${r.visits} визитах, проверить качество`}
+            text={t('ins.channelCrBelow', {
+              channel,
+              cr: formatPercent(r.conversionRate),
+              visits: formatInt(r.visits),
+            })}
           />
           <Link
             to={buildHypothesisUrl({
-              segment: r.channel,
-              trouble: 'низкая конверсия',
-              evidence: `CR ${formatPercent(r.conversionRate)} при ${formatInt(r.visits)} визитах`,
+              segment: channel,
+              trouble: t('ins.lowConversion'),
+              evidence: t('ins.crEvidence', {
+                cr: formatPercent(r.conversionRate),
+                visits: formatInt(r.visits),
+              }),
             })}
             className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
           >
-            → гипотеза
+            {t('ins.toHypothesis')}
           </Link>
         </span>,
       );
@@ -90,7 +85,7 @@ function computeChannelInsights(stats: ChannelStat[]): JSX.Element[] {
 }
 
 /** Compute UTM insights */
-function computeUtmInsights(utm: UtmStat[], stats: ChannelStat[]): JSX.Element[] {
+function computeUtmInsights(utm: UtmStat[], stats: ChannelStat[], t: TFn): JSX.Element[] {
   const insights: JSX.Element[] = [];
   const cov = utmCoverage(stats, utm);
 
@@ -99,7 +94,7 @@ function computeUtmInsights(utm: UtmStat[], stats: ChannelStat[]): JSX.Element[]
       <InsightBadge
         key="utm-good"
         type="good"
-        text={`UTM покрытие ${formatPercent(cov.ratio)} — хорошая атрибуция`}
+        text={t('ins.utmGood', { pct: formatPercent(cov.ratio) })}
       />,
     );
   } else {
@@ -107,7 +102,7 @@ function computeUtmInsights(utm: UtmStat[], stats: ChannelStat[]): JSX.Element[]
       <InsightBadge
         key="utm-bad"
         type="warning"
-        text={`UTM покрытие ${formatPercent(cov.ratio)} — часть трафика не атрибутирована`}
+        text={t('ins.utmBad', { pct: formatPercent(cov.ratio) })}
       />,
     );
   }
@@ -121,7 +116,10 @@ function computeUtmInsights(utm: UtmStat[], stats: ChannelStat[]): JSX.Element[]
         <InsightBadge
           key="utm-top"
           type="good"
-          text={`Лучшая кампания: ${topCR.utmSource}/${topCR.utmCampaign} — CR ${formatPercent(topCR.conversionRate)}`}
+          text={t('ins.utmTop', {
+            campaign: `${topCR.utmSource}/${topCR.utmCampaign}`,
+            cr: formatPercent(topCR.conversionRate),
+          })}
         />,
       );
     }
@@ -141,13 +139,13 @@ export function TrafficView({
   utm: UtmStat[];
 }): JSX.Element {
   const { segment } = useFilters();
-  const { t } = useT();
+  const { t, locale } = useT();
   const [sankeyOpen, setSankeyOpen] = useState(false);
-  if (status === 'pending') return <p className="text-slate-500">Загрузка…</p>;
+  if (status === 'pending') return <p className="text-slate-500">{t('common.loading')}</p>;
   if (status === 'error')
     return (
       <p role="alert" className="text-red-700">
-        Не удалось загрузить трафик.
+        {t('an.tr.error')}
       </p>
     );
 
@@ -157,8 +155,9 @@ export function TrafficView({
   const cov = utmCoverage(stats, utm);
   const rows = channelRows(stats);
   const utmTable = utmRows(utm);
-  const channelInsights = computeChannelInsights(stats);
-  const utmInsights = computeUtmInsights(utm, stats);
+  const channelInsights = computeChannelInsights(stats, t, locale);
+  const utmInsights = computeUtmInsights(utm, stats, t);
+  const channelLabel = (c: string) => channelName(c, locale);
 
   return (
     <section className="space-y-6">
@@ -178,46 +177,55 @@ export function TrafficView({
       ) : null}
 
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="mb-2 text-lg font-semibold">Каналы — визиты</h2>
-        <EChart option={channelBarOption(rows)} />
+        <h2 className="mb-2 text-lg font-semibold">{t('an.tr.channelsVisits')}</h2>
+        <EChart option={localizeChart(channelBarOption(rows), { category: channelLabel })} />
         {channelInsights.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">{channelInsights}</div>
         )}
         <ChartCaption
-          correct="Визиты по каналам берутся из channel_stats и прослеживаются до raw_responses (Метрика)."
-          caveat="Показаны только визиты — высокий трафик не равен продажам (заявка ≠ оплата)."
-          advice="Сверяйте с графиком «визиты vs заявки» ниже; масштабируйте каналы с высоким CR, а не с высоким трафиком."
+          correct={t('cap.tr.visits.correct')}
+          caveat={t('cap.tr.visits.caveat')}
+          advice={t('cap.tr.visits.advice')}
         />
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="mb-2 text-lg font-semibold">
-          Каналы — визиты vs заявки (какой трафик конвертит)
-        </h2>
-        <EChart option={channelVisitsVsReachesOption(rows)} />
+        <h2 className="mb-2 text-lg font-semibold">{t('an.tr.visitsVsApps')}</h2>
+        <EChart
+          option={localizeChart(channelVisitsVsReachesOption(rows), {
+            series: [t('an.col.visits'), t('an.col.applications')],
+            category: channelLabel,
+          })}
+        />
         <ChartCaption
-          correct="Две серии (визиты и достижения цели) на одной оси — видно реальную конверсию каждого канала."
-          caveat="Достижения цели — это заявки, а не оплаченные билеты; оплаты по B2B вносятся вручную."
-          advice="Фокусируйтесь на каналах, где заявки растут быстрее визитов — это потенциал роста оплат."
+          correct={t('cap.tr.vs.correct')}
+          caveat={t('cap.tr.vs.caveat')}
+          advice={t('cap.tr.vs.advice')}
         />
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold">Поток: источник → кампания → заявки</h2>
+          <h2 className="text-lg font-semibold">{t('an.tr.flow')}</h2>
           <button
             type="button"
             onClick={() => setSankeyOpen(true)}
             className="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
           >
-            ⛶ Развернуть на весь экран
+            {`⛶ ${t('an.tr.fullscreen')}`}
           </button>
         </div>
-        <EChart option={utmSankeyOption(utm)} height={460} />
+        <EChart
+          option={utmSankeyOption(utm, {
+            terminal: t('an.col.applications'),
+            noUtm: t('an.noUtm'),
+          })}
+          height={460}
+        />
         <ChartCaption
-          correct="Толщина связей: источник→кампания — по визитам, кампания→«Заявки» — по достижениям целей (из utm_stats)."
-          caveat="Трафик без UTM-меток («(none)») не атрибутируется и выпадает из потока."
-          advice="Размечайте все кампании UTM-метками, чтобы покрытие было ≥70% и поток отражал реальную атрибуцию."
+          correct={t('cap.tr.flow.correct')}
+          caveat={t('cap.tr.flow.caveat')}
+          advice={t('cap.tr.flow.advice')}
         />
       </div>
 
@@ -227,21 +235,25 @@ export function TrafficView({
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <Dialog.Panel className="flex h-[90vh] w-[95vw] max-w-[1600px] flex-col rounded-lg bg-white p-4 shadow-xl">
             <div className="mb-2 flex items-center justify-between">
-              <Dialog.Title className="text-lg font-semibold">
-                Поток: источник → кампания → заявки
-              </Dialog.Title>
+              <Dialog.Title className="text-lg font-semibold">{t('an.tr.flow')}</Dialog.Title>
               <button
                 type="button"
                 onClick={() => setSankeyOpen(false)}
-                aria-label="Закрыть"
+                aria-label={t('common.close')}
                 className="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100"
               >
-                ✕ Закрыть
+                {`✕ ${t('common.close')}`}
               </button>
             </div>
             <div className="min-h-0 flex-1">
               {sankeyOpen && (
-                <EChart option={utmSankeyOption(utm)} height={window.innerHeight * 0.78} />
+                <EChart
+                  option={utmSankeyOption(utm, {
+                    terminal: t('an.col.applications'),
+                    noUtm: t('an.noUtm'),
+                  })}
+                  height={window.innerHeight * 0.78}
+                />
               )}
             </div>
           </Dialog.Panel>
@@ -249,21 +261,21 @@ export function TrafficView({
       </Dialog>
 
       <div className="space-y-2">
-        <h2 className="text-lg font-semibold">Каналы — таблица</h2>
+        <h2 className="text-lg font-semibold">{t('an.tr.table')}</h2>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-slate-500">
-              <th className="py-1">Канал</th>
-              <th>Визиты</th>
-              <th>Пользователи</th>
-              <th>Заявки</th>
+              <th className="py-1">{t('an.col.channel')}</th>
+              <th>{t('an.col.visits')}</th>
+              <th>{t('an.col.users')}</th>
+              <th>{t('an.col.applications')}</th>
               <th>CR</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.channel} className="border-t border-slate-100">
-                <td className="py-1">{r.channel}</td>
+                <td className="py-1">{channelLabel(r.channel)}</td>
                 <td>{formatInt(r.visits)}</td>
                 <td>{formatInt(r.users)}</td>
                 <td>{formatInt(r.goalReaches)}</td>
@@ -276,9 +288,7 @@ export function TrafficView({
 
       <div className="space-y-2">
         <h2 className="text-lg font-semibold">
-          <Tooltip text="UTM-покрытие = визиты с UTM-метками / все визиты за период. Чем выше, тем точнее атрибуция источников.">
-            UTM-разбивка
-          </Tooltip>
+          <Tooltip text={t('an.tr.utmHint')}>{t('an.tr.utm')}</Tooltip>
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[40rem] text-sm">
@@ -287,8 +297,8 @@ export function TrafficView({
                 <th className="py-1">Source</th>
                 <th>Medium</th>
                 <th>Campaign</th>
-                <th>Визиты</th>
-                <th>Заявки</th>
+                <th>{t('an.col.visits')}</th>
+                <th>{t('an.col.applications')}</th>
                 <th>CR</th>
               </tr>
             </thead>

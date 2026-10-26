@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { ChannelStat, UtmStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
+import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 vi.mock('../lib/api', () => ({ api: { channels: vi.fn(), utm: vi.fn() } }));
 import { api } from '../lib/api';
@@ -93,5 +94,38 @@ describe('Traffic (data wrapper)', () => {
     renderWithProviders(<Traffic />);
     expect(await screen.findByText('Каналы — визиты')).toBeInTheDocument();
     expect(screen.getByText('UTM-разбивка')).toBeInTheDocument();
+  });
+});
+
+describe('TrafficView (en locale)', () => {
+  afterEach(() => setTestLocale('ru'));
+
+  it('renders headings, tables, insights and captions without Cyrillic', () => {
+    setTestLocale('en');
+    const { container } = renderWithProviders(
+      <TrafficView
+        status="success"
+        stats={[
+          stat({ channel: 'Direct traffic', visits: 400, goalReaches: 40 }),
+          stat({ channel: 'Ad traffic', visits: 300, goalReaches: 1 }),
+          stat({ channel: 'podcast', visits: 100, goalReaches: 1 }),
+        ]}
+        utm={[utmStat({ visits: 100, goalReaches: 10, conversionRate: 0.1 })]}
+      />,
+    );
+    expect(screen.getByText('Channels — visits')).toBeInTheDocument();
+    expect(screen.getByText('UTM breakdown')).toBeInTheDocument();
+    // Channel names go through channelName(): «Ad traffic» → «Ads».
+    expect(screen.getByRole('cell', { name: 'Ads' })).toBeInTheDocument();
+    expect(screen.getAllByText(/Caution/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/below average with 300 visits/)).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+
+  it('keeps the error state in English', () => {
+    setTestLocale('en');
+    const { container } = render(<TrafficView status="error" stats={[]} utm={[]} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Failed to load traffic.');
+    expectNoCyrillic(container);
   });
 });

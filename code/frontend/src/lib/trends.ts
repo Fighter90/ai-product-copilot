@@ -62,15 +62,18 @@ export function weekOverWeek(stats: ChannelStat[]): Wow {
 }
 
 /** ECharts line option: daily visits + goal reaches over the period. */
-export function trendsOption(series: DailyPoint[]): object {
+export function trendsOption(
+  series: DailyPoint[],
+  labels: { visits: string; reaches: string } = { visits: 'Визиты', reaches: 'Заявки' },
+): object {
   return {
     tooltip: { trigger: 'axis', ...intTooltip },
-    legend: { data: ['Визиты', 'Заявки'] },
+    legend: { data: [labels.visits, labels.reaches] },
     xAxis: { type: 'category', data: series.map((p) => p.date) },
     yAxis: { type: 'value' },
     series: [
-      { name: 'Визиты', type: 'line', smooth: true, data: series.map((p) => p.visits) },
-      { name: 'Заявки', type: 'line', smooth: true, data: series.map((p) => p.reaches) },
+      { name: labels.visits, type: 'line', smooth: true, data: series.map((p) => p.visits) },
+      { name: labels.reaches, type: 'line', smooth: true, data: series.map((p) => p.reaches) },
     ],
   };
 }

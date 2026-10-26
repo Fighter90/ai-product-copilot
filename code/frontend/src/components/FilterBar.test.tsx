@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FilterBar } from './FilterBar';
 import { useFilters } from '../store/filters';
+import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 const initial = useFilters.getState();
 beforeEach(() => useFilters.setState(initial, true));
@@ -220,5 +221,16 @@ describe('FilterBar', () => {
       'aria-expanded',
       'false',
     );
+  });
+});
+
+describe('FilterBar (en locale)', () => {
+  afterEach(() => setTestLocale('ru'));
+
+  it('renders dates, segment hints and the archived toggle without Cyrillic', () => {
+    setTestLocale('en');
+    const { container } = render(<FilterBar />);
+    expect(screen.getByText(/consumer channels only/)).toBeInTheDocument();
+    expectNoCyrillic(container);
   });
 });

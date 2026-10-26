@@ -1,16 +1,18 @@
 import type { ReactNode } from 'react';
+import { useT } from '../i18n';
 
 /**
  * Accessible info tooltip: an ⓘ trigger with an aria-label, plus the explanatory text always in the
  * DOM (shown on hover/focus). No JS state, no new dependency — group-hover/focus-within CSS only.
  */
 export function Tooltip({ text, children }: { text: string; children?: ReactNode }): JSX.Element {
+  const { t } = useT();
   return (
     <span className="group relative inline-flex items-center gap-1">
       {children}
       <button
         type="button"
-        aria-label={`Подсказка: ${text}`}
+        aria-label={t('an.tooltip', { text })}
         className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] leading-none text-slate-500 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
         i

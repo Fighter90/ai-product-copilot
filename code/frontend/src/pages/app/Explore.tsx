@@ -6,6 +6,8 @@ import { useT, channelName, type DictKey } from '../../i18n';
 import { DataGrid, type GridColumn, type GridKind } from '../../components/DataGrid';
 import { Card, ErrorBox, PageHeader, Skeleton } from '../../components/ui';
 import { EChart } from '../../components/charts/EChart';
+import { useFilters } from '../../store/filters';
+import { visibleGoals } from '../../lib/archived-goals';
 import { LiveBar, NotConfigured, isNotConfigured, useLiveParams } from './live-common';
 
 const PRESETS: Array<[string, DictKey]> = [
@@ -22,29 +24,29 @@ const PRESETS: Array<[string, DictKey]> = [
   ['hours', 'explore.hours'],
 ];
 
-const METRIC: Record<string, { ru: string; en: string; kind: GridKind; total?: 'sum' | 'avg' }> = {
-  'ym:s:visits': { ru: 'Визиты', en: 'Visits', kind: 'int', total: 'sum' },
-  'ym:s:users': { ru: 'Посетители', en: 'Users', kind: 'int', total: 'sum' },
-  'ym:s:bounceRate': { ru: 'Отказы', en: 'Bounce', kind: 'pct', total: 'avg' },
-  'ym:s:pageDepth': { ru: 'Глубина', en: 'Depth', kind: 'float', total: 'avg' },
-  'ym:s:avgVisitDurationSeconds': { ru: 'Время, м:с', en: 'Time, m:s', kind: 'sec', total: 'avg' },
+const METRIC: Record<string, { key: DictKey; kind: GridKind; total?: 'sum' | 'avg' }> = {
+  'ym:s:visits': { key: 'an.ex.m.visits', kind: 'int', total: 'sum' },
+  'ym:s:users': { key: 'an.ex.m.users', kind: 'int', total: 'sum' },
+  'ym:s:bounceRate': { key: 'an.ex.m.bounce', kind: 'pct', total: 'avg' },
+  'ym:s:pageDepth': { key: 'an.ex.m.depth', kind: 'float', total: 'avg' },
+  'ym:s:avgVisitDurationSeconds': { key: 'an.ex.m.time', kind: 'sec', total: 'avg' },
 };
-const DIM: Record<string, { ru: string; en: string }> = {
-  'ym:s:lastsignTrafficSource': { ru: 'Источник', en: 'Source' },
-  'ym:s:lastsignSearchEngine': { ru: 'Поисковая система', en: 'Search engine' },
-  'ym:s:lastsignUTMSource': { ru: 'utm_source', en: 'utm_source' },
-  'ym:s:lastsignUTMMedium': { ru: 'utm_medium', en: 'utm_medium' },
-  'ym:s:lastsignUTMCampaign': { ru: 'utm_campaign', en: 'utm_campaign' },
-  'ym:s:startURLPath': { ru: 'Страница входа', en: 'Entry page' },
-  'ym:s:endURLPath': { ru: 'Страница выхода', en: 'Exit page' },
-  'ym:s:deviceCategory': { ru: 'Устройство', en: 'Device' },
-  'ym:s:operatingSystemRoot': { ru: 'ОС', en: 'OS' },
-  'ym:s:browser': { ru: 'Браузер', en: 'Browser' },
-  'ym:s:regionCountry': { ru: 'Страна', en: 'Country' },
-  'ym:s:regionCity': { ru: 'Город', en: 'City' },
-  'ym:s:lastsignReferalSource': { ru: 'Сайт', en: 'Site' },
-  'ym:s:date': { ru: 'Дата', en: 'Date' },
-  'ym:s:hour': { ru: 'Час', en: 'Hour' },
+const DIM: Record<string, DictKey | string> = {
+  'ym:s:lastsignTrafficSource': 'an.ex.d.source',
+  'ym:s:lastsignSearchEngine': 'an.ex.d.engine',
+  'ym:s:lastsignUTMSource': 'utm_source',
+  'ym:s:lastsignUTMMedium': 'utm_medium',
+  'ym:s:lastsignUTMCampaign': 'utm_campaign',
+  'ym:s:startURLPath': 'an.ex.d.entry',
+  'ym:s:endURLPath': 'an.ex.d.exit',
+  'ym:s:deviceCategory': 'an.ex.d.device',
+  'ym:s:operatingSystemRoot': 'an.ex.d.os',
+  'ym:s:browser': 'an.ex.d.browser',
+  'ym:s:regionCountry': 'an.ex.d.country',
+  'ym:s:regionCity': 'an.ex.d.city',
+  'ym:s:lastsignReferalSource': 'an.ex.d.site',
+  'ym:s:date': 'an.ex.d.date',
+  'ym:s:hour': 'an.ex.d.hour',
 };
 
 type Row = LiveTable['rows'][number];
@@ -55,6 +57,7 @@ export function Explore(): JSX.Element {
   const navigate = useNavigate();
   const { t, locale } = useT();
   const p = useLiveParams();
+  const showArchived = useFilters((s) => s.showArchived);
   const [goal, setGoal] = useState<number | undefined>(undefined);
   const goals = useQuery({
     queryKey: ['live', 'goals', p.from, p.to, p.test],
@@ -73,7 +76,8 @@ export function Explore(): JSX.Element {
     ? d.columns.map((c, i) => {
         const nd = d.columns.filter((x) => !x.startsWith('ym:s:goal') && !METRIC[x]).length;
         if (i < nd) {
-          const label = DIM[c]?.[locale] ?? c;
+          const dim = DIM[c];
+          const label = dim ? (dim.startsWith('an.') ? t(dim as DictKey) : dim) : c;
           return {
             id: `d${i}`,
             header: label,
@@ -91,14 +95,12 @@ export function Explore(): JSX.Element {
         return {
           id: `m${vi}`,
           header: isGoalReaches
-            ? locale === 'ru'
-              ? 'Цель: достижения'
-              : 'Goal: reaches'
+            ? t('an.ex.goalReaches')
             : isGoalCr
-              ? locale === 'ru'
-                ? 'Цель: конверсия'
-                : 'Goal: conversion'
-              : (m?.[locale] ?? c),
+              ? t('an.ex.goalCr')
+              : m
+                ? t(m.key)
+                : c,
           kind: isGoalReaches ? 'int' : isGoalCr ? 'pct' : (m?.kind ?? 'float'),
           total: isGoalReaches ? 'sum' : m?.total,
           accessor: (r: Row) => r.values[vi] ?? 0,
@@ -199,7 +201,7 @@ export function Explore(): JSX.Element {
                 className="input w-auto max-w-[260px]"
               >
                 <option value="">{t('explore.goalColumn')}: reg_step1</option>
-                {(goals.data?.goals ?? [])
+                {visibleGoals(goals.data?.goals ?? [], showArchived)
                   .filter((g) => g.status !== 'dead')
                   .sort((a, b) => b.reaches - a.reaches)
                   .map((g) => (

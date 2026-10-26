@@ -5,6 +5,8 @@ import { v3, type LiveGoal } from '../../lib/api-v3';
 import { useT, fmtNum } from '../../i18n';
 import { DataGrid, type GridColumn } from '../../components/DataGrid';
 import { Card, ErrorBox, Hint, Kpi, PageHeader, Pill, Skeleton } from '../../components/ui';
+import { useFilters } from '../../store/filters';
+import { isArchived, visibleGoals } from '../../lib/archived-goals';
 import { LiveBar, NotConfigured, isNotConfigured, useLiveParams } from './live-common';
 
 type Status = 'all' | LiveGoal['status'] | 'dup';
@@ -14,6 +16,7 @@ export function Goals(): JSX.Element {
   const { t, locale } = useT();
   const navigate = useNavigate();
   const p = useLiveParams();
+  const showArchived = useFilters((s) => s.showArchived);
   const [status, setStatus] = useState<Status>('all');
   const q = useQuery({
     queryKey: ['live', 'goals', p.from, p.to, p.test],
@@ -21,7 +24,10 @@ export function Goals(): JSX.Element {
     refetchInterval: p.refetchInterval,
   });
 
-  const goals = q.data?.goals ?? [];
+  const all = q.data?.goals ?? [];
+  // The global «Архивные цели» checkbox: archived goals are hidden unless it is on.
+  const goals = useMemo(() => visibleGoals(all, showArchived), [all, showArchived]);
+  const hiddenArchived = all.length - goals.length;
   const counts = useMemo(
     () => ({
       live: goals.filter((g) => g.status === 'live').length,
@@ -46,6 +52,7 @@ export function Goals(): JSX.Element {
         <span className="flex items-center gap-2">
           <span className="truncate font-medium">{g.name}</span>
           {g.duplicateOf.length > 0 && <Pill tone="amber">{t('goals.duplicate')}</Pill>}
+          {isArchived(g) && <Pill tone="neutral">{t('an.goals.archived')}</Pill>}
         </span>
       ),
     },
@@ -121,6 +128,11 @@ export function Goals(): JSX.Element {
         }
       />
       {q.error && <ErrorBox error={q.error} onRetry={() => void q.refetch()} />}
+      {hiddenArchived > 0 && (
+        <p role="note" className="text-xs text-muted">
+          {t('an.goals.archivedHidden', { n: hiddenArchived })}
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {q.data ? (
           <>
@@ -128,15 +140,7 @@ export function Goals(): JSX.Element {
             <Kpi label={t('goals.status.live')} value={counts.live} />
             <Kpi label={t('goals.status.sleeping')} value={counts.sleeping} />
             <Kpi label={t('goals.status.dead')} value={counts.dead} />
-            <Kpi
-              label={t('goals.duplicate')}
-              value={counts.dups}
-              hint={
-                locale === 'ru'
-                  ? 'Цели с одинаковым типом и условиями — считают одно и то же.'
-                  : 'Goals with identical type and conditions.'
-              }
-            />
+            <Kpi label={t('goals.duplicate')} value={counts.dups} hint={t('an.goals.dupHint')} />
           </>
         ) : (
           Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-24" />)
@@ -146,13 +150,7 @@ export function Goals(): JSX.Element {
         title={
           <>
             {t('goals.summary', counts)}
-            <Hint
-              text={
-                locale === 'ru'
-                  ? 'Живая — достижения за 14 дней; спящая — нет за 14, есть за 90; мёртвая — нет за 90 дней. Δ — к предыдущему периоду той же длины.'
-                  : 'Live — reaches in 14 days; sleeping — none in 14 but some in 90; dead — none in 90 days. Δ vs the previous period of equal length.'
-              }
-            />
+            <Hint text={t('an.goals.statusHint')} />
           </>
         }
       >

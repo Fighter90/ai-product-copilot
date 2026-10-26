@@ -35,6 +35,11 @@ describe('summarizeChannels', () => {
     expect(kpi).toEqual({ target: 300, applications: 5, b2bPaid: 0, paid: 0, gap: 300 });
   });
 
+  it('uses the admin KPI target when passed (target + gap follow it)', () => {
+    const kpi = summarizeChannels([stat({ goalReaches: 5 })], [], true, 120);
+    expect(kpi).toEqual({ target: 120, applications: 5, b2bPaid: 0, paid: 5, gap: 115 });
+  });
+
   it('purchase goal (goalIsPaid): goal reaches count as payments toward the target', () => {
     // 52 purchase reaches + 0 B2B paid → paid 52, gap 248 (matches Goals page & snapshot).
     const kpi = summarizeChannels([stat({ goalReaches: 52 })], [], true);

@@ -1,6 +1,6 @@
-import { useFilters, formatDateLabel, isoDaysAgo, type Segment } from '../store/filters';
+import { useFilters, isoDaysAgo, type Segment } from '../store/filters';
 import { useRef, useState } from 'react';
-import { useT } from '../i18n';
+import { useT, fmtDate } from '../i18n';
 
 const PRESETS = [7, 14, 30, 90, 365] as const;
 const MAX_DAYS = 365; // Maximum allowed period: 1 year
@@ -27,7 +27,7 @@ function rangeError(from: string, to: string): 'empty' | 'order' | 'future' | 'm
 
 /** Sticky global filter header: period presets, custom date picker, segment toggle, archived toggle. */
 export function FilterBar(): JSX.Element {
-  const { t } = useT();
+  const { t, locale } = useT();
   const { from, to, segment, showArchived, setRange, setSegment, toggleArchived, preset } =
     useFilters();
   const [showCustom, setShowCustom] = useState(false);
@@ -76,7 +76,7 @@ export function FilterBar(): JSX.Element {
     <header className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white/90 px-4 py-2 backdrop-blur sm:px-6 sm:py-3">
       {/* Date display */}
       <span className="hidden font-mono text-sm text-slate-600 sm:block">
-        {formatDateLabel(from)} — {formatDateLabel(to)}
+        {fmtDate(from, locale)} — {fmtDate(to, locale)}
       </span>
 
       {/* Mobile trigger: opens the controls as a bottom-sheet (<768px only) */}
@@ -220,13 +220,13 @@ export function FilterBar(): JSX.Element {
           {/* Tooltip (hover and keyboard focus) */}
           <div className="absolute left-0 top-full z-20 mt-1 hidden w-64 rounded border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow group-hover:block group-focus-within:block">
             <p>
-              <b>B2C:</b> только потребительские каналы (Direct, Search, Social и др.)
+              <b>B2C:</b> {t('an.flt.segB2c')}
             </p>
             <p className="mt-1">
-              <b>B2C+B2B:</b> все каналы (по умолчанию)
+              <b>B2C+B2B:</b> {t('an.flt.segAll')}
             </p>
             <p className="mt-1">
-              <b>B2B:</b> только B2B-каналы (если настроены)
+              <b>B2B:</b> {t('an.flt.segB2b')}
             </p>
           </div>
         </div>

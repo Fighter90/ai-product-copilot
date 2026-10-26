@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mdToHtml } from './md-to-html';
+import { classifyLink, mdToHtml } from './md-to-html';
 
 describe('mdToHtml', () => {
   it('renders ### headings as h4', () => {
@@ -150,5 +150,179 @@ describe('mdToHtml', () => {
     expect(mdToHtml('![x](https://evil.com/x.png)')).not.toContain('<img');
     expect(mdToHtml('![x](data:text/html;base64,AAA)')).not.toContain('<img');
     expect(mdToHtml('![x](javascript:alert(1))')).not.toContain('<img');
+  });
+
+  describe('links', () => {
+    it('renders internal /help and /app links same-origin (no target)', () => {
+      expect(mdToHtml('see [Цели](/help/goals) now')).toContain(
+        '<p>see <a href="/help/goals">Цели</a> now</p>',
+      );
+      expect(mdToHtml('[KPI](/app/kpi?tab=b2b&x=1#top)')).toContain(
+        '<a href="/app/kpi?tab=b2b&amp;x=1#top">KPI</a>',
+      );
+      expect(mdToHtml('[up](#h-0)')).toContain('<a href="#h-0">up</a>');
+    });
+
+    it('opens external http(s) links in a new tab with rel=noopener noreferrer', () => {
+      expect(mdToHtml('[Метрика](https://metrika.yandex.ru/list)')).toContain(
+        '<a href="https://metrika.yandex.ru/list" target="_blank" rel="noopener noreferrer">Метрика</a>',
+      );
+      expect(mdToHtml('[w](http://example.com/a_(b))')).toContain(
+        'href="http://example.com/a_(b)"',
+      );
+    });
+
+    it('renders mailto links without target', () => {
+      expect(mdToHtml('[write](mailto:team@example.com)')).toContain(
+        '<a href="mailto:team@example.com">write</a>',
+      );
+    });
+
+    it('supports an optional "title" and emphasis inside the label', () => {
+      const html = mdToHtml('[**bold** link](/help/a "Title")');
+      expect(html).toContain('<a href="/help/a"><strong>bold</strong> link</a>');
+    });
+
+    it('keeps emphasis markers in URLs intact (href is never formatted)', () => {
+      expect(mdToHtml('[x](/help/a*b*c) and *em*')).toContain(
+        '<a href="/help/a*b*c">x</a> and <em>em</em>',
+      );
+    });
+
+    it('rejects dangerous / unsupported schemes → plain text, no <a>', () => {
+      const bad = [
+        '[x](javascript:alert(1))',
+        '[x](JaVaScRiPt:alert(1))',
+        '[x](data:text/html;base64,PHNjcmlwdD4=)',
+        '[x](vbscript:msgbox)',
+        '[x](//evil.com/path)',
+        '[x](/\\evil.com)',
+        '[x](&#106;avascript:alert(1))',
+        '[x](relative/path)',
+        '[x](https://user@evil.com)',
+      ];
+      for (const md of bad) {
+        const html = mdToHtml(md);
+        expect(html, md).not.toContain('<a');
+        expect(html, md).toContain('x');
+      }
+    });
+
+    it('cannot break out of the href attribute', () => {
+      const html = mdToHtml('[x](/a"onmouseover="alert(1))');
+      expect(html).not.toMatch(/<a[^>]*\sonmouseover=/);
+      expect(html).toContain('&quot;');
+      const html2 = mdToHtml('[<img src=x onerror=alert(1)>](/help)');
+      expect(html2).not.toContain('<img');
+      expect(html2).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    });
+
+    it('does not turn a blocked image into a link', () => {
+      expect(mdToHtml('![x](https://evil.com/x.png)')).not.toContain('<a');
+    });
+  });
+
+  describe('inline code', () => {
+    it('keeps code literal: no emphasis or links inside, HTML escaped', () => {
+      const html = mdToHtml('use `a*b*c` and `[x](/help)` and `<script>`');
+      expect(html).toContain('<code>a*b*c</code>');
+      expect(html).toContain('<code>[x](/help)</code>');
+      expect(html).toContain('<code>&lt;script&gt;</code>');
+      expect(html).not.toContain('<em>');
+      expect(html).not.toContain('<a ');
+    });
+
+    it('allows code inside a link label', () => {
+      expect(mdToHtml('[`GOAL_ID`](/help/admin)')).toContain(
+        '<a href="/help/admin"><code>GOAL_ID</code></a>',
+      );
+    });
+  });
+
+  describe('fenced code blocks', () => {
+    it('renders ``` blocks literally with a language class, HTML escaped', () => {
+      const md = '```ts\nconst a = 1 < 2 && "x";\n# not a heading\n- not a list\n**not bold**\n```';
+      const html = mdToHtml(md);
+      expect(html).toContain(
+        '<pre class="md-code"><code class="language-ts">const a = 1 &lt; 2 &amp;&amp; &quot;x&quot;;\n# not a heading\n- not a list\n**not bold**</code></pre>',
+      );
+      expect(html).not.toContain('<h2>');
+      expect(html).not.toContain('<li>');
+    });
+
+    it('supports ~~~ fences, preserves indentation and blank lines', () => {
+      const html = mdToHtml('~~~\n  indented\n\nafter blank\n~~~\ntext');
+      expect(html).toContain('<pre class="md-code"><code>  indented\n\nafter blank</code></pre>');
+      expect(html).toContain('<p>text</p>');
+    });
+
+    it('a ``` line inside a ~~~ block does not close it; unclosed fences run to the end', () => {
+      expect(mdToHtml('~~~\n```\nx\n~~~')).toContain('<code>```\nx</code>');
+      expect(mdToHtml('```\nunclosed <b>')).toContain('<code>unclosed &lt;b&gt;</code></pre>');
+    });
+
+    it('escapes a </code></pre> breakout attempt and sanitises the language', () => {
+      const html = mdToHtml('```js"onload=x\n</code></pre><script>alert(1)</script>\n```');
+      expect(html).not.toContain('<script>');
+      expect(html).toContain('class="language-js"');
+      expect(html).toContain('&lt;/code&gt;&lt;/pre&gt;&lt;script&gt;');
+    });
+
+    it('flushes an open list / table before the block', () => {
+      const html = mdToHtml('- item\n```\ncode\n```');
+      expect(html.indexOf('</ul>')).toBeLessThan(html.indexOf('<pre'));
+      const t = mdToHtml('| A |\n|---|\n| 1 |\n```\ncode\n```');
+      expect(t.indexOf('</table>')).toBeLessThan(t.indexOf('<pre'));
+    });
+
+    it('```inline``` on one line is not a fence', () => {
+      expect(mdToHtml('```inline```')).not.toContain('<pre');
+    });
+  });
+
+  describe('tables', () => {
+    it('skips spaced / aligned separator rows and keeps empty cells in place', () => {
+      const html = mdToHtml('| A | B | C |\n| :--- | :---: | ---: |\n| 1 |  | 3 |');
+      expect(html).not.toContain(':---');
+      expect(html).toContain('<td>1</td>\n<td></td>\n<td>3</td>');
+    });
+
+    it('formats links and code inside cells', () => {
+      const html = mdToHtml('| Ссылка |\n|---|\n| [Справка](/help/a) `x` |');
+      expect(html).toContain('<td><a href="/help/a">Справка</a> <code>x</code></td>');
+    });
+  });
+
+  it('strips the private-use slot sentinel from input (no slot spoofing)', () => {
+    const html = mdToHtml('\uE0000\uE000 [a](/help)');
+    expect(html).not.toContain('\uE000');
+    expect(html).toContain('<a href="/help">a</a>');
+  });
+});
+
+describe('classifyLink', () => {
+  it('classifies allowed targets', () => {
+    expect(classifyLink('/help/x')).toBe('internal');
+    expect(classifyLink('#anchor')).toBe('internal');
+    expect(classifyLink('https://a.ru')).toBe('external');
+    expect(classifyLink('HTTP://a.ru/x')).toBe('external');
+    expect(classifyLink('mailto:a@b.ru')).toBe('mailto');
+  });
+
+  it('rejects everything else', () => {
+    for (const url of [
+      '',
+      'javascript:x',
+      '//a.ru',
+      '/\\a.ru',
+      'ftp://a',
+      'a/b',
+      '/a b',
+      '/a\tb',
+      'https://',
+      'mailto://x',
+    ]) {
+      expect(classifyLink(url), JSON.stringify(url)).toBeNull();
+    }
   });
 });

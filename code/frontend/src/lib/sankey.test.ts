@@ -119,3 +119,27 @@ describe('utmSankeyOption', () => {
     expect(o.tooltip.valueFormatter(1290)).toContain('1');
   });
 });
+
+describe('utmSankeyOption labels (i18n)', () => {
+  it('renames the terminal and no-UTM nodes, keeps formatter functions and prefixes', () => {
+    const rows = [
+      {
+        date: '2026-10-01',
+        utmSource: '',
+        utmMedium: '',
+        utmCampaign: '',
+        visits: 10,
+        goalReaches: 2,
+      },
+    ] as unknown as Parameters<typeof utmSankeyOption>[0];
+    const ru = JSON.stringify(utmSankeyOption(rows));
+    const en = utmSankeyOption(rows, { terminal: 'Applications', noUtm: 'no UTM' }) as {
+      series: Array<{ label?: { formatter?: unknown } }>;
+    };
+    const enStr = JSON.stringify(en);
+    expect(ru).toContain('Заявки');
+    expect(enStr).toContain('Applications');
+    expect(enStr).not.toMatch(/Заявки|без UTM/);
+    expect(typeof en.series[0]?.label?.formatter).toBe('function');
+  });
+});

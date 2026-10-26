@@ -47,19 +47,28 @@ function shortLabel(page: string): string {
 }
 
 /** ECharts horizontal bar: visits per page (top 8), with visits + reaches series. */
-export function pageBarOption(rows: PageRow[], title: string): object {
+export function pageBarOption(
+  rows: PageRow[],
+  title: string,
+  labels: { visits: string; reaches: string } = { visits: 'Визиты', reaches: 'Заявки' },
+): object {
   const top = rows.slice(0, 8).reverse();
   return {
     title: { text: title, left: 'center', textStyle: { fontSize: 13 } },
     tooltip: { trigger: 'axis', ...intTooltip },
-    legend: { data: ['Визиты', 'Заявки'], bottom: 0 },
+    legend: { data: [labels.visits, labels.reaches], bottom: 0 },
     grid: { left: 140, right: 16, top: 32, bottom: 28 },
     xAxis: { type: 'value' },
     yAxis: { type: 'category', data: top.map((r) => shortLabel(r.page)) },
     series: [
-      { name: 'Визиты', type: 'bar', data: top.map((r) => r.visits), label: intBarLabel('right') },
       {
-        name: 'Заявки',
+        name: labels.visits,
+        type: 'bar',
+        data: top.map((r) => r.visits),
+        label: intBarLabel('right'),
+      },
+      {
+        name: labels.reaches,
         type: 'bar',
         data: top.map((r) => r.goalReaches),
         label: intBarLabel('right'),

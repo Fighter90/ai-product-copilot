@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { ChannelStat, B2bDeal } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
+import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 vi.mock('../lib/api', () => ({
   api: {
@@ -83,5 +84,65 @@ describe('Funnel (wrapper)', () => {
     vi.mocked(api.b2b).mockRejectedValue(new Error('boom'));
     renderWithProviders(<Funnel />);
     expect(await screen.findByRole('alert')).toBeInTheDocument();
+  });
+});
+
+describe('FunnelView (en locale)', () => {
+  afterEach(() => setTestLocale('ru'));
+
+  const allStages: B2bDeal[] = [
+    { id: 1, company: 'Acme', tickets: 30, stage: 'paid', dateAdded: '2025-01-01' },
+    { id: 2, company: 'Beta', tickets: 10, stage: 'lead', dateAdded: '2025-01-01' },
+    { id: 3, company: 'Gamma', tickets: 5, stage: 'negotiation', dateAdded: '2025-01-01' },
+    { id: 4, company: 'Delta', tickets: 5, stage: 'invoiced', dateAdded: '2025-01-01' },
+  ];
+
+  it('renders cards, insights, stages, problem pages and recommendations without Cyrillic', () => {
+    setTestLocale('en');
+    const { container } = render(
+      <FunnelView
+        status="success"
+        stats={[{ ...stats[0]!, goalReaches: 5, conversionRate: 0.005 }]}
+        deals={allStages}
+        geoDevice={[
+          {
+            date: '2025-01-01',
+            country: 'Germany',
+            device: 'desktop',
+            visits: 100,
+            users: 90,
+            goalReaches: 3,
+            conversionRate: 0.03,
+          },
+        ]}
+        pages={[
+          {
+            date: '2025-01-01',
+            page: '/lp',
+            visits: 200,
+            users: 180,
+            bounceRate: 0.6,
+            goalReaches: 0,
+            conversionRate: 0,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText('Conversion funnel')).toBeInTheDocument();
+    expect(screen.getByText('B2B deals by stage')).toBeInTheDocument();
+    expect(screen.getByText('Invoiced')).toBeInTheDocument();
+    expect(screen.getByText(/Application\/visit CR 0.5% — low/)).toBeInTheDocument();
+    expect(screen.getByText('Recommendations')).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+
+  it('renders the no-B2B branch in English', () => {
+    setTestLocale('en');
+    const { container } = render(
+      <FunnelView status="success" stats={stats} deals={[]} geoDevice={[]} pages={[]} />,
+    );
+    expect(screen.getByText(/No B2B deals/)).toBeInTheDocument();
+    expect(screen.getByText(/No pages with a critical bounce rate/)).toBeInTheDocument();
+    expectNoCyrillic(container);
   });
 });

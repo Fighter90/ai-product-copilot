@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AuthProvider, RequireAuth, RequireAdmin, useAuth } from './AuthContext';
 import { v3, type CabinetUser } from '../lib/api-v3';
+import { ApiError } from '../lib/api';
 import { usePrefs } from '../store/prefs';
 
 vi.mock('../lib/api-v3', () => ({
@@ -46,8 +47,11 @@ function LocationProbe(): JSX.Element {
   return <span data-testid="path">{loc.pathname + loc.search}</span>;
 }
 
+const qcRef: { current: QueryClient | null } = { current: null };
+
 function renderWith(initialPath = '/'): void {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  qcRef.current = qc;
   render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[initialPath]}>
@@ -110,15 +114,62 @@ describe('AuthProvider / useAuth', () => {
     await waitFor(() => expect(screen.getByTestId('isAdmin')).toHaveTextContent('false'));
   });
 
+  it('me 503 (rate limit / deploy) → retried, user restored, no redirect to /login', async () => {
+    vi.mocked(v3.me)
+      .mockRejectedValueOnce(new ApiError(503, 'Service Unavailable'))
+      .mockResolvedValue({ user: adminUser });
+    renderWith();
+    expect(screen.queryByTestId('login-page')).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('admin@x.ru'), {
+      timeout: 4000,
+    });
+    expect(vi.mocked(v3.me).mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('me failure → anonymous user (гость)', async () => {
-    vi.mocked(v3.me).mockRejectedValue(new Error('401'));
+    vi.mocked(v3.me).mockRejectedValue(new ApiError(401, 'Unauthorized'));
     renderWith();
     await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
     expect(screen.getByTestId('user')).toHaveTextContent('null');
   });
 
+  it('me 200 {user:null} (новый контракт для гостя) → аноним без ошибки и без события 401', async () => {
+    vi.mocked(v3.me).mockResolvedValue({ user: null });
+    const onUnauthorized = vi.fn();
+    window.addEventListener('pca:unauthorized', onUnauthorized);
+    renderWith();
+    await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
+    expect(screen.getByTestId('user')).toHaveTextContent('null');
+    expect(screen.queryByTestId('login-page')).toBeNull(); // публичная страница — без редиректа
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    window.removeEventListener('pca:unauthorized', onUnauthorized);
+  });
+
+  it('сессия истекла (me: user → {user:null}) в кабинете → /login?next=…&expired=1', async () => {
+    vi.mocked(v3.me).mockResolvedValueOnce({ user: adminUser }).mockResolvedValue({ user: null });
+    window.history.pushState({}, '', '/app');
+    renderWith('/app');
+    await waitFor(() => expect(screen.getByTestId('secret')).toBeInTheDocument());
+    await act(async () => {
+      await qcRef.current!.invalidateQueries({ queryKey: ['auth', 'me'] });
+    });
+    await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
+    expect(screen.getByTestId('path').textContent).toBe('/login?next=%2Fapp&expired=1');
+  });
+
+  it('событие 401 на публичной странице чистит сессию, но не уводит на /login', async () => {
+    vi.mocked(v3.me).mockResolvedValue({ user: adminUser });
+    renderWith('/');
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('admin@x.ru'));
+    act(() => {
+      window.dispatchEvent(new CustomEvent('pca:unauthorized'));
+    });
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('null'));
+    expect(screen.getByTestId('path').textContent).toBe('/');
+  });
+
   it('login кладёт пользователя в кэш и применяет locale из профиля', async () => {
-    vi.mocked(v3.me).mockRejectedValue(new Error('anonymous'));
+    vi.mocked(v3.me).mockRejectedValue(new ApiError(401, 'Unauthorized'));
     vi.mocked(v3.login).mockResolvedValue({ user: analystUser });
     renderWith();
     await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
@@ -162,7 +213,14 @@ describe('AuthProvider / useAuth', () => {
 
 describe('RequireAuth / RequireAdmin', () => {
   it('аноним на /app → редирект на /login?next=/app', async () => {
-    vi.mocked(v3.me).mockRejectedValue(new Error('401'));
+    vi.mocked(v3.me).mockRejectedValue(new ApiError(401, 'Unauthorized'));
+    renderWith('/app');
+    await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
+    expect(screen.getByTestId('path').textContent).toBe('/login?next=%2Fapp');
+  });
+
+  it('гость с me 200 {user:null} на /app → редирект на /login?next=/app', async () => {
+    vi.mocked(v3.me).mockResolvedValue({ user: null });
     renderWith('/app');
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
     expect(screen.getByTestId('path').textContent).toBe('/login?next=%2Fapp');

@@ -190,7 +190,7 @@ const q = (p: Record<string, string | number | undefined | boolean>) => {
 };
 
 export const v3 = {
-  me: () => http<{ user: CabinetUser }>('/auth/me'),
+  me: () => http<{ user: CabinetUser | null }>('/auth/me'),
   login: (email: string, password: string) =>
     http<{ user: CabinetUser }>('/auth/login', { method: 'POST', ...json({ email, password }) }),
   logout: () => http<{ ok: true }>('/auth/logout', { method: 'POST', ...json({}) }),
@@ -287,10 +287,89 @@ export const v3 = {
       }>;
       lastCode: { code: string; receivedAt: string } | null;
     }>('/admin/integrations/datalens'),
+  checkDatalens: () =>
+    http<{ ok: boolean; message: string; workbookTitle?: string }>(
+      '/admin/integrations/datalens/check',
+      { method: 'POST', ...json({}) },
+    ),
   requestDatalens: (note: string) =>
     http<{ ok: true }>('/integrations/datalens/request', { method: 'POST', ...json({ note }) }),
 
   notifications: () => http<Notification[]>('/notifications'),
   readNotifications: () =>
     http<{ ok: true }>('/notifications/read', { method: 'POST', ...json({}) }),
+};
+
+/* ---- Metrika goal management (admin, ANA-36) ---------------------------------------------- */
+
+export interface GoalCondition {
+  type: 'exact' | 'contain' | 'start' | 'regexp';
+  url: string;
+}
+export interface GoalSpecInput {
+  name: string;
+  type: 'url' | 'action';
+  conditions: GoalCondition[];
+}
+export interface GoalRefView {
+  id: number;
+  name: string;
+  type: string;
+  reference: string | null;
+}
+export interface GoalsAuditView {
+  expected: Array<{
+    ref: {
+      code: string;
+      event: string;
+      ru: string;
+      en: string;
+      group: 'funnel' | 'ticket' | 'role';
+      name: string;
+    };
+    status: 'present' | 'missing' | 'mismatch';
+    goalId?: number;
+    goalName?: string;
+    issues?: string[];
+    archivedGoalId?: number;
+    spec: GoalSpecInput;
+  }>;
+  dead: Array<GoalRefView & { reaches: number }>;
+  duplicates: Array<{ reason: 'conditions' | 'name'; key: string; goals: GoalRefView[] }>;
+  goals: Array<
+    GoalRefView & { archived: boolean; conditions: Array<{ type?: string; url?: string }> }
+  >;
+  days: number;
+  permission: string | null;
+  canWrite: boolean | null;
+  warnings: string[];
+}
+export interface GoalPreview {
+  method: 'POST';
+  path: string;
+  body: { goal: GoalSpecInput };
+}
+/** Either a pc-goals reference (`{ref}`) or a custom spec. */
+export type GoalCreateInput = { ref: string } | GoalSpecInput;
+
+export const goalsApi = {
+  audit: (days = 90) => http<GoalsAuditView>(`/admin/metrika/goals/audit?days=${days}`),
+  preview: (input: GoalCreateInput) =>
+    http<GoalPreview>('/admin/metrika/goals/preview', { method: 'POST', ...json(input) }),
+  create: (input: GoalCreateInput) =>
+    http<{ goal: { id: number; name: string; type: string } }>('/admin/metrika/goals', {
+      method: 'POST',
+      ...json({ ...input, confirm: true }),
+    }),
+  archiveBulk: (ids: number[], confirm: string) =>
+    http<{
+      archived: number[];
+      failed: Array<{ id: number; code: string; error: string }>;
+      skipped: number[];
+    }>('/admin/metrika/goals/archive-bulk', { method: 'POST', ...json({ ids, confirm }) }),
+  restore: (id: number) =>
+    http<{ ok: true }>(`/admin/metrika/goals/${id}/restore`, {
+      method: 'POST',
+      ...json({ confirm: true }),
+    }),
 };

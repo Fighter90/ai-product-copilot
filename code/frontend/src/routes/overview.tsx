@@ -1,13 +1,16 @@
 import { useState, type ReactNode } from 'react';
-import { useT } from '../i18n';
+import { channelName, useT, type DictKey } from '../i18n';
+import type { Locale } from '../store/prefs';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { ChannelStat, GeoDeviceStat, UtmStat, PageStat, B2bDeal } from '@pca/shared';
 import { api } from '../lib/api';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
+import { displayPath } from '../lib/url-path';
 import { EmptyState } from '../components/EmptyState';
 import { channelMixOption, summarizeChannels, weakSpots } from '../lib/overview';
+import { useKpiTarget } from '../lib/kpi-target';
 import { utmCoverage } from '../lib/traffic';
 import { dailySeries, trendsOption } from '../lib/trends';
 import { byCountry, byDevice, audienceBarOption, deviceShareOption } from '../lib/audience';
@@ -17,7 +20,9 @@ import { filterBySegment, filterUtmBySegment } from '../lib/segment-filter';
 import { buildHypothesisUrl } from '../lib/hypothesis-prefill';
 import { shouldShowOnboarding, markOnboarded } from '../lib/onboarding';
 import { weeklyDigest } from '../lib/weekly-digest';
-import { Tooltip } from '../components/Tooltip';
+import { KpiStrip } from '../components/overview/KpiStrip';
+import { DataQualityBlock } from '../components/overview/DataQualityBlock';
+import { goalPace } from '../components/overview/goal-pace';
 import { formatGoalLabel, type GoalLabel } from '@pca/shared';
 
 export type QueryStatus = 'pending' | 'error' | 'success';
@@ -45,7 +50,7 @@ function InsightBadge({
 }
 
 /** Compute insights from channel data */
-function computeChannelInsights(stats: ChannelStat[]): JSX.Element[] {
+function computeChannelInsights(stats: ChannelStat[], locale: Locale): JSX.Element[] {
   const insights: JSX.Element[] = [];
   const totalVisits = stats.reduce((a, c) => a + c.visits, 0);
   const totalApplications = stats.reduce((a, c) => a + c.goalReaches, 0);
@@ -77,7 +82,8 @@ function computeChannelInsights(stats: ChannelStat[]): JSX.Element[] {
     return acc;
   }, new Map());
 
-  for (const [channel, data] of channelCRs) {
+  for (const [raw, data] of channelCRs) {
+    const channel = channelName(raw, locale);
     const cr = data.visits > 0 ? data.reaches / data.visits : 0;
     if (cr > overallCR * 1.5 && data.visits > 50) {
       insights.push(
@@ -135,12 +141,13 @@ function computePageInsights(pages: PageStat[] | undefined, type: 'entry' | 'exi
   if (!pages || pages.length === 0) return insights;
 
   pages.slice(0, 5).forEach((p, i) => {
+    const path = displayPath(p.page);
     if (p.bounceRate > 0.7 && p.visits > 50) {
       insights.push(
         <InsightBadge
           key={`bounce-${type}-${p.page}-${i}`}
           type="warning"
-          text={`Высокий bounce ${formatPercent(p.bounceRate)} на ${p.page} (${p.visits} визитов)`}
+          text={`Высокий bounce ${formatPercent(p.bounceRate)} на ${path} (${p.visits} визитов)`}
         />,
       );
     } else if (p.bounceRate < 0.3 && p.visits > 50) {
@@ -148,7 +155,7 @@ function computePageInsights(pages: PageStat[] | undefined, type: 'entry' | 'exi
         <InsightBadge
           key={`good-${type}-${p.page}-${i}`}
           type="good"
-          text={`Низкий bounce ${formatPercent(p.bounceRate)} на ${p.page} — хорошо удерживает`}
+          text={`Низкий bounce ${formatPercent(p.bounceRate)} на ${path} — хорошо удерживает`}
         />,
       );
     }
@@ -192,6 +199,73 @@ function computeGeoInsights(geoDevice: GeoDeviceStat[] | undefined): JSX.Element
   return insights;
 }
 
+type ChannelMixOption = {
+  legend: { data: string[] } & Record<string, unknown>;
+  series: Array<
+    { data: Array<{ name: string } & Record<string, unknown>> } & Record<string, unknown>
+  >;
+} & Record<string, unknown>;
+
+/**
+ * Channel-mix pie with localised channel names. Colours are resolved from the raw Metrika names
+ * inside channelMixOption, so names are translated afterwards to keep colours stable.
+ */
+function localizedChannelMixOption(stats: ChannelStat[], locale: Locale): object {
+  const opt = channelMixOption(stats) as ChannelMixOption;
+  const tr = (n: string): string => channelName(n, locale);
+  return {
+    ...opt,
+    legend: { ...opt.legend, data: opt.legend.data.map(tr) },
+    series: opt.series.map((s) => ({
+      ...s,
+      data: s.data.map((d) => ({ ...d, name: tr(d.name) })),
+    })),
+  };
+}
+
+/** Caption under a chart, all three lines from the dictionary (`ov.cap.<id>.*`). */
+function Caption({ id }: { id: 'trends' | 'mix' | 'geo' | 'device' }): JSX.Element {
+  const { t } = useT();
+  return (
+    <ChartCaption
+      correct={t(`ov.cap.${id}.correct` as DictKey)}
+      caveat={t(`ov.cap.${id}.caveat` as DictKey)}
+      advice={t(`ov.cap.${id}.advice` as DictKey)}
+    />
+  );
+}
+
+/** Entry/exit pages table: path only (scheme + host stripped), the full URL in the title. */
+function PagesTable({ title, pages }: { title: string; pages: PageStat[] }): JSX.Element {
+  const { t } = useT();
+  return (
+    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={title}>
+      <table className="w-full min-w-[28rem] text-sm">
+        <thead>
+          <tr className="text-left text-slate-500">
+            <th className="py-1">{t('ov.col.page')}</th>
+            <th>{t('ov.col.visits')}</th>
+            <th>{t('ov.col.bounce')}</th>
+            <th>{t('ov.col.applications')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pages.map((p, i) => (
+            <tr key={`${p.page}-${i}`} className="border-t border-slate-100">
+              <td className="max-w-[20rem] truncate py-1" title={p.page}>
+                {displayPath(p.page)}
+              </td>
+              <td>{formatInt(p.visits)}</td>
+              <td>{formatPercent(p.bounceRate)}</td>
+              <td>{formatInt(p.goalReaches)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** Pure presentational Overview — testable across all states without the data layer. */
 export function OverviewView({
   status,
@@ -203,6 +277,9 @@ export function OverviewView({
   utm,
   entryPages,
   exitPages,
+  to,
+  afterKpi,
+  kpiTarget,
 }: {
   status: QueryStatus;
   stats: ChannelStat[];
@@ -213,20 +290,35 @@ export function OverviewView({
   utm?: UtmStat[];
   entryPages?: PageStat[];
   exitPages?: PageStat[];
+  /** Period end (ISO date) — anchor for the «успеваем?» forecast; defaults to the last fact date. */
+  to?: string;
+  /** Secondary content (e.g. the onboarding card) rendered below the KPI strip, never above it. */
+  afterKpi?: ReactNode;
+  /** Admin «Цель по оплатам» (paid tickets); defaults to 300. */
+  kpiTarget?: number;
 }): JSX.Element {
-  const { t } = useT();
-  if (status === 'pending') return <p className="text-slate-500">Загрузка…</p>;
+  const { t, locale } = useT();
+  if (status === 'pending') return <p className="text-slate-500">{t('ov.loading')}</p>;
   if (status === 'error')
     return (
       <p role="alert" className="text-red-700">
-        Не удалось загрузить данные. Запустите sync и проверьте backend.
+        {t('ov.error')}
       </p>
     );
 
-  if (stats.length === 0) return <EmptyState />;
+  if (stats.length === 0)
+    return (
+      <div className="space-y-6">
+        <EmptyState />
+        {afterKpi}
+      </div>
+    );
 
-  const kpi = summarizeChannels(stats, b2bDeals ?? [], goalLabel?.isPaid ?? false);
+  const goalIsPaid = goalLabel?.isPaid ?? false;
+  const kpi = summarizeChannels(stats, b2bDeals ?? [], goalIsPaid, kpiTarget);
   const weak = weakSpots(stats);
+  const daily = dailySeries(stats);
+  const pace = goalPace({ points: daily, to, target: kpi.target, current: kpi.paid, goalIsPaid });
   const geoRows = geoDevice ? byCountry(geoDevice) : [];
   const devRows = geoDevice ? byDevice(geoDevice) : [];
   const hasGeo = geoRows.length > 0 && devRows.length > 0;
@@ -238,96 +330,85 @@ export function OverviewView({
   const lowUtm = utmCov.low;
 
   // Top entry pages
-  const topEntry = (entryPages ?? []).sort((a, b) => b.visits - a.visits).slice(0, 5);
-  const topExit = (exitPages ?? []).sort((a, b) => b.visits - a.visits).slice(0, 5);
+  const topEntry = [...(entryPages ?? [])].sort((a, b) => b.visits - a.visits).slice(0, 5);
+  const topExit = [...(exitPages ?? [])].sort((a, b) => b.visits - a.visits).slice(0, 5);
 
   // Compute insights
-  const channelInsights = computeChannelInsights(stats);
+  const channelInsights = computeChannelInsights(stats, locale);
   const utmInsights = computeUtmInsights(stats, utm ?? []);
   const entryInsights = computePageInsights(entryPages, 'entry');
   const exitInsights = computePageInsights(exitPages, 'exit');
   const geoInsights = computeGeoInsights(geoDevice);
 
+  // Data-quality notices live in one collapsed block below the KPI strip (ANA-48).
+  const qualityItems: Array<{ key: string; node: ReactNode }> = [];
+  if (primaryGoalName) {
+    qualityItems.push({
+      key: 'goal',
+      node: (
+        <>
+          {t('ov.quality.goalAutoPrefix')} <b>{primaryGoalName}</b> {t('ov.quality.goalAutoSuffix')}
+        </>
+      ),
+    });
+  }
+  if (lowUtm && (utm?.length ?? 0) > 0) {
+    qualityItems.push({ key: 'utm', node: t('kpi.lowUtm', { pct: utmCoveragePct }) });
+  }
+
   return (
     <section className="space-y-6">
-      {primaryGoalName ? (
-        <p className="rounded border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
-          KPI-цель определена автоматически: <b>{primaryGoalName}</b> — на её достижениях строятся
-          заявки. Чтобы зафиксировать другую, задайте <code>GOAL_ID</code>.
-        </p>
-      ) : null}
+      <KpiStrip
+        kpi={kpi}
+        pace={pace}
+        goalIsPaid={goalIsPaid}
+        showApplicationsCaveat={goalLabel?.showApplicationsCaveat !== false}
+        weakSpot={weak[0]}
+      />
 
-      {lowUtm && (utm?.length ?? 0) > 0 ? (
-        <div role="status" className="rounded bg-amber-100 px-3 py-2 text-sm text-amber-800">
-          {t('kpi.lowUtm', { pct: utmCoveragePct })}
-        </div>
-      ) : null}
+      <DataQualityBlock items={qualityItems} />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi label={t('kpi.ticketGoal')} value={formatInt(kpi.target)} />
-        <Kpi
-          label={goalLabel?.title ?? 'Заявок B2C'}
-          value={formatInt(kpi.applications)}
-          hint={goalLabel?.showApplicationsCaveat === false ? undefined : 'заявка ≠ оплата'}
-        />
-        <Kpi label="Оплачено B2B" value={formatInt(kpi.b2bPaid)} />
-        <Kpi
-          label="Gap до цели"
-          value={formatInt(kpi.gap)}
-          hint={`${formatInt(kpi.paid)} оплачено из ${formatInt(kpi.target)}`}
-        />
-      </div>
+      {afterKpi}
 
       <WeeklyDigest stats={stats} />
 
-      <Card title="Визиты и заявки по дням">
-        <EChart option={trendsOption(dailySeries(stats))} />
+      <Card title={t('ov.card.trends')}>
+        <EChart
+          option={trendsOption(daily, {
+            visits: t('an.col.visits'),
+            reaches: t('an.col.applications'),
+          })}
+        />
         {channelInsights.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">{channelInsights}</div>
         )}
-        <ChartCaption
-          correct="Две линии (визиты и заявки) по дням из channel_stats — видна динамика и совпадение всплесков."
-          caveat="Заявки на порядок меньше визитов — на общей оси линия заявок может казаться плоской."
-          advice="Смотрите не на абсолют, а на синхронность всплесков: рост визитов без роста заявок — сигнал к проверке трафика."
-        />
+        <Caption id="trends" />
       </Card>
 
-      <Card title="Микс каналов (визиты)">
-        <EChart option={channelMixOption(stats)} />
-        <ChartCaption
-          correct="Доли визитов по каналам из channel_stats — структура источников трафика."
-          caveat="Это доли визитов, не оплат; крупный по визитам канал может почти не давать продаж."
-          advice="Сопоставляйте с воронкой по каналам — оценивайте вклад в заявки, а не только размер."
-        />
+      <Card title={t('ov.card.mix')}>
+        <EChart option={localizedChannelMixOption(stats, locale)} />
+        <Caption id="mix" />
       </Card>
 
       {hasGeo ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Card title="Топ стран по визитам">
+          <Card title={t('ov.card.geo')}>
             <EChart option={audienceBarOption(geoRows, '')} />
             {geoInsights.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">{geoInsights}</div>
             )}
-            <ChartCaption
-              correct="Топ стран по визитам из geo_device_stats — где находится аудитория."
-              caveat="Гео определяется по IP; VPN и роуминг могут искажать распределение."
-              advice="Проверяйте CR ключевых стран в воронке — больше визитов не всегда означает больше оплат."
-            />
+            <Caption id="geo" />
           </Card>
-          <Card title="Доля устройств (визиты)">
-            <EChart option={deviceShareOption(devRows)} />
-            <ChartCaption
-              correct="Доли desktop/mobile/tablet по визитам из geo_device_stats."
-              caveat="Доля устройств по визитам не равна доле по оплатам — мобильные часто конвертят хуже."
-              advice="Если mobile даёт большую долю визитов, проверьте мобильную версию лендинга и форм."
-            />
+          <Card title={t('ov.card.device')}>
+            <EChart option={deviceShareOption(devRows, t('an.devShare'))} />
+            <Caption id="device" />
           </Card>
         </div>
       ) : null}
 
       {/* UTM breakdown */}
       {utm && utm.length > 0 && (
-        <Card title={`UTM-разбивка (покрытие ${utmCoveragePct}%)`}>
+        <Card title={t('ov.card.utm', { pct: utmCoveragePct })}>
           <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="UTM-разбивка">
             <table className="w-full min-w-[36rem] text-sm">
               <thead>
@@ -335,13 +416,13 @@ export function OverviewView({
                   <th className="py-1">Source</th>
                   <th>Medium</th>
                   <th>Campaign</th>
-                  <th>Визиты</th>
-                  <th>Заявки</th>
+                  <th>{t('ov.col.visits')}</th>
+                  <th>{t('ov.col.applications')}</th>
                   <th>CR</th>
                 </tr>
               </thead>
               <tbody>
-                {utm
+                {[...utm]
                   .sort((a, b) => b.visits - a.visits)
                   .slice(0, 10)
                   .map((u, i) => (
@@ -366,29 +447,8 @@ export function OverviewView({
 
       {/* Entry pages */}
       {topEntry.length > 0 && (
-        <Card title="Топ страниц входа">
-          <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Топ страниц">
-            <table className="w-full min-w-[28rem] text-sm">
-              <thead>
-                <tr className="text-left text-slate-500">
-                  <th className="py-1">Страница</th>
-                  <th>Визиты</th>
-                  <th>Отказы</th>
-                  <th>Заявки</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topEntry.map((p, i) => (
-                  <tr key={`${p.page}-${i}`} className="border-t border-slate-100">
-                    <td className="py-1">{p.page}</td>
-                    <td>{formatInt(p.visits)}</td>
-                    <td>{formatPercent(p.bounceRate)}</td>
-                    <td>{formatInt(p.goalReaches)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <Card title={t('ov.card.entry')}>
+          <PagesTable title={t('ov.card.entry')} pages={topEntry} />
           {entryInsights.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">{entryInsights}</div>
           )}
@@ -397,46 +457,28 @@ export function OverviewView({
 
       {/* Exit pages */}
       {topExit.length > 0 && (
-        <Card title="Топ страниц выхода">
-          <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Топ страниц">
-            <table className="w-full min-w-[28rem] text-sm">
-              <thead>
-                <tr className="text-left text-slate-500">
-                  <th className="py-1">Страница</th>
-                  <th>Визиты</th>
-                  <th>Отказы</th>
-                  <th>Заявки</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topExit.map((p, i) => (
-                  <tr key={`${p.page}-${i}`} className="border-t border-slate-100">
-                    <td className="py-1">{p.page}</td>
-                    <td>{formatInt(p.visits)}</td>
-                    <td>{formatPercent(p.bounceRate)}</td>
-                    <td>{formatInt(p.goalReaches)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <Card title={t('ov.card.exit')}>
+          <PagesTable title={t('ov.card.exit')} pages={topExit} />
           {exitInsights.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">{exitInsights}</div>
           )}
         </Card>
       )}
 
-      <Card title="Слабые места (трафик есть, конверсия ниже средней)">
+      <Card id="weak-spots" title={t('ov.card.weak')}>
         {weak.length === 0 ? (
-          <p className="text-sm text-slate-500">Нет слабых мест по текущим данным.</p>
+          <p className="text-sm text-slate-500">{t('ov.weak.none')}</p>
         ) : (
           <ul className="space-y-1 text-sm">
             {weak.map((w) => (
               <li key={w.channel} className="flex justify-between border-b border-slate-100 py-1">
-                <span>{w.channel}</span>
+                <span>{channelName(w.channel, locale)}</span>
                 <span className="flex items-center gap-3">
                   <span className="text-slate-500">
-                    {formatInt(w.visits)} визитов · CR {formatPercent(w.conversionRate)}
+                    {t('ov.weak.detail', {
+                      visits: formatInt(w.visits),
+                      cr: formatPercent(w.conversionRate),
+                    })}
                   </span>
                   <Link
                     to={buildHypothesisUrl({
@@ -446,7 +488,7 @@ export function OverviewView({
                     })}
                     className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
                   >
-                    → гипотеза
+                    {t('ov.weak.hypothesis')}
                   </Link>
                 </span>
               </li>
@@ -475,7 +517,7 @@ function OnboardingCard(): JSX.Element | null {
       <button
         type="button"
         onClick={dismiss}
-        aria-label="Закрыть подсказку"
+        aria-label={t('common.close')}
         className="absolute right-3 top-3 text-indigo-600 hover:text-indigo-700"
       >
         ✕
@@ -519,6 +561,7 @@ export function Overview(): JSX.Element {
     queryKey: ['b2b'],
     queryFn: () => api.b2b(),
   });
+  const kpiTarget = useKpiTarget();
 
   // Apply segment filter
   const allChannels = q.data ?? [];
@@ -526,30 +569,20 @@ export function Overview(): JSX.Element {
   const filteredUtm = filterUtmBySegment(utm.data ?? [], segment, allChannels);
 
   return (
-    <div className="space-y-6">
-      <OnboardingCard />
-      <OverviewView
-        status={q.status}
-        stats={filteredChannels}
-        b2bDeals={b2bDeals.data}
-        primaryGoalName={goal.data?.name}
-        goalLabel={formatGoalLabel(goal.data)}
-        geoDevice={geoDevice.data}
-        utm={filteredUtm}
-        entryPages={entryPages.data}
-        exitPages={exitPages.data}
-      />
-    </div>
-  );
-}
-
-function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }): JSX.Element {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-bold">{value}</div>
-      {hint ? <div className="mt-1 text-xs text-amber-700">{hint}</div> : null}
-    </div>
+    <OverviewView
+      status={q.status}
+      stats={filteredChannels}
+      b2bDeals={b2bDeals.data}
+      primaryGoalName={goal.data?.name}
+      goalLabel={formatGoalLabel(goal.data)}
+      geoDevice={geoDevice.data}
+      utm={filteredUtm}
+      entryPages={entryPages.data}
+      exitPages={exitPages.data}
+      to={to}
+      afterKpi={<OnboardingCard />}
+      kpiTarget={kpiTarget}
+    />
   );
 }
 
@@ -566,56 +599,50 @@ function Delta({ ratio }: { ratio: number }): JSX.Element {
 
 /** Weekly digest: a one-glance "what happened this week" card (WoW visits/applications + leaders). */
 function WeeklyDigest({ stats }: { stats: ChannelStat[] }): JSX.Element | null {
-  const { t } = useT();
+  const { t, locale } = useT();
   const d = weeklyDigest(stats);
   if (!d.hasData) return null;
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <h2 className="mb-3 text-lg font-semibold">{t('digest.title')}</h2>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div>
           <p className="text-xs text-slate-500">{t('digest.visits7')}</p>
           <p className="text-xl font-semibold">{formatInt(d.visits)}</p>
           <Delta ratio={d.visitsDelta} />
         </div>
         <div>
-          <p className="text-xs text-slate-500">Заявки (7 дней)</p>
+          <p className="text-xs text-slate-500">{t('ov.digest.applications7')}</p>
           <p className="text-xl font-semibold">{formatInt(d.applications)}</p>
           <Delta ratio={d.applicationsDelta} />
         </div>
         <div>
-          <p className="text-xs text-slate-500">Топ-канал по визитам</p>
-          <p className="text-base font-semibold">{d.topChannel ? d.topChannel.channel : '—'}</p>
-          {d.topChannel ? (
-            <p className="text-xs text-slate-500">{formatInt(d.topChannel.visits)} визитов</p>
-          ) : null}
-        </div>
-        <div>
-          <p className="text-xs text-slate-500">
-            <Tooltip text="Канал с заметным трафиком, но конверсией ниже средней — наибольший потенциал роста оплат.">
-              Главное слабое место
-            </Tooltip>
+          <p className="text-xs text-slate-500">{t('ov.digest.topChannel')}</p>
+          <p className="text-base font-semibold">
+            {d.topChannel ? channelName(d.topChannel.channel, locale) : '—'}
           </p>
-          {d.topWeakSpot ? (
-            <>
-              <p className="text-base font-semibold text-red-700">{d.topWeakSpot.channel}</p>
-              <p className="text-xs text-slate-500">
-                CR {formatPercent(d.topWeakSpot.conversionRate)} при{' '}
-                {formatInt(d.topWeakSpot.visits)} визитах
-              </p>
-            </>
-          ) : (
-            <p className="text-base font-semibold text-green-700">нет явных утечек</p>
-          )}
+          {d.topChannel ? (
+            <p className="text-xs text-slate-500">
+              {t('ov.digest.visitsN', { n: formatInt(d.topChannel.visits) })}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>
   );
 }
 
-function Card({ title, children }: { title: string; children: ReactNode }): JSX.Element {
+function Card({
+  id,
+  title,
+  children,
+}: {
+  id?: string;
+  title: string;
+  children: ReactNode;
+}): JSX.Element {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div id={id} className="scroll-mt-20 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <h2 className="mb-2 text-lg font-semibold">{title}</h2>
       {children}
     </div>

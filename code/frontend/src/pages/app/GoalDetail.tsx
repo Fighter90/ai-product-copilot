@@ -3,7 +3,8 @@ import { Link, useParams } from 'react-router-dom';
 import { v3, type BreakdownRow } from '../../lib/api-v3';
 import { useT, channelName } from '../../i18n';
 import { DataGrid, type GridColumn } from '../../components/DataGrid';
-import { Card, ErrorBox, Kpi, PageHeader, Skeleton } from '../../components/ui';
+import { Card, ErrorBox, Kpi, PageHeader, Pill, Skeleton } from '../../components/ui';
+import { isArchived } from '../../lib/archived-goals';
 import { EChart } from '../../components/charts/EChart';
 import { LiveBar, NotConfigured, isNotConfigured, useLiveParams } from './live-common';
 
@@ -70,7 +71,16 @@ export function GoalDetail(): JSX.Element {
       </Link>
       <PageHeader
         eyebrow={`#${id}${d?.goal.event ? ` · ${d.goal.event}` : ''}`}
-        title={d?.goal.name ?? '…'}
+        title={
+          <>
+            {d?.goal.name ?? '…'}
+            {d && isArchived(d.goal) && (
+              <span className="ml-2 align-middle">
+                <Pill tone="neutral">{t('an.goals.archived')}</Pill>
+              </span>
+            )}
+          </>
+        }
         actions={
           <LiveBar
             updatedAt={d?.updatedAt}

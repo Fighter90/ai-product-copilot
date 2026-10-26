@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { v3, type SettingView } from '../../lib/api-v3';
 import { api } from '../../lib/api';
 import { useT } from '../../i18n';
 import { Card, ErrorBox, Modal, PageHeader, Pill, Skeleton } from '../../components/ui';
 import { useFilters } from '../../store/filters';
+import { GoalsManager } from '../../components/admin/goals/GoalsManager';
 
 const FIELDS: Array<{
   key: string;
@@ -136,6 +138,21 @@ export function MetrikaSettings(): JSX.Element {
       {q.error && <ErrorBox error={q.error} />}
       {q.data && (
         <Card title={locale === 'ru' ? 'Подключение' : 'Connection'}>
+          <p className="mb-4 text-sm text-muted">
+            {t('admin.metrika.oauthHelp')}{' '}
+            <a
+              href="https://oauth.yandex.ru/client/new"
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent hover:underline"
+            >
+              oauth.yandex.ru
+            </a>
+            {' · '}
+            <Link to="/help/admin" className="text-accent hover:underline">
+              {t('admin.metrika.helpLink')}
+            </Link>
+          </p>
           <form
             className="grid gap-4 md:grid-cols-2"
             onSubmit={(e) => {
@@ -173,6 +190,7 @@ export function MetrikaSettings(): JSX.Element {
           </form>
         </Card>
       )}
+      {q.data && <GoalsManager />}
       <Card title={locale === 'ru' ? 'Синхронизация в SQLite' : 'Sync to SQLite'}>
         <p className="mb-3 text-sm text-muted">
           {locale === 'ru'

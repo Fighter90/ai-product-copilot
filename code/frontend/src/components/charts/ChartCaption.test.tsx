@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ChartCaption } from './ChartCaption';
+import { expectNoCyrillic, setTestLocale } from '../../test/i18n-utils';
 
 describe('ChartCaption', () => {
   it('renders correct and advice, and shows the caveat row when provided', () => {
@@ -18,5 +19,18 @@ describe('ChartCaption', () => {
     expect(screen.getByText('данные корректны')).toBeInTheDocument();
     expect(screen.getByText('продолжайте')).toBeInTheDocument();
     expect(screen.queryByText('🔴 Внимание')).not.toBeInTheDocument();
+  });
+});
+
+describe('ChartCaption (en locale)', () => {
+  afterEach(() => setTestLocale('ru'));
+
+  it('translates the Correct / Caution / Recommendation labels', () => {
+    setTestLocale('en');
+    const { container } = render(<ChartCaption correct="ok" caveat="careful" advice="do it" />);
+    expect(screen.getByText('🟢 Correct')).toBeInTheDocument();
+    expect(screen.getByText('🔴 Caution')).toBeInTheDocument();
+    expect(screen.getByText('💡 Recommendation')).toBeInTheDocument();
+    expectNoCyrillic(container);
   });
 });

@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { renderWithProviders } from '../test/utils';
+import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 vi.mock('../lib/api', () => ({
   api: {
@@ -83,5 +84,41 @@ describe('History (data wrapper)', () => {
     ]);
     renderWithProviders(<History />);
     expect(await screen.findByText('История отчётов')).toBeInTheDocument();
+  });
+});
+
+describe('History (EN locale)', () => {
+  beforeEach(() => setTestLocale('en'));
+  afterEach(() => setTestLocale('ru'));
+
+  it('formats the snapshot name for EN', () => {
+    expect(formatSnapshotName('2026-10-12', '2026-10-25', 'en')).toBe('Report 12/10–25/10/2026');
+  });
+
+  it('renders every state without Cyrillic', () => {
+    const snapshots = [
+      {
+        id: 'snap-1',
+        generatedAt: '2025-01-01T00:00:00Z',
+        dateFrom: '2025-01-01',
+        dateTo: '2025-01-07',
+      },
+    ];
+    const { container, rerender } = renderWithProviders(
+      <HistoryView status="success" snapshots={snapshots} />,
+    );
+    expect(screen.getByText('Report history')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Report 01/01–07/01/2025' })).toBeInTheDocument();
+    expect(screen.getByText('Total reports: 1')).toBeInTheDocument();
+    expect(screen.getByText('1 Jan 2025 — 7 Jan 2025')).toBeInTheDocument();
+    expectNoCyrillic(container);
+
+    for (const status of ['pending', 'error'] as const) {
+      rerender(<HistoryView status={status} snapshots={[]} />);
+      expectNoCyrillic(container);
+    }
+    rerender(<HistoryView status="success" snapshots={[]} />);
+    expect(screen.getByRole('status')).toHaveTextContent('No reports yet');
+    expectNoCyrillic(container);
   });
 });

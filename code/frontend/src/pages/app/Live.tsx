@@ -90,7 +90,7 @@ export function Live(): JSX.Element {
               label={t('live.duration')}
               value={s.totals.avgDurationSec / 60}
               digits={1}
-              suffix={locale === 'ru' ? ' мин' : ' min'}
+              suffix={` ${t('an.live.min')}`}
             />
           </>
         ) : (

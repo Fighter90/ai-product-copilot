@@ -60,6 +60,31 @@ export interface SettingsStatus {
   ANTHROPIC_API_KEY: string;
 }
 
+/**
+ * Proxy error pages (nginx 502/503/504/429 HTML) must never reach the UI verbatim — replace them
+ * with a short localized message. JSON bodies are kept as-is: callers parse `{error}` from them.
+ */
+export function readableError(status: number, body: string): string {
+  if (!/^\s*</.test(body)) return body;
+  const en = typeof window !== 'undefined' && window.localStorage?.getItem('pca.locale') === 'en';
+  if (status === 504) {
+    return en
+      ? 'The server did not respond in time (504). Please retry in a minute.'
+      : 'Сервер не ответил вовремя (504). Повторите через минуту.';
+  }
+  if (status === 429) {
+    return en
+      ? 'Too many requests (429). Wait a few seconds and retry.'
+      : 'Слишком много запросов (429). Подождите несколько секунд и повторите.';
+  }
+  if (status === 502 || status === 503) {
+    return en
+      ? `The server is temporarily unavailable (${status}) — an update may be in progress.`
+      : `Сервер временно недоступен (${status}) — возможно, идёт обновление.`;
+  }
+  return en ? `Server error (${status}).` : `Ошибка сервера (${status}).`;
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'content-type': 'application/json' },
@@ -70,7 +95,7 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     if (res.status === 401 && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('pca:unauthorized'));
     }
-    throw new ApiError(res.status, await res.text());
+    throw new ApiError(res.status, readableError(res.status, await res.text()));
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -94,6 +119,8 @@ export const api = {
     http<PageStat[]>(`/metrics/exit-pages${range ? `?from=${range.from}&to=${range.to}` : ''}`),
   goals: (archived = false) => http<Goal[]>(`/metrics/goals${archived ? '?archived=true' : ''}`),
   primaryGoal: () => http<Goal>('/metrics/primary-goal'),
+  /** Admin «Цель по оплатам» (paid tickets); the backend defaults it to 300. */
+  kpiTarget: () => http<{ target: number }>('/metrics/kpi-target'),
   rawResponse: (id: number) => http<RawResponse>(`/metrics/raw/${id}`),
   hypotheses: () => http<Hypothesis[]>('/hypotheses'),
   createHypothesis: (h: NewHypothesis) =>

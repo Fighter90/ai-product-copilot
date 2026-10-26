@@ -13,6 +13,7 @@ import {
   Filter,
   Gauge,
   History as HistoryIcon,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -36,6 +37,7 @@ import { useT, ago, type DictKey } from '../i18n';
 import { usePrefs } from '../store/prefs';
 import { v3 } from '../lib/api-v3';
 import { BrandMark } from './BrandMark';
+import { ChangePasswordModal } from './ChangePasswordModal';
 
 type Icon = ComponentType<{ className?: string }>;
 interface NavItem {
@@ -174,6 +176,85 @@ function Bell2(): JSX.Element {
   );
 }
 
+/** Header user block → menu with «Сменить пароль» (and sign-out) + the password modal. */
+function UserMenu(): JSX.Element {
+  const { t } = useT();
+  const { user, logout } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+  return (
+    <div className="relative border-l border-line pl-3" ref={ref}>
+      <button
+        type="button"
+        aria-label={t('prof.menu')}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 rounded-md text-left hover:text-accent"
+      >
+        <span
+          data-user-data
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/15 text-sm font-bold text-accent"
+        >
+          {(user?.name ?? '?').slice(0, 1).toUpperCase()}
+        </span>
+        <span className="hidden leading-tight sm:block">
+          <span data-user-data className="block max-w-[160px] truncate text-sm font-medium">
+            {user?.name}
+          </span>
+          <span className="block text-[11px] text-muted">
+            {user ? t(user.role === 'admin' ? 'role.admin' : 'role.analyst') : ''}
+          </span>
+        </span>
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-40 mt-2 w-56 rounded-xl border border-line bg-raised p-1.5 shadow-2xl animate-fade-in"
+        >
+          {user?.email && (
+            <div className="truncate px-2.5 py-1.5 text-xs text-muted">{user.email}</div>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              setPwOpen(true);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-surface hover:text-accent"
+          >
+            <KeyRound className="h-4 w-4" />
+            {t('prof.changePassword')}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => void logout()}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-surface hover:text-accent"
+          >
+            <LogOut className="h-4 w-4" />
+            {t('nav.logout')}
+          </button>
+        </div>
+      )}
+      <ChangePasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />
+    </div>
+  );
+}
+
 function SideNav({
   collapsed,
   onNavigate,
@@ -247,7 +328,7 @@ const MOBILE_TABS: NavItem[] = [
 /** Cabinet shell: collapsible sidebar, top bar (filters, theme, language, bell, user), mobile tabs. */
 export function CabinetLayout(): JSX.Element {
   const { t } = useT();
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const { sidebarCollapsed, toggleSidebar } = usePrefs();
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
@@ -366,17 +447,7 @@ export function CabinetLayout(): JSX.Element {
             <LangToggle onChange={(l) => void v3.updateMe({ locale: l }).catch(() => undefined)} />
             <ThemeToggle />
             <Bell2 />
-            <div className="hidden items-center gap-2 border-l border-line pl-3 sm:flex">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/15 text-sm font-bold text-accent">
-                {(user?.name ?? '?').slice(0, 1).toUpperCase()}
-              </div>
-              <div className="leading-tight">
-                <div className="max-w-[160px] truncate text-sm font-medium">{user?.name}</div>
-                <div className="text-[11px] text-muted">
-                  {user ? t(user.role === 'admin' ? 'role.admin' : 'role.analyst') : ''}
-                </div>
-              </div>
-            </div>
+            <UserMenu />
             <button
               type="button"
               onClick={() => void logout()}

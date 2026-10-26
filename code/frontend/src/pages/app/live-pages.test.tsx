@@ -1,0 +1,226 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { Route, Routes } from 'react-router-dom';
+import { renderWithProviders } from '../../test/utils';
+import { expectNoCyrillic, setTestLocale } from '../../test/i18n-utils';
+import { useFilters } from '../../store/filters';
+import type { LiveFunnel, LiveGoal, LiveGoalDetail, LiveGoals, LiveTable } from '../../lib/api-v3';
+
+vi.mock('../../lib/api-v3', () => ({
+  v3: {
+    liveSummary: vi.fn(),
+    liveFunnel: vi.fn(),
+    liveGoals: vi.fn(),
+    liveGoal: vi.fn(),
+    liveTable: vi.fn(),
+  },
+}));
+import { v3 } from '../../lib/api-v3';
+import { Live } from './Live';
+import { Goals } from './Goals';
+import { GoalDetail } from './GoalDetail';
+import { FunnelLive } from './FunnelLive';
+import { Explore } from './Explore';
+
+const NOW = new Date().toISOString();
+
+const goal = (over: Partial<LiveGoal> & { archived?: boolean }): LiveGoal =>
+  ({
+    id: 1,
+    name: 'Ticket purchase',
+    type: 'action',
+    event: 'reg_step1',
+    reaches: 10,
+    goalVisits: 9,
+    conversionRate: 1.2,
+    previousReaches: 5,
+    delta: 1,
+    reaches14: 10,
+    reaches90: 40,
+    status: 'live',
+    duplicateOf: [],
+    ...over,
+  }) as LiveGoal;
+
+const GOALS: LiveGoals = {
+  from: '2026-10-01',
+  to: '2026-10-14',
+  previous: { from: '2026-09-17', to: '2026-09-30' },
+  visits: 800,
+  updatedAt: NOW,
+  goals: [
+    goal({ id: 1, name: 'Ticket purchase' }),
+    goal({ id: 2, name: 'Old landing form', event: 'old_form', archived: true }),
+  ],
+};
+
+const FUNNEL: LiveFunnel = {
+  from: '2026-10-01',
+  to: '2026-10-14',
+  updatedAt: NOW,
+  stages: [
+    {
+      key: 'visit',
+      ru: 'Визит',
+      en: 'Visit',
+      value: 800,
+      goalId: null,
+      fromPrevious: null,
+      fromFirst: null,
+    },
+    {
+      key: 'order',
+      ru: 'Заказ',
+      en: 'Order',
+      value: 20,
+      goalId: 1,
+      fromPrevious: 0.025,
+      fromFirst: 0.025,
+    },
+  ],
+  tickets: [{ type: 'standard', pick: 10, buy: 5, checkout: 2 }],
+  roles: [{ key: 'speaker', ru: 'Спикер', en: 'Speaker', value: 3 }],
+  missing: [],
+};
+
+const DETAIL: LiveGoalDetail = {
+  goal: { id: 2, name: 'Old landing form', type: 'action', event: 'old_form', conditions: [] },
+  from: '2026-10-01',
+  to: '2026-10-14',
+  updatedAt: NOW,
+  totals: { visits: 100, reaches: 5, conversionRate: 5 },
+  series: [{ bucket: '2026-10-01', visits: 100, reaches: 5 }],
+  bySource: [{ key: 'Ad traffic', visits: 100, reaches: 5, conversionRate: 5 }],
+  byUtm: [],
+  byPage: [],
+  byDevice: [],
+  byCountry: [],
+};
+
+const TABLE: LiveTable = {
+  from: '2026-10-01',
+  to: '2026-10-14',
+  goalId: null,
+  updatedAt: NOW,
+  columns: ['ym:s:lastsignTrafficSource', 'ym:s:visits', 'ym:s:goal1reaches'],
+  totals: [100, 5],
+  rows: [{ dims: ['Search engine traffic'], values: [100, 5] }],
+};
+
+const initialFilters = useFilters.getState();
+
+beforeEach(() => {
+  useFilters.setState(initialFilters, true);
+  vi.mocked(v3.liveSummary).mockResolvedValue({
+    from: '2026-10-01',
+    to: '2026-10-14',
+    updatedAt: NOW,
+    totals: { visits: 800, users: 600, pageviews: 2000, bounceRate: 20, avgDurationSec: 90 },
+    series: [{ bucket: '2026-10-01', visits: 800, users: 600 }],
+  } as Awaited<ReturnType<typeof v3.liveSummary>>);
+  vi.mocked(v3.liveFunnel).mockResolvedValue(FUNNEL);
+  vi.mocked(v3.liveGoals).mockResolvedValue(GOALS);
+  vi.mocked(v3.liveGoal).mockResolvedValue(DETAIL);
+  vi.mocked(v3.liveTable).mockResolvedValue(TABLE);
+});
+afterEach(() => setTestLocale('ru'));
+
+describe('Goals page — «Архивные цели» filter', () => {
+  it('hides archived goals until the global checkbox is on', async () => {
+    renderWithProviders(<Goals />);
+    expect(await screen.findByText('Ticket purchase')).toBeInTheDocument();
+    expect(screen.queryByText('Old landing form')).not.toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent('Скрыто архивных целей: 1');
+
+    act(() => useFilters.getState().toggleArchived());
+    expect(await screen.findByText('Old landing form')).toBeInTheDocument();
+    expect(screen.getByText('Архивная')).toBeInTheDocument();
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+
+  it('renders without Cyrillic in English', async () => {
+    setTestLocale('en');
+    const { container } = renderWithProviders(<Goals />);
+    expect(await screen.findByText('Ticket purchase')).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent('Archived goals hidden: 1');
+    expectNoCyrillic(container);
+  });
+});
+
+describe('Explore — goal selector honours the archived filter', () => {
+  const options = () =>
+    within(screen.getByRole('combobox', { name: /Цель для колонок|Goal for columns/ }))
+      .getAllByRole('option')
+      .map((o) => o.textContent);
+
+  it('lists archived goals only when the checkbox is on', async () => {
+    renderWithProviders(
+      <Routes>
+        <Route path="/app/explore/:preset" element={<Explore />} />
+      </Routes>,
+      '/app/explore/sources',
+    );
+    await waitFor(() => expect(options()).toContain('Ticket purchase'));
+    expect(options()).not.toContain('Old landing form');
+    act(() => useFilters.getState().toggleArchived());
+    await waitFor(() => expect(options()).toContain('Old landing form'));
+  });
+
+  it('renders without Cyrillic in English (headers + channel names localised)', async () => {
+    setTestLocale('en');
+    const { container } = renderWithProviders(
+      <Routes>
+        <Route path="/app/explore/:preset" element={<Explore />} />
+      </Routes>,
+      '/app/explore/sources',
+    );
+    expect((await screen.findAllByText(/Goal: reaches/)).length).toBeGreaterThan(0);
+    // «Search engine traffic» → channelName() → «Search engines» (tab + grid cell).
+    expect(screen.getAllByText('Search engines').length).toBeGreaterThan(1);
+    expectNoCyrillic(container);
+  });
+});
+
+describe('Live pages in English', () => {
+  it('Live renders without Cyrillic', async () => {
+    setTestLocale('en');
+    const { container } = renderWithProviders(<Live />);
+    expect(await screen.findByText('Order')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+
+  it('FunnelLive renders without Cyrillic', async () => {
+    setTestLocale('en');
+    const { container } = renderWithProviders(<FunnelLive />);
+    expect(await screen.findByText('Speaker')).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+
+  it('GoalDetail renders without Cyrillic and marks an archived goal', async () => {
+    vi.mocked(v3.liveGoal).mockResolvedValue({
+      ...DETAIL,
+      goal: { ...DETAIL.goal, archived: true } as LiveGoalDetail['goal'],
+    });
+    setTestLocale('en');
+    const { container } = renderWithProviders(
+      <Routes>
+        <Route path="/app/goals/:id" element={<GoalDetail />} />
+      </Routes>,
+      '/app/goals/2',
+    );
+    expect(await screen.findByText('Archived')).toBeInTheDocument();
+    expect(screen.getAllByText('Ads').length).toBeGreaterThan(0);
+    expectNoCyrillic(container);
+  });
+
+  it('Goals: status filter still works next to the archived filter', async () => {
+    setTestLocale('en');
+    renderWithProviders(<Goals />);
+    await screen.findByText('Ticket purchase');
+    fireEvent.change(screen.getByRole('combobox', { name: /status/i }), {
+      target: { value: 'dead' },
+    });
+    expect(screen.queryByText('Ticket purchase')).not.toBeInTheDocument();
+  });
+});

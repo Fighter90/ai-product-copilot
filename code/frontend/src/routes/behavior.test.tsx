@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { PageStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
+import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 vi.mock('../lib/api', () => ({ api: { pages: vi.fn(), exitPages: vi.fn() } }));
 import { api } from '../lib/api';
@@ -63,5 +64,51 @@ describe('Behavior (data wrapper)', () => {
     renderWithProviders(<Behavior />);
     expect(await screen.findByRole('heading', { name: 'Страницы входа' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Страницы выхода' })).toBeInTheDocument();
+  });
+});
+
+describe('BehaviorView (en locale)', () => {
+  afterEach(() => setTestLocale('ru'));
+
+  it('renders cards, insights, tables and recommendations without Cyrillic', () => {
+    setTestLocale('en');
+    const { container } = render(
+      <BehaviorView
+        status="success"
+        entry={[
+          page({
+            page: '/lp',
+            visits: 400,
+            bounceRate: 0.6,
+            goalReaches: 1,
+            conversionRate: 0.0025,
+          }),
+          page({
+            page: '/tickets',
+            visits: 200,
+            bounceRate: 0.1,
+            goalReaches: 20,
+            conversionRate: 0.1,
+          }),
+        ]}
+        exit={[page({ page: '/checkout', visits: 50, bounceRate: 0.5 })]}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Entry pages' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Exit pages' })).toBeInTheDocument();
+    expect(screen.getByText(/High bounce 60.0% on \/lp/)).toBeInTheDocument();
+    expect(screen.getByText('Recommendations')).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+
+  it('keeps loading/error/empty states in English', () => {
+    setTestLocale('en');
+    const { container, rerender } = render(<BehaviorView status="pending" entry={[]} exit={[]} />);
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    rerender(<BehaviorView status="error" entry={[]} exit={[]} />);
+    expectNoCyrillic(container);
+    rerender(<BehaviorView status="success" entry={[]} exit={[]} />);
+    expect(screen.getByText(/No data for the selected period/)).toBeInTheDocument();
+    expectNoCyrillic(container);
   });
 });

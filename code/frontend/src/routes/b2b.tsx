@@ -5,6 +5,14 @@ import type { B2bDeal, B2bStage, NewB2bDeal } from '@pca/shared';
 import { api } from '../lib/api';
 import { formatInt } from '../lib/format';
 import { B2B_STAGES, pipelineSummary } from '../lib/b2b';
+import { useT, type DictKey } from '../i18n';
+
+const STAGE_KEYS: Record<B2bStage, DictKey> = {
+  lead: 'b2b.stage.lead',
+  negotiation: 'b2b.stage.negotiation',
+  invoiced: 'b2b.stage.invoiced',
+  paid: 'b2b.stage.paid',
+};
 
 export interface B2bHandlers {
   onAdd: (deal: NewB2bDeal) => void;
@@ -19,6 +27,7 @@ export function B2bView({
   onStageChange,
   onRemove,
 }: { deals: B2bDeal[] } & B2bHandlers): JSX.Element {
+  const { t } = useT();
   const summary = pipelineSummary(deals);
   const [company, setCompany] = useState('');
   const [tickets, setTickets] = useState('');
@@ -50,31 +59,35 @@ export function B2bView({
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {byStage.map((s) => (
           <div key={s.stage} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="text-xs font-semibold uppercase text-slate-500">{s.stage}</div>
-            <div className="text-lg font-bold">{formatInt(s.tickets)} билетов</div>
-            <div className="text-xs text-slate-500">{s.deals} сделок</div>
+            <div className="text-xs font-semibold uppercase text-slate-500">
+              {t(STAGE_KEYS[s.stage])}
+            </div>
+            <div className="text-lg font-bold">
+              {t('b2b.ticketsN', { n: formatInt(s.tickets) })}
+            </div>
+            <div className="text-xs text-slate-500">{t('b2b.dealsN', { n: s.deals })}</div>
           </div>
         ))}
       </div>
       <p className="text-sm text-slate-600">
-        Всего билетов в пайплайне: <b>{formatInt(summary.totalTickets)}</b> · оплачено (в KPI 300):{' '}
+        {t('b2b.pipelineTotal')} <b>{formatInt(summary.totalTickets)}</b> · {t('b2b.pipelinePaid')}{' '}
         <b>{formatInt(summary.paidTickets)}</b>
       </p>
 
       <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
         <label className="text-sm">
-          Компания
+          {t('b2b.col.company')}
           <input
-            aria-label="Компания"
+            aria-label={t('b2b.col.company')}
             value={company}
             onChange={(e) => setCompany(e.target.value)}
             className="block rounded border border-slate-300 px-2 py-1"
           />
         </label>
         <label className="text-sm">
-          Билеты
+          {t('b2b.col.tickets')}
           <input
-            aria-label="Билеты"
+            aria-label={t('b2b.col.tickets')}
             type="number"
             value={tickets}
             onChange={(e) => setTickets(e.target.value)}
@@ -82,22 +95,22 @@ export function B2bView({
           />
         </label>
         <label className="text-sm">
-          Этап
+          {t('b2b.col.stage')}
           <select
-            aria-label="Этап новой сделки"
+            aria-label={t('b2b.newStage')}
             value={stage}
             onChange={(e) => setStage(e.target.value as B2bStage)}
             className="block rounded border border-slate-300 px-2 py-1"
           >
             {B2B_STAGES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {t(STAGE_KEYS[s])}
               </option>
             ))}
           </select>
         </label>
         <button type="submit" className="rounded bg-indigo-600 px-3 py-1 text-sm text-white">
-          Добавить
+          {t('b2b.add')}
         </button>
       </form>
 
@@ -106,7 +119,7 @@ export function B2bView({
         onClick={() => setTableOpen(true)}
         className="rounded border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
       >
-        Развернуть полную таблицу ({deals.length})
+        {t('b2b.expand', { n: deals.length })}
       </button>
 
       <Dialog open={tableOpen} onClose={() => setTableOpen(false)} className="relative z-50">
@@ -114,10 +127,10 @@ export function B2bView({
         <div className="fixed inset-y-0 right-0 flex max-w-full">
           <Dialog.Panel className="w-screen max-w-lg overflow-y-auto bg-white p-4 shadow-xl">
             <div className="mb-3 flex items-center justify-between">
-              <Dialog.Title className="text-lg font-semibold">B2B-сделки</Dialog.Title>
+              <Dialog.Title className="text-lg font-semibold">{t('b2b.title')}</Dialog.Title>
               <button
                 type="button"
-                aria-label="Закрыть"
+                aria-label={t('common.close')}
                 onClick={() => setTableOpen(false)}
                 className="rounded p-1 text-slate-500 hover:bg-slate-100"
               >
@@ -127,9 +140,9 @@ export function B2bView({
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-slate-500">
-                  <th className="py-1">Компания</th>
-                  <th>Билеты</th>
-                  <th>Этап</th>
+                  <th className="py-1">{t('b2b.col.company')}</th>
+                  <th>{t('b2b.col.tickets')}</th>
+                  <th>{t('b2b.col.stage')}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -140,7 +153,7 @@ export function B2bView({
                     <td>{formatInt(d.tickets)}</td>
                     <td>
                       <select
-                        aria-label={`Этап ${d.company}`}
+                        aria-label={t('b2b.stageOf', { company: d.company })}
                         value={d.stage}
                         onChange={(e) =>
                           onStageChange({ id: d.id, stage: e.target.value as B2bStage })
@@ -149,7 +162,7 @@ export function B2bView({
                       >
                         {B2B_STAGES.map((s) => (
                           <option key={s} value={s}>
-                            {s}
+                            {t(STAGE_KEYS[s])}
                           </option>
                         ))}
                       </select>
@@ -157,7 +170,7 @@ export function B2bView({
                     <td>
                       <button
                         type="button"
-                        aria-label={`Удалить ${d.company}`}
+                        aria-label={t('b2b.removeOf', { company: d.company })}
                         onClick={() => onRemove(d.id)}
                         className="text-red-700"
                       >

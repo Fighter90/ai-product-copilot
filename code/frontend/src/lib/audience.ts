@@ -56,9 +56,9 @@ export function audienceBarOption(rows: AudienceRow[], title: string): object {
 }
 
 /** ECharts donut: share of visits by device category. */
-export function deviceShareOption(rows: AudienceRow[]): object {
+export function deviceShareOption(rows: AudienceRow[], title = 'Доля устройств (визиты)'): object {
   return {
-    title: { text: 'Доля устройств (визиты)', left: 'center', textStyle: { fontSize: 13 } },
+    title: { text: title, left: 'center', textStyle: { fontSize: 13 } },
     tooltip: { trigger: 'item', ...intTooltip },
     legend: { data: rows.map((r) => r.label), bottom: 0 },
     series: [

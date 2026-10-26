@@ -8,6 +8,7 @@ import { downloadFile, reportDownloadUrl } from '../lib/download';
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { mdToHtml } from '../lib/md-to-html';
+import { fmtDate, useT, type DictKey } from '../i18n';
 import {
   hasSeed,
   loadHypothesisSeed,
@@ -41,29 +42,25 @@ function Stat({
  * (via the shared reportSections), so what you read here is byte-for-byte the exported content.
  */
 export function ReportFullView({ snapshot }: { snapshot: ReportSnapshot }): JSX.Element {
+  const { t } = useT();
   const sections = reportSections(snapshot);
   return (
     <article
-      aria-label="Полный отчёт"
+      aria-label={t('rep.fullReport')}
       className="max-h-[70vh] space-y-4 overflow-auto rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-sm"
     >
-      <p className="text-xs text-slate-500">
-        Полный отчёт ({sections.length} разделов) — идентичен экспортируемым DOCX и PDF.
-      </p>
+      <p className="text-xs text-slate-500">{t('rep.fullReportNote', { n: sections.length })}</p>
       {sections.map((sec, i) => (
         <section key={`${sec.heading}-${i}`} className="space-y-1">
           <h3 className="border-b border-slate-200 pb-1 font-semibold text-slate-800">
             {sec.heading}
           </h3>
-          {sec.lines.map((line, j) =>
-            line === '' ? (
-              <div key={j} className="h-2" />
-            ) : (
-              <p key={j} className="whitespace-pre-wrap text-slate-600">
-                {line}
-              </p>
-            ),
-          )}
+          {/* Same markdown the DOCX/PDF builders consume — tables/lists render as such
+              (mdToHtml escapes first, so section text can't inject markup). */}
+          <div
+            className="report-md space-y-1 text-slate-600 [&_table]:my-2 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left"
+            dangerouslySetInnerHTML={{ __html: mdToHtml(sec.lines.join('\n')) }}
+          />
         </section>
       ))}
     </article>
@@ -72,11 +69,10 @@ export function ReportFullView({ snapshot }: { snapshot: ReportSnapshot }): JSX.
 
 /** Render AI analysis narrative as formatted HTML. */
 function AINarrativeView({ narrative }: { narrative: string }): JSX.Element {
+  const { t } = useT();
   return (
     <div className="space-y-1">
-      <p className="text-xs text-violet-700">
-        AI-анализ (интерпретация поверх точных цифр — проверяйте по данным):
-      </p>
+      <p className="text-xs text-violet-700">{t('rep.ai.note')}</p>
       <div
         className="ai-narrative overflow-auto rounded bg-slate-50 p-4 text-sm text-slate-700"
         dangerouslySetInnerHTML={{ __html: mdToHtml(narrative) }}
@@ -119,14 +115,22 @@ export interface ReportPreviewProps {
 }
 
 // 5 stages matching the backend ANALYSIS_CHUNKS
-const AI_STAGES = [
-  'Подготовка данных',
-  'Генерация: Итог',
-  'Генерация: Каналы, UTM и Аудитория',
-  'Генерация: Страницы и Воронка',
-  'Генерация: Риски и Рекомендации',
-  'Генерация: Гипотезы и Дорожная карта',
+const AI_STAGES: readonly DictKey[] = [
+  'rep.stage.prepare',
+  'rep.stage.summary',
+  'rep.stage.channels',
+  'rep.stage.pages',
+  'rep.stage.risks',
+  'rep.stage.hypotheses',
 ];
+
+/** Localised B2B stage label; unknown stages fall back to the raw value. */
+const STAGE_KEYS: Record<string, DictKey> = {
+  lead: 'b2b.stage.lead',
+  negotiation: 'b2b.stage.negotiation',
+  invoiced: 'b2b.stage.invoiced',
+  paid: 'b2b.stage.paid',
+};
 
 /**
  * ANA-24: editable hypothesis draft prefilled from the «→ гипотеза» deep link. Lives on the
@@ -142,6 +146,7 @@ export function HypothesisDraftCard({
   onChange?: (next: HypothesisSeed) => void;
   onDiscard?: () => void;
 }): JSX.Element | null {
+  const { t } = useT();
   if (!hasSeed(seed)) return null;
 
   const update = (key: keyof HypothesisSeed, value: string): HypothesisSeed => {
@@ -173,25 +178,22 @@ export function HypothesisDraftCard({
       className="space-y-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3"
     >
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-indigo-900">Черновик гипотезы</h3>
+        <h3 className="text-sm font-semibold text-indigo-900">{t('rep.draft.title')}</h3>
         <button
           type="button"
           onClick={() => onDiscard?.()}
           className="text-xs text-slate-500 hover:text-slate-800"
         >
-          Убрать черновик
+          {t('rep.draft.discard')}
         </button>
       </div>
-      <p className="text-xs text-indigo-700">
-        Контекст перенесён с дашборда («→ гипотеза»). Дополните формулировку — черновик хранится до
-        конца сессии.
-      </p>
+      <p className="text-xs text-indigo-700">{t('rep.draft.hint')}</p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {field('segment', 'ЦА / сегмент')}
-        {field('trouble', 'Проблема (симптом)')}
-        {field('action', 'Действие пользователя')}
-        {field('barrier', 'Барьер')}
-        {field('evidence', 'Данные (обоснование)')}
+        {field('segment', t('rep.draft.segment'))}
+        {field('trouble', t('rep.draft.trouble'))}
+        {field('action', t('rep.draft.action'))}
+        {field('barrier', t('rep.draft.barrier'))}
+        {field('evidence', t('rep.draft.evidence'))}
       </div>
     </div>
   );
@@ -211,21 +213,26 @@ export function ReportPreviewView({
   onPrefillChange,
   onDiscardPrefill,
 }: ReportPreviewProps): JSX.Element {
+  const { t, locale } = useT();
   const [aiProgress, setAiProgress] = useState(0);
-  const [aiStage, setAiStage] = useState('');
+  const [aiStage, setAiStage] = useState<DictKey | null>(null);
+  const stageLabel = (stage: string): string => {
+    const key = STAGE_KEYS[stage];
+    return key ? t(key) : stage;
+  };
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Simulate progress when AI analysis is pending
   useEffect(() => {
     if (!insightsPending) {
       setAiProgress(0);
-      setAiStage('');
+      setAiStage(null);
       if (intervalRef.current) clearInterval(intervalRef.current);
       return;
     }
 
     // Start from stage 0
-    setAiStage(AI_STAGES[0] ?? '');
+    setAiStage(AI_STAGES[0] ?? null);
     setAiProgress(0);
 
     let step = 0;
@@ -238,7 +245,7 @@ export function ReportPreviewView({
       if (step >= totalSteps) {
         // Stay at 95% until response arrives (never hit 100% until done)
         setAiProgress(95);
-        setAiStage(AI_STAGES[totalSteps - 1] ?? 'Завершение…');
+        setAiStage(AI_STAGES[totalSteps - 1] ?? 'rep.stage.finishing');
       } else {
         const progress = Math.round((step / totalSteps) * 90);
         setAiProgress(progress);
@@ -256,7 +263,7 @@ export function ReportPreviewView({
   useEffect(() => {
     if (narrative) {
       setAiProgress(100);
-      setAiStage('Готово!');
+      setAiStage('rep.stage.done');
       if (intervalRef.current) clearInterval(intervalRef.current);
     }
   }, [narrative]);
@@ -265,7 +272,7 @@ export function ReportPreviewView({
   useEffect(() => {
     if (insightsError) {
       setAiProgress(0);
-      setAiStage('Ошибка');
+      setAiStage('common.error');
       if (intervalRef.current) clearInterval(intervalRef.current);
     }
   }, [insightsError]);
@@ -273,14 +280,14 @@ export function ReportPreviewView({
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-3">
-        <h2 className="text-lg font-semibold">Превью отчёта</h2>
+        <h2 className="text-lg font-semibold">{t('rep.title')}</h2>
         <button
           type="button"
           onClick={onBuild}
           disabled={isPending}
           className="rounded bg-indigo-600 px-3 py-1 text-sm text-white disabled:opacity-40"
         >
-          {isPending ? 'Формирую…' : 'Сформировать срез данных'}
+          {isPending ? t('rep.building') : t('rep.build')}
         </button>
       </div>
 
@@ -294,31 +301,39 @@ export function ReportPreviewView({
       {snapshot ? (
         <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs text-slate-500">
-            Срез данных: {snapshot.id} · период {snapshot.period.from} — {snapshot.period.to} ·
-            сформирован {snapshot.generatedAt}
+            {t('rep.snapshotMeta', {
+              id: snapshot.id,
+              from: fmtDate(snapshot.period.from, locale),
+              to: fmtDate(snapshot.period.to, locale),
+              at: fmtDate(snapshot.generatedAt, locale, true),
+            })}
           </p>
 
           {/* KPI strip — primary-goal label follows the snapshot («Заказов» for a purchase goal:
               the Ecommerce goal fires on order creation, not on payment — ANA-19). */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Stat label="Цель" value={formatInt(snapshot.kpi.target)} />
+            <Stat label={t('rep.kpi.target')} value={formatInt(snapshot.kpi.target)} />
             <Stat
-              label={snapshot.goalLabel?.title ?? 'Заявок B2C'}
+              label={
+                snapshot.goalLabel?.isPaid ? t('rep.kpi.orders') : t('rep.kpi.applicationsB2c')
+              }
               value={formatInt(snapshot.kpi.b2cApplications)}
               hint={
-                snapshot.goalLabel?.showApplicationsCaveat === false ? undefined : 'заявка ≠ оплата'
+                snapshot.goalLabel?.showApplicationsCaveat === false
+                  ? undefined
+                  : t('rep.kpi.applicationNotPayment')
               }
             />
-            <Stat label="Заказов создано (B2B)" value={formatInt(snapshot.kpi.b2bPaidTickets)} />
-            <Stat label="Gap" value={formatInt(snapshot.kpi.gap)} />
+            <Stat label={t('rep.kpi.b2bOrders')} value={formatInt(snapshot.kpi.b2bPaidTickets)} />
+            <Stat label={t('rep.kpi.gap')} value={formatInt(snapshot.kpi.gap)} />
           </div>
 
           {/* Funnel summary */}
           {snapshot.funnel && (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Stat label="Визиты" value={formatInt(snapshot.funnel.visits)} />
+              <Stat label={t('rep.funnel.visits')} value={formatInt(snapshot.funnel.visits)} />
               <Stat
-                label="Воронка → Заявки"
+                label={t('rep.funnel.toApplications')}
                 value={formatInt(snapshot.funnel.b2cApplications)}
                 hint={
                   snapshot.funnel.visits > 0
@@ -326,9 +341,12 @@ export function ReportPreviewView({
                     : undefined
                 }
               />
-              <Stat label="B2B в работе" value={formatInt(snapshot.funnel.b2bPipelineTickets)} />
               <Stat
-                label="Заказов создано (B2B)"
+                label={t('rep.funnel.b2bInProgress')}
+                value={formatInt(snapshot.funnel.b2bPipelineTickets)}
+              />
+              <Stat
+                label={t('rep.kpi.b2bOrders')}
                 value={formatInt(snapshot.funnel.b2bPaidTickets)}
               />
             </div>
@@ -337,16 +355,18 @@ export function ReportPreviewView({
           {/* B2B summary */}
           {snapshot.b2bSummary && snapshot.b2bSummary.dealsCount > 0 && (
             <div className="space-y-1">
-              <h3 className="text-sm font-semibold text-slate-700">B2B-пайплайн</h3>
+              <h3 className="text-sm font-semibold text-slate-700">{t('rep.b2b.title')}</h3>
               <p className="text-xs text-slate-600">
-                {snapshot.b2bSummary.dealsCount} сделок ·{' '}
-                {formatInt(snapshot.b2bSummary.totalTickets)} билетов всего ·{' '}
-                {formatInt(snapshot.b2bSummary.paidTickets)} заказов создано
+                {t('rep.b2b.summary', {
+                  deals: snapshot.b2bSummary.dealsCount,
+                  tickets: formatInt(snapshot.b2bSummary.totalTickets),
+                  paid: formatInt(snapshot.b2bSummary.paidTickets),
+                })}
               </p>
               <div className="flex gap-2 text-xs text-slate-500">
                 {snapshot.b2bSummary.byStage.map((s) => (
                   <span key={s.stage} className="rounded bg-slate-100 px-2 py-0.5">
-                    {s.stage}: {s.tickets} ({s.deals})
+                    {stageLabel(s.stage)}: {s.tickets} ({s.deals})
                   </span>
                 ))}
               </div>
@@ -355,14 +375,18 @@ export function ReportPreviewView({
 
           {/* Data summary */}
           <ul className="text-sm text-slate-600">
-            <li>Каналов: {snapshot.channels.length}</li>
+            <li>{t('rep.data.channels', { n: snapshot.channels.length })}</li>
             <li>
-              AI-гипотез:{' '}
-              {snapshot.generatedHypotheses
-                ? `${snapshot.generatedHypotheses.problems.length} проблем + ${snapshot.generatedHypotheses.solutions.length} решений`
-                : 'не сгенерированы'}
+              {t('rep.data.hypotheses', {
+                value: snapshot.generatedHypotheses
+                  ? t('rep.data.hypothesesCount', {
+                      problems: snapshot.generatedHypotheses.problems.length,
+                      solutions: snapshot.generatedHypotheses.solutions.length,
+                    })
+                  : t('rep.data.hypothesesNone'),
+              })}
             </li>
-            <li>Решений в Decision Log: {snapshot.decisions.length}</li>
+            <li>{t('rep.data.decisions', { n: snapshot.decisions.length })}</li>
           </ul>
 
           <div className="flex items-center gap-3">
@@ -372,21 +396,21 @@ export function ReportPreviewView({
               disabled={isPending}
               className="rounded border border-slate-400 px-3 py-1 text-sm text-slate-700 disabled:opacity-40"
             >
-              {isPending ? 'Перестраиваю…' : 'Перестроить отчёт'}
+              {isPending ? t('rep.rebuilding') : t('rep.rebuild')}
             </button>
             <button
               type="button"
               onClick={() => onExport(snapshot.id, 'docx')}
               className="rounded border border-indigo-600 px-3 py-1 text-sm text-indigo-700"
             >
-              Export DOCX
+              {t('rep.exportDocx')}
             </button>
             <button
               type="button"
               onClick={() => onExport(snapshot.id, 'pdf')}
               className="rounded border border-rose-600 px-3 py-1 text-sm text-rose-700"
             >
-              Export PDF
+              {t('rep.exportPdf')}
             </button>
           </div>
 
@@ -394,25 +418,23 @@ export function ReportPreviewView({
           <div className="space-y-2 border-t border-slate-100 pt-3">
             {insightsPending ? (
               <div className="space-y-2">
-                <AIProgress progress={aiProgress} stage={aiStage} />
-                <p className="text-xs text-violet-500">
-                  Генерация AI-анализа: 6 разделов (по 6000 токенов), обычно занимает 5–10 минут.
-                </p>
+                <AIProgress progress={aiProgress} stage={aiStage ? t(aiStage) : ''} />
+                <p className="text-xs text-violet-500">{t('rep.ai.pendingNote')}</p>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={() => onInsights(snapshot.id)}
                 disabled={!!narrative}
-                title={narrative ? 'AI-анализ уже сгенерирован для этого среза' : ''}
+                title={narrative ? t('rep.ai.alreadyTitle') : ''}
                 className="rounded bg-violet-600 px-3 py-1 text-sm text-white disabled:opacity-40"
               >
-                {narrative ? 'AI-анализ сгенерирован' : 'Сгенерировать AI-анализ'}
+                {narrative ? t('rep.ai.done') : t('rep.ai.generate')}
               </button>
             )}
             {insightsError ? (
               <p role="alert" className="text-xs text-red-700">
-                AI-анализ недоступен: {insightsError}
+                {t('rep.ai.unavailable', { error: insightsError })}
               </p>
             ) : null}
             {narrative ? <AINarrativeView narrative={narrative} /> : null}
@@ -421,10 +443,7 @@ export function ReportPreviewView({
           <ReportFullView snapshot={snapshot} />
         </div>
       ) : (
-        <p className="text-slate-500">
-          Нажмите «Сформировать срез данных», чтобы собрать неизменяемый отчёт за выбранный период.
-          Гипотезы генерируются автоматически при наличии ANTHROPIC_API_KEY.
-        </p>
+        <p className="text-slate-500">{t('rep.empty')}</p>
       )}
     </section>
   );

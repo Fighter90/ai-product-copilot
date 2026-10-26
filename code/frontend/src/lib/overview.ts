@@ -13,7 +13,8 @@ export interface OverviewKpi {
 }
 
 /**
- * KPI strip: target, B2C applications, B2B paid, total paid, gap.
+ * KPI strip: target (admin «Цель по оплатам», default 300), B2C applications, B2B paid, total paid,
+ * gap.
  *
  * Payments = B2B paid **+ purchase-goal reaches** when the primary goal is a purchase goal
  * (`goalIsPaid`) — its reaches ARE payments. For a plain application goal only B2B paid counts
@@ -24,6 +25,7 @@ export function summarizeChannels(
   stats: ChannelStat[],
   deals: B2bDeal[] = [],
   goalIsPaid = false,
+  target: number = KPI_TARGET_PAID_TICKETS,
 ): OverviewKpi {
   // applications comes from the single factsource (periodTotals) so the KPI strip, Funnel and Goals
   // headline "Заявки B2C" numbers are guaranteed identical.
@@ -31,11 +33,11 @@ export function summarizeChannels(
   const b2bPaid = deals.filter((d) => d.stage === 'paid').reduce((acc, d) => acc + d.tickets, 0);
   const paid = b2bPaid + (goalIsPaid ? applications : 0);
   return {
-    target: KPI_TARGET_PAID_TICKETS,
+    target,
     applications,
     b2bPaid,
     paid,
-    gap: Math.max(0, KPI_TARGET_PAID_TICKETS - paid),
+    gap: Math.max(0, target - paid),
   };
 }
 
