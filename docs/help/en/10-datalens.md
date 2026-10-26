@@ -56,13 +56,26 @@ All ranged datasets are one row per day per dimension combination — ideal for 
 
 ## Provisioning via the Public API
 
-The workbook, the Metrika connection and a dataset are created by `scripts/push-datalens.mjs`:
+`scripts/push-datalens.mjs` builds a live DataLens dashboard on Yandex Metrika data (Public API `https://api.datalens.tech`, API version 3). Object names are in Russian, as they appear in DataLens:
 
-1. Get an IAM token (`yc iam create-token`, valid ≤ 12 h) and the organisation id (datalens.ru → Settings).
-2. Run: `DATALENS_IAM_TOKEN=… DATALENS_ORG_ID=… METRIKA_OAUTH_TOKEN=… node scripts/push-datalens.mjs`
-3. The script creates the “ProductCamp Analytics” workbook, the Yandex Metrika connection (counter 54280963) and the “Metrika — visits by day” dataset (the Metrika source with the full set of dimensions).
+| Object     | Name                        | Contents                                                                                                                                                             |
+| ---------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workbook   | ProductCamp Analytics       | —                                                                                                                                                                    |
+| Connection | Яндекс.Метрика 54280963     | Direct connection to counter 54280963 (DataLens refreshes the data itself)                                                                                           |
+| Dataset    | Метрика — визиты по дням    | Dimensions: visit date (`date`), last significant traffic source (`traffic_source`). Measures: visits (`visits`), users (`users`), any-goal reaches (`goal_reaches`) |
+| Charts     | 5 charts                    | Visits and users by day (lines), goal reaches by day (line), visits by traffic source (columns), traffic structure (donut), sources: visits, users, goals (table)    |
+| Dashboard  | ProductCamp — трафик и цели | A “Period” selector (last 90 days by default) and the five charts                                                                                                    |
 
-CSV datasets (the Files connection) cannot be created via the API — upload them in the DataLens UI. The call contracts (createWorkbook / createConnection / createDataset) are documented in the script.
+Running it:
+
+1. You need access to the DataLens organisation with the `datalens.editor` role. The script takes the IAM token from `DATALENS_IAM_TOKEN`; if it is not set, it runs `yc iam create-token` itself (the token lives ≤ 12 h and is never printed).
+2. Run `node scripts/push-datalens.mjs`. Options: `--workbook <id>` (or `DATALENS_WORKBOOK_ID`) to target a specific workbook; `DATALENS_ORG_ID` for another organisation (defaults to the ProductCamp organisation).
+3. The Metrika OAuth token is needed only to create the connection or with `--update-connection` (refresh the token of the existing connection). The script reads it from `METRIKA_OAUTH_TOKEN` or `YANDEX_OAUTH_TOKEN` in `.env`.
+4. At the end it prints a table of objects (created / updated / reused) with their ids, plus links to the workbook and the dashboard.
+
+Re-running never creates duplicates: the workbook is looked up by title, everything else by name inside the workbook. Existing charts and the dashboard are overwritten with the configuration from the script; the dataset is rebuilt only if its fields differ from the expected ones (force it with `--rebuild-dataset`). Manual edits to these charts or the dashboard in the DataLens UI are overwritten on the next run — save your variant under a different name to keep it.
+
+What the API cannot do: the Public API has no Files connection type, so the cabinet's CSV datasets (see above) can only be uploaded through the DataLens UI.
 
 ## Alerts and webhooks
 

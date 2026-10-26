@@ -58,7 +58,7 @@
 [отчёт по ГОСТ](../specs/014-report-gost.md) · [шаблон спеки](../specs/TEMPLATE.md).
 Актуальные копии перенесены в `openspec/specs/`.
 
-## Справка (help) — 15 статей × RU/EN
+## Справка (help) — 20 статей × RU/EN
 
 RU: [Начало работы](../help/ru/01-start.md) · [Обзор](../help/ru/02-overview.md) ·
 [Реальное время](../help/ru/03-live.md) · [Цели и KPI](../help/ru/04-goals.md) ·
@@ -67,9 +67,12 @@ RU: [Начало работы](../help/ru/01-start.md) · [Обзор](../help/
 [История и B2B](../help/ru/09-history-b2b.md) · [DataLens](../help/ru/10-datalens.md) ·
 [Ассистент](../help/ru/11-assistant.md) · [Администрирование](../help/ru/12-admin.md) ·
 [Язык и тема](../help/ru/13-prefs.md) · [Метрики и формулы](../help/ru/14-metrics.md) ·
-[Как устроен продукт](../help/ru/15-architecture.md)
+[Как устроен продукт](../help/ru/15-architecture.md) ·
+[Роли](../help/ru/16-roles.md) · [Как строятся отчёты](../help/ru/17-reports-how.md) ·
+[Ключи LLM-провайдеров](../help/ru/18-llm-keys.md) · [Руководство администратора](../help/ru/19-admin-guide.md) ·
+[Руководство аналитика](../help/ru/20-analyst-guide.md)
 
-EN: те же 15 статей в [docs/help/en/](../help/en/) (`01-start.md` … `15-architecture.md`).
+EN: те же 20 статей в [docs/help/en/](../help/en/) (`01-start.md` … `20-analyst-guide.md`).
 
 ## Прочее
 

@@ -1,15 +1,17 @@
 # ProductCamp Conversion Analytics
 
-[![CI](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml)
-
 > 🇷🇺 Русский · [🇬🇧 English](README.en.md)
 
-![CI](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/actions/workflows/ci.yml/badge.svg)
-![E2E](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/actions/workflows/e2e.yml/badge.svg)
-![Security](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/actions/workflows/security.yml/badge.svg)
+[![CI](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml)
+[![E2E](https://github.com/Fighter90/ai-product-copilot/actions/workflows/e2e.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/e2e.yml)
+[![Security](https://github.com/Fighter90/ai-product-copilot/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/security.yml)
+[![Docs links](https://github.com/Fighter90/ai-product-copilot/actions/workflows/docs-links.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/docs-links.yml)
 ![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
 ![pnpm](https://img.shields.io/badge/pnpm-9-orange)
-![Version](https://img.shields.io/badge/version-v3.0.0-blue)
+![Version](https://img.shields.io/badge/version-v3.1.0-blue)
+
+**Стенд:** [dashboardcamp.ru](https://dashboardcamp.ru) — лендинг и справка открыты всем, кабинет —
+после входа.
 
 Многопользовательский аналитический кабинет трека **«Конверсии и лидген» ProductCamp**:
 Яндекс.Метрика → SQLite (история по дням) → личный кабинет с ролями и аудитом, мониторинг
@@ -25,6 +27,16 @@
 > (OpenRouter/Anthropic/YandexGPT/GigaChat — ключи шифруются AES-256-GCM), Яндекс.Метрика,
 > Интеграции, Аудит. Справка + RAG-ассистент. Интерфейс ru/en, тёмная/светлая тема, версия
 > в футере. Деплой на Ubuntu: nginx + systemd + certbot ([docs/deploy.md](docs/deploy.md)).
+
+## Стенд и демо-доступ
+
+- **Прод:** <https://dashboardcamp.ru> — публичны лендинг (`/`), справка (`/help`) и
+  RAG-ассистент; всё под `/app` открывается только после входа (`/login`).
+- **Демо-доступ** к стенду выдаёт администратор проекта: он создаёт учётную запись с ролью
+  «Аналитик» (или «Администратор») и передаёт одноразовый пароль защищённым каналом. Логины и
+  пароли в репозитории **не публикуются** — ни здесь, ни в `docs/`.
+- **Локально** демо-аккаунты включаются флагом `DEMO_USERS=1` — пароли задаются в вашем `.env`
+  (`DEMO_ADMIN_PASSWORD`, `DEMO_ANALYST_PASSWORD`). На проде `DEMO_USERS=0`.
 
 ## Скриншоты
 
@@ -49,22 +61,31 @@
   «визит → заявка → оплата», KPI 300 с «Что если»-симулятором, пресеты «Исследуй» (11 срезов).
 - **Отчёты** — неизменяемый снапшот → DOCX/PDF по ГОСТ с графиками; AI-анализ, AI-гипотезы
   и AI Decision Log.
-- **AI-провайдеры** — OpenRouter, Anthropic, YandexGPT, GigaChat; цепочка по приоритету с
-  фоллбэком; ключи шифруются AES-256-GCM; статистика вызовов.
-- **DataLens** — 5 готовых CSV-датасетов (Files-подключение) + webhook-приёмник с кодом
-  подтверждения; уведомления в кабинете.
+- **AI-провайдеры (4)** — OpenRouter, Anthropic, YandexGPT, GigaChat; цепочка по приоритету с
+  фоллбэком; ключи шифруются AES-256-GCM; кнопка «Проверить соединение»; статистика вызовов за
+  30 дней.
 - **Справка и ассистент** — раздел `/help` (статьи из `docs/help/ru|en`) и RAG-ассистент
   (правый нижний угол), отвечающий только по текстам справки.
 - **i18n ru/en и темы** — переключатели в шапке; выбор сохраняется в браузере и профиле;
   тёмная/светлая тема; версия продукта в футере.
+
+### Интеграции
+
+| Интеграция         | Что делает                                                                                                                                                                                 | Где настраивается                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| Яндекс.Метрика     | Stat API → SQLite (история по дням, cron-синк); Reporting API — live-страницы без записи в БД; Management API — создание/архивация/восстановление целей (`metrika:write`)                  | «Администрирование → Метрика и данные»             |
+| Яндекс DataLens    | 5 CSV-датасетов для Files-подключения; проверка подключения к DataLens Public API (Org ID, Workbook ID, IAM-токен); webhook-приёмник с кодом подтверждения; ссылки на дашборды для команды | «Администрирование → Интеграции»                   |
+| LLM-провайдеры (4) | OpenRouter · Anthropic · YandexGPT (AI Studio, `folderId`) · GigaChat (`scope`, TLS через Russian Trusted Root CA) — AI-анализ отчёта, AI-гипотезы, AI Decision Log, RAG-ассистент         | «Администрирование → AI-провайдеры»                |
+| Отчёты             | DOCX (`docx`) и PDF (headless Chrome) по ГОСТ, графики ECharts рендерятся на сервере                                                                                                       | страница «Отчёт»; `PUPPETEER_EXECUTABLE_PATH`      |
+| Уведомления        | колокольчик в кабинете: коды/алерты DataLens, запросы аналитиков                                                                                                                           | автоматически; аудит — «Администрирование → Аудит» |
 
 ## Quickstart
 
 ### Одной командой
 
 ```bash
-git clone git@github.com:Fighter90/yandex-metrika-analyse-dashboard.git
-cd yandex-metrika-analyse-dashboard
+git clone git@github.com:Fighter90/ai-product-copilot.git
+cd ai-product-copilot
 ./setup.sh          # install → init → start
 ```
 
@@ -78,7 +99,8 @@ pnpm install        # 1. зависимости (pnpm workspace: backend / front
 
 Откроется `http://localhost:5173` — лендинг → `/login`. Первый администратор создаётся при старте
 из `ADMIN_EMAIL`/`ADMIN_PASSWORD` (`.env`); `DEMO_USERS=1` добавляет демо-админа и демо-аналитика
-для локального просмотра. API — `http://localhost:4000` (Swagger — `/docs`).
+для локального просмотра (пароли — `DEMO_ADMIN_PASSWORD` / `DEMO_ANALYST_PASSWORD` в вашем `.env`).
+API — `http://localhost:4000` (Swagger — `/docs`).
 
 > Без токена и без AI-ключей всё работает в демо-режиме — удобно показать инструмент сразу.
 
@@ -108,6 +130,68 @@ pnpm auth        # из корня репозитория
 Токен и секреты хранятся **только** в `.env` (в `.gitignore`) либо в зашифрованном виде в БД
 (настройки админа). Никогда не коммитьте их.
 
+## Переменные окружения
+
+Источник истины — `code/backend/src/config.ts` (Zod-схема) и `.env.example`; полный разбор
+серверного `.env` — в [docs/deploy.md](docs/deploy.md). Значения ниже — **дефолты**, не секреты.
+
+**Кабинет и безопасность**
+
+| Переменная                                      | По умолчанию              | Назначение                                                                                       |
+| ----------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------ |
+| `APP_SECRET`                                    | —                         | **обязателен на сервере**: мастер-ключ AES-256-GCM для секретов в БД (`openssl rand -base64 32`) |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` | `admin@productcamp.local` | загрузочный администратор — создаётся при старте, пока таблица `users` пуста                     |
+| `DEMO_USERS`                                    | `0`                       | `1` — создать демо-админа и демо-аналитика (только локально)                                     |
+| `DEMO_ADMIN_PASSWORD` / `DEMO_ANALYST_PASSWORD` | —                         | пароли демо-аккаунтов при `DEMO_USERS=1`                                                         |
+| `PUBLIC_URL`                                    | `http://localhost:5173`   | публичный адрес кабинета (на проде `https://dashboardcamp.ru`)                                   |
+| `COOKIE_SECURE`                                 | `1`                       | флаг `Secure` у сессионной cookie; `0` — только для HTTP без TLS вне `localhost`                 |
+| `SESSION_DAYS`                                  | `7`                       | срок жизни сессии, дней                                                                          |
+| `TRUST_PROXY`                                   | —                         | `1` — доверять `X-Forwarded-For` (backend за nginx)                                              |
+
+**Яндекс.Метрика** (первичные значения; дальше админ правит их в UI — они перекрывают `.env`)
+
+| Переменная                                  | По умолчанию                                | Назначение                                                            |
+| ------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------- |
+| `YANDEX_OAUTH_TOKEN`                        | —                                           | OAuth-токен: `metrika:read` (+ `metrika:write` для управления целями) |
+| `YANDEX_CLIENT_ID` / `YANDEX_CLIENT_SECRET` | —                                           | OAuth-приложение для `pnpm auth`                                      |
+| `OAUTH_REDIRECT_URI`                        | `https://oauth.yandex.ru/verification_code` | redirect URI OAuth-приложения                                         |
+| `COUNTER_ID`                                | `0`                                         | номер счётчика; `0` — не задан (работает демо-режим)                  |
+| `GOAL_ID`                                   | `0`                                         | KPI-цель; `0` — автоопределение цели-покупки при синке                |
+| `TIMEZONE`                                  | `Europe/Moscow`                             | часовой пояс дневных агрегатов                                        |
+| `ARCHIVED_GOAL_ID_THRESHOLD`                | `77`                                        | id целей ниже порога считаются архивными                              |
+| `LOW_UTM_COVERAGE_RATIO`                    | `0.7`                                       | порог флага `low_utm_coverage`                                        |
+| `INCLUDE_TEST_TRAFFIC`                      | —                                           | `1` — не исключать роботов и тестовые сессии (`file:`) при синке      |
+
+**AI-провайдеры** (необязательный seed при пустой таблице `ai_providers`; основной путь — UI)
+
+| Переменная                                                      | По умолчанию                               | Назначение                                                                                                                                             |
+| --------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL`                       | — / `anthropic/claude-sonnet-4.5`          | OpenRouter                                                                                                                                             |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL`                         | — / `claude-sonnet-4-6`                    | Anthropic                                                                                                                                              |
+| `YANDEX_AI_API_KEY` / `YANDEX_AI_FOLDER_ID` / `YANDEX_AI_MODEL` | — / — / `yandexgpt/latest`                 | YandexGPT (AI Studio)                                                                                                                                  |
+| `GIGACHAT_AUTH_KEY` / `GIGACHAT_SCOPE` / `GIGACHAT_MODEL`       | — / `GIGACHAT_API_PERS` / `GigaChat-2-Pro` | GigaChat                                                                                                                                               |
+| `NODE_EXTRA_CA_CERTS`                                           | —                                          | PEM с Russian Trusted Root/Sub CA (Минцифры) — без него GigaChat падает с `SELF_SIGNED_CERT_IN_CHAIN`; на проде `deploy/deploy.sh` прописывает его сам |
+
+**Сервер и рендер**
+
+| Переменная                  | По умолчанию                 | Назначение                                                |
+| --------------------------- | ---------------------------- | --------------------------------------------------------- |
+| `API_PORT` / `PORT`         | `4000` / `5173`              | порт API / порт dev-сервера фронтенда                     |
+| `HOST`                      | `0.0.0.0`                    | адрес прослушивания API (на проде `127.0.0.1` за nginx)   |
+| `DB_PATH`                   | `data/productcamp.sqlite`    | файл SQLite                                               |
+| `HELP_DIR`                  | `docs/help`                  | каталог статей справки и RAG-ассистента                   |
+| `PUPPETEER_EXECUTABLE_PATH` | авто-поиск Chrome            | путь к Chrome/Chromium для PDF                            |
+| `ECHARTS_PATH`              | `echarts.min.js` из frontend | UMD-сборка ECharts для серверного рендера графиков отчёта |
+| `LOG_LEVEL` / `NODE_ENV`    | `info` / —                   | уровень логов pino / режим                                |
+| `BUILD_SHA`                 | —                            | git-sha сборки в `/api/health`                            |
+
+**Runtime-настройки в БД (без `.env`).** Часть параметров задаётся только в админке и хранится в
+`app_settings` (секреты — шифротекстом): `ORDER_GOAL_ID`, `KPI_TARGET`, `TEST_TRAFFIC_PATTERNS`,
+`DATALENS_WEBHOOK_TOKEN`, `DATALENS_LINKS`, а также подключение к DataLens Public API —
+`DATALENS_ORG_ID`, `DATALENS_WORKBOOK_ID`, `DATALENS_IAM_TOKEN` («Администрирование →
+Интеграции → Подключение DataLens», кнопка «Проверить подключение»). Скрипт
+`scripts/push-datalens.mjs` читает `DATALENS_IAM_TOKEN`/`DATALENS_ORG_ID` из окружения процесса.
+
 ## Архитектура
 
 ```
@@ -117,8 +201,26 @@ pnpm auth        # из корня репозитория
 ```
 
 Схемы компонентов, потоков данных и аутентификации (Mermaid) —
-[docs/architecture.md](docs/architecture.md); модель БД (миграции 001..010) —
+[docs/architecture.md](docs/architecture.md); модель БД (миграции 001..011) —
 [docs/data-model.md](docs/data-model.md).
+
+## Документация
+
+| Документ                                     | Для кого                  | Что внутри                                                            |
+| -------------------------------------------- | ------------------------- | --------------------------------------------------------------------- |
+| [docs/user-guide.md](docs/user-guide.md)     | аналитик, администратор   | руководство пользователя v3 по ролям и страницам                      |
+| [docs/admin-guide.md](docs/admin-guide.md)   | администратор             | пользователи, AI-провайдеры и ключи, Метрика, DataLens, аудит, бэкапы |
+| [docs/guides/](docs/guides/README.md)        | все                       | то же руководство одним файлом: DOCX и PDF (`pnpm guides`)            |
+| [docs/quickstart.md](docs/quickstart.md)     | разработчик               | локальный запуск по шагам                                             |
+| [docs/runbook.md](docs/runbook.md)           | разработчик, эксплуатация | запуск, экспорт отчётов, траблшутинг                                  |
+| [docs/deploy.md](docs/deploy.md)             | эксплуатация              | Ubuntu + nginx + systemd + certbot, серверный `.env`                  |
+| [deploy/DEPLOY.md](deploy/DEPLOY.md)         | эксплуатация              | деплой на dashboardcamp.ru, бэкапы, мониторинг, восстановление        |
+| [docs/architecture.md](docs/architecture.md) | разработчик               | компоненты, потоки данных, аутентификация/RBAC, AI-слой               |
+| [docs/data-model.md](docs/data-model.md)     | разработчик               | таблицы SQLite и инварианты                                           |
+| [docs/help/ru](docs/help/ru)                 | все                       | статьи встроенной справки (`/help`) — источник RAG-ассистента         |
+| [CHANGELOG.md](CHANGELOG.md)                 | все                       | история релизов (Keep a Changelog)                                    |
+
+English versions: [README.en.md](README.en.md), [docs/en/](docs/en/user-guide.md).
 
 ## Технологический стек
 
@@ -142,7 +244,8 @@ react-router · i18n ru/en.
 | Пользователи (создание, роли, сброс пароля) |    —     |      ✅       |
 | AI-провайдеры (ключи, модели, приоритеты)   |    —     |      ✅       |
 | Настройки Яндекс.Метрики, синхронизация     |    —     |      ✅       |
-| Интеграции (webhook DataLens) и аудит       |    —     |      ✅       |
+| Интеграции (DataLens API, webhook) и аудит  |    —     |      ✅       |
+| Управление целями Метрики (API)             |    —     |      ✅       |
 
 Права проверяются на бэкенде (`/api/admin/**`, мутации настроек — только admin); все значимые
 действия пишутся в `audit_log`.
@@ -176,7 +279,7 @@ react-router · i18n ru/en.
 .
 ├── code/
 │   ├── backend/    # Fastify API: auth/RBAC, настройки, AI-провайдеры, live, help, DataLens,
-│   │               #   Metrika-клиент, SQLite (миграции 001..010), отчёты DOCX/PDF
+│   │               #   Metrika-клиент, SQLite (миграции 001..011), отчёты DOCX/PDF
 │   ├── frontend/   # React+Vite кабинет: public/app/admin страницы, i18n, темы, ассистент
 │   └── shared/     # общие типы и константы (@pca/shared)
 ├── deploy/         # конфигурации сервера (nginx, systemd) — docs/deploy.md
@@ -250,7 +353,8 @@ tests → impl). Реестр — `docs/specs/README.md`.
 
 | Версия              | Дата       | Описание                                                                                                                                                                                                                                               |
 | ------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **v3.0.0** (Latest) | 2026-10-25 | Личный кабинет: сессии, роли (админ/аналитик), аудит; Live/Цели/Воронка live; админка (Пользователи, AI-провайдеры ×4, Метрика, Интеграции, Аудит); DataLens (CSV + webhook); RAG-ассистент и Справка; i18n ru/en и темы; деплой nginx/systemd/certbot |
+| **v3.1.0** (Latest) | 2026-10-26 | Справка ×2.5 RU/EN со скриншотами прода; отчёты по ГОСТ-2 (TOC, перечень рисунков, таблицы с рамками); см. [CHANGELOG.md](CHANGELOG.md)                                                                                                                |
+| v3.0.0              | 2026-10-25 | Личный кабинет: сессии, роли (админ/аналитик), аудит; Live/Цели/Воронка live; админка (Пользователи, AI-провайдеры ×4, Метрика, Интеграции, Аудит); DataLens (CSV + webhook); RAG-ассистент и Справка; i18n ru/en и темы; деплой nginx/systemd/certbot |
 | v2.10.0             | 2026-05-29 | `./init.sh` собирает OAuth-доступы Яндекс.Метрики (ClientID/secret)                                                                                                                                                                                    |
 | v2.9.5              | 2026-05-29 | ICE в AI-анализе — произведение (I×C×E), не среднее                                                                                                                                                                                                    |
 

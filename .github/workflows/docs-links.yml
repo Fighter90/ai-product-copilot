@@ -1,0 +1,77 @@
+name: Docs links
+
+# Проверка ссылок в README*.md и docs/**/*.md (ANA-27: «ссылки в README не битые — проверка в CI»).
+# Два прохода lychee с общим конфигом .lychee.toml:
+#   1) offline — относительные ссылки и картинки (детерминированно, блокирует merge);
+#   2) external — внешние URL с ретраями, 429 считается живой ссылкой.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'README*.md'
+      - 'docs/**'
+      - 'code/frontend/public/screenshots/**'
+      - '.lychee.toml'
+      - '.github/workflows/docs-links.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'README*.md'
+      - 'docs/**'
+      - 'code/frontend/public/screenshots/**'
+      - '.lychee.toml'
+      - '.github/workflows/docs-links.yml'
+  # Раз в неделю — внешние ссылки «протухают» без изменений в репозитории.
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-links-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    name: lychee · README + docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Ссылки вида /screenshots/*.png в статьях справки резолвятся от code/frontend/public.
+      - name: Relative links (offline)
+        uses: lycheeverse/lychee-action@v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          args: >-
+            --config .lychee.toml
+            --offline
+            --root-dir "${{ github.workspace }}/code/frontend/public"
+            README.md README.en.md 'docs/**/*.md'
+          output: lychee/offline.md
+          fail: true
+
+      - name: Restore lychee cache
+        uses: actions/cache@v4
+        with:
+          path: .lycheecache
+          key: lychee-${{ github.sha }}
+          restore-keys: lychee-
+
+      - name: External links (retries, 429 = ok)
+        uses: lycheeverse/lychee-action@v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          args: >-
+            --config .lychee.toml
+            --cache --max-cache-age 1d
+            --root-dir "${{ github.workspace }}/code/frontend/public"
+            README.md README.en.md 'docs/**/*.md'
+          output: lychee/external.md
+          fail: true

@@ -36,7 +36,8 @@ language**. Failed logins are rate-limited (5 per 15 minutes); passwords require
 
 Permissions are enforced on the backend; admin actions and exports are written to the audit log.
 
-The full page-by-page permission matrix is in the help: `/help/roles`.
+The full page-by-page permission matrix is in the help: `/help/roles`. Everything each role can do is
+summarised in §14 and §15 below.
 
 ## 3. Running
 
@@ -120,7 +121,7 @@ from the settings, copy the `access_token` from the address bar after the redire
 paste it into the “OAuth token” field.
 
 **Creating and archiving goals.** Goals are created via the Management API: type
-(URL / action / step / number …), name, conditions (exact / contains / starts / regex).
+(URL / action / step / number …), name, conditions (exact / contain / start / regexp).
 The API rejects condition type `js` — JS events are `action` goals with a URL condition.
 New goals appear in the cabinet after the next sync (or a manual “Sync”).
 
@@ -184,3 +185,69 @@ Metrika connection were provisioned via the Public API (`scripts/push-datalens.m
 - Secrets (tokens, AI keys) are entered only in the admin UI or `.env`; they are always masked.
 - Admin actions and exports are recorded in the audit log — it is append-only.
 - New dependencies outside the fixed stack require an ADR in `docs/decisions/`.
+
+## 12. How reports are built
+
+Details — help `/help/reports-how` ([docs/help/en/17-reports-how.md](../help/en/17-reports-how.md)).
+
+| Step | What happens                                                                                                                                                                    |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | **Metrika sync → SQLite**: raw responses in `raw_responses` (the source of facts), aggregates by channel, UTM, geo/device, page                                                 |
+| 2    | **Snapshot** for a period: KPI, channels, funnel, breakdowns, B2B, hypotheses and the Decision Log frozen under a UUID in `report_snapshots`                                    |
+| 3    | **Charts**: 3 PNGs (channels, funnel, channel mix) — ECharts in headless Chrome; each with a 🟢/🔴 block from thresholds (CR 5% / 2%, 70%)                                      |
+| 4    | **DOCX per GOST R 7.32-2017**: title page, contents, list of figures, unnumbered designations / introduction / executive summary, numbering from «1. КРАТКИЕ ИТОГИ», appendices |
+| 5    | **PDF** — from the same snapshot via headless Chrome (`PUPPETEER_EXECUTABLE_PATH`)                                                                                              |
+| 6    | **AI**: analysis (6 sections), 10 problem + 10 solution hypotheses with ICE = I×C×E (computed in code), Decision Log proposals                                                  |
+| 7    | **Check**: `node scripts/verify-report-gost.mjs <docx>` → PASS / PASS-WITH-WARNINGS / FAIL                                                                                      |
+
+Steps 3–5 never call Metrika or AI, so the numbers on screen, in DOCX and in PDF match. AI only sees
+the snapshot numbers and never touches charts, traffic lights or the ICE score.
+
+## 13. LLM provider keys
+
+Details — help `/help/llm-keys` ([docs/help/en/18-llm-keys.md](../help/en/18-llm-keys.md)). Where:
+“Administration → AI providers” (`/app/admin/ai`): Key, Model, Priority (lower goes first), extra fields,
+Save, Test connection, the Enabled checkbox, 30-day usage. Keys are AES-256-GCM encrypted and masked.
+
+| Provider   | What you need                                                      | Where to get it                                                                    |
+| ---------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| YandexGPT  | API key + folder ID                                                | Yandex Cloud / AI Studio: a service account with `ai.languageModels.user`, API key |
+| GigaChat   | Authorization Key + scope (`GIGACHAT_API_PERS` / `_B2B` / `_CORP`) | developers.sber.ru; the server needs the Russian Trusted Root CA certificate       |
+| Anthropic  | API key (`sk-ant-…`)                                               | console.anthropic.com → API Keys                                                   |
+| OpenRouter | API key (`sk-or-…`), model as `vendor/model`                       | openrouter.ai/keys                                                                 |
+
+## 14. Administrator role — full feature set
+
+Details — help `/help/admin-guide` ([docs/help/en/19-admin-guide.md](../help/en/19-admin-guide.md)).
+Administrators get everything in §15 plus:
+
+| Page                                     | Functions                                                                                                                    |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Users (`/app/admin/users`)               | create (temporary password shown once), change role, disable/enable (sessions end), reset password; last-admin protection    |
+| AI providers (`/app/admin/ai`)           | keys for 4 providers, model, priority/fallback, folder ID / scope, Test connection, enable, 30-day usage                     |
+| Metrika & data (`/app/admin/metrika`)    | counter, OAuth token, Client ID/secret, order and KPI goals; “Refresh data from Metrika”; data cleanup (type `УДАЛИТЬ`)      |
+| Metrika goals (API)                      | create, archive, restore goals via `/api/admin/metrika/goals…` (needs `metrika:write`)                                       |
+| Integrations (`/app/admin/integrations`) | DataLens API connection (Org ID, Workbook ID, IAM token, check), webhook URL and rotation, codes and events, dashboard links |
+| Audit log (`/app/admin/audit`)           | latest 1000 entries: sign-ins, users, settings, AI, goals, DataLens; search, sorting, CSV                                    |
+
+## 15. Analyst role — full feature set
+
+Details — help `/help/analyst-guide` ([docs/help/en/20-analyst-guide.md](../help/en/20-analyst-guide.md)).
+
+| Page                                           | Functions                                                                                             |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Overview (`/app`)                              | KPI strip, weekly digest, charts by day/channel/country/device, UTM coverage, weak spots → hypothesis |
+| Live (`/app/live`)                             | live visits and metrics by hour/day; pause, refresh, test traffic                                     |
+| Metrika goals (`/app/goals`, `/app/goals/:id`) | live/sleeping/dead statuses, duplicates, filter, CSV; goal detail with dynamics and breakdowns        |
+| pc-goals funnel (`/app/funnel-live`)           | funnel steps with conversions, ticket tariffs, applications by role                                   |
+| Traffic (`/app/traffic`)                       | channels, visits vs applications, fullscreen UTM Sankey, channel and UTM tables                       |
+| Behaviour (`/app/behavior`)                    | observations, conversion and bounce charts, entry/exit page tables, recommendations                   |
+| Funnel & B2B (`/app/funnel`)                   | “application ≠ payment” funnel, losses, channels, countries, B2B by stage, problem pages              |
+| KPI & forecast (`/app/kpi`)                    | progress ring to 300, “What if” (traffic and conversion sliders), B2B tab                             |
+| Data (`/app/explore/:preset`)                  | 11 Reporting API presets, chart, table, goal-for-columns picker, CSV                                  |
+| Report (`/app/report`)                         | snapshot, rebuild, AI hypotheses, AI analysis, Export DOCX/PDF, hypothesis draft                      |
+| History (`/app/history`)                       | snapshot list, “View” without regenerating                                                            |
+| B2B deals (`/app/b2b`)                         | 4-stage kanban, add, change stage, delete                                                             |
+| DataLens (`/app/datalens`)                     | 5 CSV datasets, native connector guide, team dashboards, request to an administrator                  |
+| Help & assistant                               | `/help` with search; the assistant answers only from the help, with sources                           |
+| Language, theme, notifications                 | RU/EN, 🌙/☀️, bell                                                                                    |

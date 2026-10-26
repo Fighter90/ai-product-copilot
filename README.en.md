@@ -1,15 +1,17 @@
 # ProductCamp Conversion Analytics
 
-[![CI](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml)
-
 > [🇷🇺 Русский](README.md) · 🇬🇧 English
 
-![CI](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/actions/workflows/ci.yml/badge.svg)
-![E2E](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/actions/workflows/e2e.yml/badge.svg)
-![Security](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/actions/workflows/security.yml/badge.svg)
+[![CI](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml)
+[![E2E](https://github.com/Fighter90/ai-product-copilot/actions/workflows/e2e.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/e2e.yml)
+[![Security](https://github.com/Fighter90/ai-product-copilot/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/security.yml)
+[![Docs links](https://github.com/Fighter90/ai-product-copilot/actions/workflows/docs-links.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/docs-links.yml)
 ![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
 ![pnpm](https://img.shields.io/badge/pnpm-9-orange)
-![Version](https://img.shields.io/badge/version-v3.0.0-blue)
+![Version](https://img.shields.io/badge/version-v3.1.0-blue)
+
+**Live site:** [dashboardcamp.ru](https://dashboardcamp.ru) — the landing page and help center are
+public; the cabinet requires sign-in.
 
 A multi-user analytics cabinet for ProductCamp's **"Conversions & lead-gen"** track:
 Yandex Metrika → SQLite (daily history) → a web cabinet with roles and an audit log, real-time
@@ -26,6 +28,17 @@ the report.
 > YandexGPT / GigaChat — keys encrypted with AES-256-GCM), Yandex Metrika, Integrations, Audit.
 > Help center + RAG assistant. RU/EN interface, dark/light theme, version in the footer.
 > Ubuntu deployment: nginx + systemd + certbot ([docs/deploy.md](docs/deploy.md)).
+
+## Live site and demo access
+
+- **Production:** <https://dashboardcamp.ru> — the landing page (`/`), the help center (`/help`)
+  and the RAG assistant are public; everything under `/app` requires signing in at `/login`.
+- **Demo access** to the live site is granted by the project administrator: they create an
+  account with the Analyst (or Administrator) role and hand over a one-time password via a secure
+  channel. Logins and passwords are **never published** in the repository — not here, not in
+  `docs/`.
+- **Locally**, demo accounts are enabled with `DEMO_USERS=1`; their passwords come from your own
+  `.env` (`DEMO_ADMIN_PASSWORD`, `DEMO_ANALYST_PASSWORD`). Production runs with `DEMO_USERS=0`.
 
 ## Screenshots
 
@@ -50,22 +63,30 @@ the report.
   payment" funnel, the 300 KPI with a "What if" simulator, 11 Explore presets.
 - **Reports** — an immutable snapshot → GOST-formatted DOCX/PDF with charts; AI analysis,
   AI-generated hypotheses and an AI Decision Log.
-- **AI providers** — OpenRouter, Anthropic, YandexGPT, GigaChat; a priority chain with fallback;
-  keys encrypted with AES-256-GCM; per-call usage statistics.
-- **DataLens** — 5 ready-made CSV datasets (Files connection) + a token-protected webhook
-  receiver; in-app notifications.
+- **AI providers (4)** — OpenRouter, Anthropic, YandexGPT, GigaChat; a priority chain with
+  fallback; keys encrypted with AES-256-GCM; a "Test connection" button; 30-day usage statistics.
 - **Help & assistant** — a Help center (`/help`, articles from `docs/help/ru|en`) and a RAG
   assistant (bottom-right corner) that answers only from the help texts.
 - **RU/EN i18n and themes** — toggles in the top bar; the choice persists in the browser and in
   the user profile; dark/light theme; product version in the footer.
+
+### Integrations
+
+| Integration       | What it does                                                                                                                                                                             | Where to configure                        |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Yandex Metrika    | Stat API → SQLite (daily history, scheduled sync); Reporting API for live pages (no DB writes); Management API to create / archive / restore goals (`metrika:write`)                     | Administration → Metrika & data           |
+| Yandex DataLens   | 5 CSV datasets for a Files connection; DataLens Public API connection check (Org ID, Workbook ID, IAM token); webhook receiver with a confirmation code; team dashboard links            | Administration → Integrations             |
+| LLM providers (4) | OpenRouter · Anthropic · YandexGPT (AI Studio, `folderId`) · GigaChat (`scope`, TLS via the Russian Trusted Root CA) — report AI analysis, AI hypotheses, AI Decision Log, RAG assistant | Administration → AI providers             |
+| Reports           | GOST-styled DOCX (`docx`) and PDF (headless Chrome); ECharts charts rendered server-side                                                                                                 | Report page; `PUPPETEER_EXECUTABLE_PATH`  |
+| Notifications     | the bell in the cabinet: DataLens codes/alerts, analyst requests                                                                                                                         | automatic; audit — Administration → Audit |
 
 ## Quickstart
 
 ### One command
 
 ```bash
-git clone git@github.com:Fighter90/yandex-metrika-analyse-dashboard.git
-cd yandex-metrika-analyse-dashboard
+git clone git@github.com:Fighter90/ai-product-copilot.git
+cd ai-product-copilot
 ./setup.sh          # install → init → start
 ```
 
@@ -79,7 +100,8 @@ pnpm install        # 1. dependencies (pnpm workspace: backend / frontend / shar
 
 Open `http://localhost:5173` — landing page → `/login`. The first administrator is created on
 startup from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (`.env`); `DEMO_USERS=1` adds demo admin/analyst
-accounts for local exploration. API on `http://localhost:4000` (Swagger at `/docs`).
+accounts for local exploration (passwords — `DEMO_ADMIN_PASSWORD` / `DEMO_ANALYST_PASSWORD` in
+your `.env`). API on `http://localhost:4000` (Swagger at `/docs`).
 
 > Without a token and AI keys everything still runs in demo mode — handy for an instant demo.
 
@@ -110,6 +132,69 @@ access and paste the token from the URL fragment (`#access_token=...`) into `.en
 Tokens and secrets live **only** in `.env` (gitignored) or encrypted in the database (admin
 settings). Never commit them.
 
+## Environment variables
+
+Source of truth: `code/backend/src/config.ts` (Zod schema) and `.env.example`; the server `.env`
+is covered in detail in [docs/deploy.md](docs/deploy.md). Values below are **defaults**, not
+secrets.
+
+**Cabinet & security**
+
+| Variable                                        | Default                   | Purpose                                                                                     |
+| ----------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------- |
+| `APP_SECRET`                                    | —                         | **required on a server**: AES-256-GCM master key for DB secrets (`openssl rand -base64 32`) |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` | `admin@productcamp.local` | bootstrap administrator, created on start while the `users` table is empty                  |
+| `DEMO_USERS`                                    | `0`                       | `1` creates a demo admin and a demo analyst (local only)                                    |
+| `DEMO_ADMIN_PASSWORD` / `DEMO_ANALYST_PASSWORD` | —                         | demo account passwords when `DEMO_USERS=1`                                                  |
+| `PUBLIC_URL`                                    | `http://localhost:5173`   | public cabinet URL (`https://dashboardcamp.ru` in production)                               |
+| `COOKIE_SECURE`                                 | `1`                       | `Secure` flag on the session cookie; `0` only for plain HTTP outside `localhost`            |
+| `SESSION_DAYS`                                  | `7`                       | session lifetime, days                                                                      |
+| `TRUST_PROXY`                                   | —                         | `1` trusts `X-Forwarded-For` (backend behind nginx)                                         |
+
+**Yandex Metrika** (initial values; admins edit them in the UI, which overrides `.env`)
+
+| Variable                                    | Default                                     | Purpose                                                               |
+| ------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------- |
+| `YANDEX_OAUTH_TOKEN`                        | —                                           | OAuth token: `metrika:read` (+ `metrika:write` for goals)             |
+| `YANDEX_CLIENT_ID` / `YANDEX_CLIENT_SECRET` | —                                           | OAuth app used by `pnpm auth`                                         |
+| `OAUTH_REDIRECT_URI`                        | `https://oauth.yandex.ru/verification_code` | OAuth app redirect URI                                                |
+| `COUNTER_ID`                                | `0`                                         | counter id; `0` = not set (demo mode works)                           |
+| `GOAL_ID`                                   | `0`                                         | KPI goal; `0` = auto-detect the purchase goal on sync                 |
+| `TIMEZONE`                                  | `Europe/Moscow`                             | time zone of daily aggregates                                         |
+| `ARCHIVED_GOAL_ID_THRESHOLD`                | `77`                                        | goal ids below the threshold are treated as archived                  |
+| `LOW_UTM_COVERAGE_RATIO`                    | `0.7`                                       | threshold of the `low_utm_coverage` flag                              |
+| `INCLUDE_TEST_TRAFFIC`                      | —                                           | `1` disables excluding robots and test (`file:`) sessions in the sync |
+
+**AI providers** (optional seed for an empty `ai_providers` table; the UI is the main path)
+
+| Variable                                                        | Default                                    | Purpose                                                                                                                                   |
+| --------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL`                       | — / `anthropic/claude-sonnet-4.5`          | OpenRouter                                                                                                                                |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL`                         | — / `claude-sonnet-4-6`                    | Anthropic                                                                                                                                 |
+| `YANDEX_AI_API_KEY` / `YANDEX_AI_FOLDER_ID` / `YANDEX_AI_MODEL` | — / — / `yandexgpt/latest`                 | YandexGPT (AI Studio)                                                                                                                     |
+| `GIGACHAT_AUTH_KEY` / `GIGACHAT_SCOPE` / `GIGACHAT_MODEL`       | — / `GIGACHAT_API_PERS` / `GigaChat-2-Pro` | GigaChat                                                                                                                                  |
+| `NODE_EXTRA_CA_CERTS`                                           | —                                          | PEM with the Russian Trusted Root/Sub CA — without it GigaChat fails with `SELF_SIGNED_CERT_IN_CHAIN`; `deploy/deploy.sh` sets it on prod |
+
+**Server & rendering**
+
+| Variable                    | Default                        | Purpose                                               |
+| --------------------------- | ------------------------------ | ----------------------------------------------------- |
+| `API_PORT` / `PORT`         | `4000` / `5173`                | API port / frontend dev-server port                   |
+| `HOST`                      | `0.0.0.0`                      | API listen address (`127.0.0.1` behind nginx in prod) |
+| `DB_PATH`                   | `data/productcamp.sqlite`      | SQLite file                                           |
+| `HELP_DIR`                  | `docs/help`                    | help articles (also the RAG assistant's corpus)       |
+| `PUPPETEER_EXECUTABLE_PATH` | Chrome auto-detect             | Chrome/Chromium path for PDF export                   |
+| `ECHARTS_PATH`              | `echarts.min.js` from frontend | ECharts UMD bundle for server-side report charts      |
+| `LOG_LEVEL` / `NODE_ENV`    | `info` / —                     | pino log level / mode                                 |
+| `BUILD_SHA`                 | —                              | build git SHA reported by `/api/health`               |
+
+**Runtime settings in the DB (no `.env`).** Some parameters live only in the admin UI and are
+stored in `app_settings` (secrets as ciphertext): `ORDER_GOAL_ID`, `KPI_TARGET`,
+`TEST_TRAFFIC_PATTERNS`, `DATALENS_WEBHOOK_TOKEN`, `DATALENS_LINKS`, plus the DataLens Public API
+connection — `DATALENS_ORG_ID`, `DATALENS_WORKBOOK_ID`, `DATALENS_IAM_TOKEN` (Administration →
+Integrations → DataLens connection, "Check connection" button). `scripts/push-datalens.mjs` reads
+`DATALENS_IAM_TOKEN`/`DATALENS_ORG_ID` from the process environment.
+
 ## Architecture
 
 ```
@@ -118,8 +203,27 @@ Yandex Metrika ──sync (daily chunks)──▶ SQLite ──API (Fastify, ses
         └── live: Reporting API directly ──┘── DataLens (CSV) · DOCX/PDF + AI · RAG assistant ──┘
 ```
 
-Component, data-flow and authentication diagrams (Mermaid): [docs/architecture.md](docs/architecture.md);
-data model (migrations 001..010): [docs/data-model.md](docs/data-model.md).
+Component, data-flow and authentication diagrams (Mermaid):
+[docs/en/architecture.md](docs/en/architecture.md); data model (migrations 001..011):
+[docs/en/data-model.md](docs/en/data-model.md).
+
+## Documentation
+
+| Document                                           | Audience               | Contents                                                      |
+| -------------------------------------------------- | ---------------------- | ------------------------------------------------------------- |
+| [docs/en/user-guide.md](docs/en/user-guide.md)     | analyst, administrator | v3 user guide by role and page                                |
+| [docs/en/admin-guide.md](docs/en/admin-guide.md)   | administrator          | users, AI providers & keys, Metrika, DataLens, audit, backups |
+| [docs/guides/](docs/guides/README.md)              | everyone               | the user guide as single DOCX and PDF files (`pnpm guides`)   |
+| [docs/en/runbook.md](docs/en/runbook.md)           | developer, operations  | running, operating, troubleshooting                           |
+| [docs/deploy.md](docs/deploy.md) (RU)              | operations             | Ubuntu + nginx + systemd + certbot, server `.env`             |
+| [deploy/DEPLOY.md](deploy/DEPLOY.md) (RU)          | operations             | dashboardcamp.ru deployment, backups, monitoring, restore     |
+| [docs/en/architecture.md](docs/en/architecture.md) | developer              | components, data flows, auth/RBAC, AI layer                   |
+| [docs/en/data-model.md](docs/en/data-model.md)     | developer              | SQLite tables, columns and invariants                         |
+| [docs/help/en](docs/help/en)                       | everyone               | built-in help articles (`/help`) — the RAG assistant's corpus |
+| [CHANGELOG.md](CHANGELOG.md)                       | everyone               | release history (Keep a Changelog)                            |
+
+Russian originals: [README.md](README.md), [docs/](docs/user-guide.md),
+[docs/admin-guide.md](docs/admin-guide.md).
 
 ## Tech stack
 
@@ -134,16 +238,17 @@ Adding a dependency outside this list requires an ADR in `docs/decisions/`.
 
 ## Roles
 
-|                                           | Analyst | Administrator |
-| ----------------------------------------- | :-----: | :-----------: |
-| Overview, Live, Goals, Live funnel        |   ✅    |      ✅       |
-| Traffic, Behavior, Funnel, KPI, Explore   |   ✅    |      ✅       |
-| Report, History, B2B, DataLens            |   ✅    |      ✅       |
-| Help center, RAG assistant, RU/EN, themes |   ✅    |      ✅       |
-| Users (create, roles, password reset)     |    —    |      ✅       |
-| AI providers (keys, models, priorities)   |    —    |      ✅       |
-| Yandex Metrika settings, synchronization  |    —    |      ✅       |
-| Integrations (DataLens webhook) and audit |    —    |      ✅       |
+|                                             | Analyst | Administrator |
+| ------------------------------------------- | :-----: | :-----------: |
+| Overview, Live, Goals, Live funnel          |   ✅    |      ✅       |
+| Traffic, Behavior, Funnel, KPI, Explore     |   ✅    |      ✅       |
+| Report, History, B2B, DataLens              |   ✅    |      ✅       |
+| Help center, RAG assistant, RU/EN, themes   |   ✅    |      ✅       |
+| Users (create, roles, password reset)       |    —    |      ✅       |
+| AI providers (keys, models, priorities)     |    —    |      ✅       |
+| Yandex Metrika settings, synchronization    |    —    |      ✅       |
+| Integrations (DataLens API, webhook), audit |    —    |      ✅       |
+| Metrika goal management (API)               |    —    |      ✅       |
 
 Permissions are enforced on the backend (`/api/admin/**`, settings mutations — admin only); all
 significant actions are written to `audit_log`.
@@ -177,7 +282,7 @@ AI consumers: the report (analysis / hypotheses / Decision Log) and the help ass
 .
 ├── code/
 │   ├── backend/    # Fastify API: auth/RBAC, settings, AI providers, live, help, DataLens,
-│   │               #   Metrika client, SQLite (migrations 001..010), DOCX/PDF reports
+│   │               #   Metrika client, SQLite (migrations 001..011), DOCX/PDF reports
 │   ├── frontend/   # React+Vite cabinet: public/app/admin pages, i18n, themes, assistant
 │   └── shared/     # shared types and constants (@pca/shared)
 ├── deploy/         # server configs (nginx, systemd) — see docs/deploy.md
@@ -251,7 +356,8 @@ Full history: [CHANGELOG.md](CHANGELOG.md). Recent:
 
 | Version             | Date       | Description                                                                                                                                                                                                                                                         |
 | ------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **v3.0.0** (Latest) | 2026-10-25 | Web cabinet: sessions, roles (admin/analyst), audit; Live/Goals/Live funnel; administration (Users, 4 AI providers, Metrika, Integrations, Audit); DataLens (CSV + webhook); RAG assistant and Help center; RU/EN i18n and themes; nginx/systemd/certbot deployment |
+| **v3.1.0** (Latest) | 2026-10-26 | Help center ×2.5 RU/EN with production screenshots; GOST-2 reports (TOC, list of figures, bordered tables); see [CHANGELOG.md](CHANGELOG.md)                                                                                                                        |
+| v3.0.0              | 2026-10-25 | Web cabinet: sessions, roles (admin/analyst), audit; Live/Goals/Live funnel; administration (Users, 4 AI providers, Metrika, Integrations, Audit); DataLens (CSV + webhook); RAG assistant and Help center; RU/EN i18n and themes; nginx/systemd/certbot deployment |
 | v2.10.0             | 2026-05-29 | `./init.sh` collects Yandex OAuth ClientID/secret                                                                                                                                                                                                                   |
 | v2.9.5              | 2026-05-29 | ICE in AI analysis is a product (I×C×E), not a mean                                                                                                                                                                                                                 |
 

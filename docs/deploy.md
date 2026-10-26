@@ -196,6 +196,49 @@ sudo crontab -u www-data -e
 Токен и счётчик берутся из настроек администратора (таблица `app_settings`); если их там нет —
 из `.env`.
 
+## 8a. GigaChat: сертификат Минцифры
+
+API GigaChat (`ngw.devices.sberbank.ru`, `gigachat.devices.sberbank.ru`) отдаёт TLS-сертификат,
+выпущенный **Russian Trusted Root CA** (НУЦ Минцифры). Node.js этому корню по умолчанию не доверяет,
+поэтому без него любой вызов GigaChat падает ещё на этапе TLS.
+
+**Симптом:** в «Администрирование → AI-провайдеры» кнопка «Проверить» у GigaChat показывает
+`gigachat: fetch failed (SELF_SIGNED_CERT_IN_CHAIN)` (или просто `gigachat: fetch failed`), в
+`ai_usage.error` та же строка; цепочка провайдеров при этом переключается на следующий.
+
+**Что делает `deploy/deploy.sh`** (идемпотентно, при каждом деплое):
+
+1. Скачивает корневой и промежуточный сертификаты Минцифры в `/usr/local/share/ca-certificates/`
+   и вызывает `update-ca-certificates` (для `curl` и системных утилит).
+2. Собирает из них один PEM-файл **`/opt/pca/russian-trusted-ca.pem`**.
+3. Добавляет в `/opt/pca/.env` строку `NODE_EXTRA_CA_CERTS=/opt/pca/russian-trusted-ca.pem` и
+   перезапускает `pca-api` — Node читает эту переменную только при старте процесса.
+
+**Ручная установка / проверка:**
+
+```bash
+CA=/usr/local/share/ca-certificates
+sudo curl -fsS -o $CA/russian_trusted_root_ca.crt https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt
+sudo curl -fsS -o $CA/russian_trusted_sub_ca.crt  https://gu-st.ru/content/lending/russian_trusted_sub_ca_pem.crt
+sudo update-ca-certificates
+# ВАЖНО: между сертификатами в PEM должен быть перевод строки, иначе
+# «-----END CERTIFICATE----------BEGIN CERTIFICATE-----» склеится и второй сертификат не прочитается.
+{ cat $CA/russian_trusted_root_ca.crt; echo; cat $CA/russian_trusted_sub_ca.crt; echo; } \
+  | sed '/^[[:space:]]*$/d' | sudo tee /opt/pca/russian-trusted-ca.pem >/dev/null
+grep -c 'BEGIN CERTIFICATE' /opt/pca/russian-trusted-ca.pem      # ожидается 2
+grep -q '^NODE_EXTRA_CA_CERTS=' /opt/pca/.env || \
+  echo 'NODE_EXTRA_CA_CERTS=/opt/pca/russian-trusted-ca.pem' | sudo tee -a /opt/pca/.env
+sudo systemctl restart pca-api
+
+# Проверка TLS тем же Node, что и у backend:
+NODE_EXTRA_CA_CERTS=/opt/pca/russian-trusted-ca.pem \
+  node -e "fetch('https://ngw.devices.sberbank.ru:9443/api/v2/oauth',{method:'POST'}).then(r=>console.log('TLS ok, HTTP',r.status)).catch(e=>console.error(e.cause?.code||e))"
+```
+
+Ответ `TLS ok, HTTP 400/401` означает, что сертификат принят (ошибка авторизации без ключа
+ожидаема). Если снова `SELF_SIGNED_CERT_IN_CHAIN` — проверьте, что в PEM два сертификата, а
+переменная видна процессу: `sudo cat /proc/$(systemctl show -p MainPID --value pca-api)/environ | tr '\0' '\n' | grep NODE_EXTRA`.
+
 ## 9. Чек-лист production
 
 - [ ] `APP_SECRET` задан (32+ байт), `.env` с правами 600, вне git.

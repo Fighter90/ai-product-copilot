@@ -1,0 +1,48 @@
+# Конфигурация lychee — проверка ссылок в README*.md и docs/**/*.md (ANA-27).
+# Используется в .github/workflows/docs-links.yml и локально:
+#   lychee --config .lychee.toml --root-dir "$(pwd)/code/frontend/public" README.md README.en.md 'docs/**/*.md'
+# root_dir задаётся флагом --root-dir (в конфиге нужен абсолютный путь): ссылки вида
+# /screenshots/*.png в статьях справки резолвятся от code/frontend/public — так их отдаёт SPA.
+
+no_progress = true
+
+# Внешние ссылки: ретраи и терпимость к rate-limit (429 считается живой ссылкой).
+max_retries = 3
+retry_wait_time = 3
+timeout = 20
+max_concurrency = 8
+accept = ["200..=299", "429"]
+
+# Якоря (#раздел) не проверяем: заголовки кириллицей slug-ятся по-разному на GitHub и в UI.
+include_fragments = "none"
+
+# Ссылки внутри блоков кода и `инлайн-кода` — примеры, не навигация.
+include_verbatim = false
+
+exclude_loopback = true
+exclude_private = true
+
+exclude = [
+  # Кабинет и API стенда — только после входа (401/302 на /login), проверять бессмысленно.
+  '^https?://(www\.)?dashboardcamp\.ru/(app|api|login|docs)',
+  # Локальная разработка и плейсхолдеры в инструкциях.
+  '^https?://localhost',
+  '^https?://127\.0\.0\.1',
+  '^https?://([a-z0-9-]+\.)*example\.(com|ru|org)',
+  '<[^>]+>',
+  # Требуют авторизации / интерактивного OAuth.
+  '^https://oauth\.yandex\.ru/authorize',
+  '^https://console\.anthropic\.com',
+  '^https://(www\.)?datalens\.(tech|ru|yandex\.ru)/(workbooks|settings)',
+  '^https://api\.datalens\.tech',
+  # Репозиторий приватный: бейджи, actions, issues и PR отдают 404 без браузерной сессии.
+  '^https://github\.com/Fighter90/',
+  # Шаблонные адреса API с подстановками.
+  '\{[^}]+\}',
+  '^mailto:',
+]
+
+exclude_path = [
+  'node_modules',
+  '(^|/)docs/PROMPT_productcamp_analytics\.md$',
+]

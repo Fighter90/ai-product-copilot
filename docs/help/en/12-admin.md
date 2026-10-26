@@ -92,7 +92,7 @@ The admin page talks to the Metrika **Management API**, so routine goal maintena
 - `ARCHIVED_GOAL_ID_THRESHOLD` — the goal-id archive threshold (fallback; `archived`/`status` API fields take priority).
 - `INCLUDE_TEST_TRAFFIC=1` — disable the service-traffic filter (robots and local visits are excluded from both the sync and live by default).
 
-**Goal condition types:** the Management API accepts exact / contains / starts / regex on a URL. The API rejects `js` — JS-event goals are created as an `action` goal with a URL condition.
+**Goal condition types:** the Management API accepts exact / contain / start / regexp on a URL. The API rejects `js` — JS-event goals are created as an `action` goal with a URL condition.
 
 ## Integrations
 

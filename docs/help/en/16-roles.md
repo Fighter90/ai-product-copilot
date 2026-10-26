@@ -1,7 +1,7 @@
 ---
 title: Roles: what is available
 section: Basics
-order: 14
+order: 16
 summary: The full permission matrix — what Administrators and Analysts see on every cabinet page.
 ---
 
@@ -61,3 +61,8 @@ Without signing in: the landing page, `/help` (the whole help section, RU/EN) an
 ## If a page is unavailable
 
 An analyst opening `/app/admin/*` directly sees the “Access denied” panel — expected: the check runs server-side (HTTP 403) and cannot be bypassed from the UI.
+
+## Detailed role guides
+
+- **Administrator** — a page-by-page walkthrough of the admin area (fields, buttons, scenarios, errors): the “Administrator guide” article, `/help/admin-guide`. AI provider keys — `/help/llm-keys`.
+- **Analyst** — every cabinet page plus a daily/weekly routine: the “Analyst guide” article, `/help/analyst-guide`. How the report is built — `/help/reports-how`.

@@ -14,7 +14,7 @@
 ## 2. Первый запуск (одной командой)
 
 ```bash
-cd yandex-metrika-analyse-dashboard
+cd ai-product-copilot
 ./run.sh
 ```
 

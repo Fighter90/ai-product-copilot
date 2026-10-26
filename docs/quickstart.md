@@ -27,8 +27,8 @@
 ## 2. Установка одной командой
 
 ```bash
-git clone git@github.com:Fighter90/yandex-metrika-analyse-dashboard.git
-cd yandex-metrika-analyse-dashboard
+git clone git@github.com:Fighter90/ai-product-copilot.git
+cd ai-product-copilot
 ./setup.sh
 ```
 
