@@ -391,8 +391,61 @@ const PROVIDERS = [
   { name: 'GigaChat', note: 'Сбер · GigaChat-2' },
 ];
 
+function IntegrationMark({ kind }: { kind: 'metrika' | 'datalens' }): JSX.Element {
+  return kind === 'metrika' ? (
+    <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true" className="shrink-0">
+      <circle cx="22" cy="22" r="20" fill="#FC3F1D" />
+      <circle cx="22" cy="22" r="8" fill="#fff" />
+      <path d="M22 2 a20 20 0 0 1 17.3 10 L22 22 Z" fill="#fff" opacity="0.35" />
+    </svg>
+  ) : (
+    <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true" className="shrink-0">
+      <rect x="4" y="24" width="8" height="16" rx="2" fill="#5282FF" />
+      <rect x="18" y="14" width="8" height="26" rx="2" fill="#7BA7FF" />
+      <rect x="32" y="4" width="8" height="36" rx="2" fill="#A9C5FF" />
+    </svg>
+  );
+}
+
+function IntegrationCard({
+  mark,
+  name,
+  what,
+  bullets,
+  setup,
+  helpPath,
+}: {
+  mark: 'metrika' | 'datalens';
+  name: string;
+  what: string;
+  bullets: string[];
+  setup: string;
+  helpPath: string;
+}): JSX.Element {
+  return (
+    <div className="card reveal flex flex-col gap-3 p-6">
+      <div className="flex items-center gap-3">
+        <IntegrationMark kind={mark} />
+        <h3 className="text-lg font-semibold">{name}</h3>
+      </div>
+      <p className="text-sm text-muted">{what}</p>
+      <ul className="space-y-1 text-sm">
+        {bullets.map((b) => (
+          <li key={b} className="flex gap-2">
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+            <span>{b}</span>
+          </li>
+        ))}
+      </ul>
+      <Link to={helpPath} className="mt-auto text-sm text-accent hover:underline">
+        {setup} →
+      </Link>
+    </div>
+  );
+}
+
 export function Landing(): JSX.Element {
-  const { locale } = useT();
+  const { locale, t } = useT();
   const c = CONTENT[locale];
   const root = useRef<HTMLDivElement>(null);
   const [faqOpen, setFaqOpen] = useState<number | null>(0);
@@ -610,6 +663,43 @@ export function Landing(): JSX.Element {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* INTEGRATIONS — Метрика + DataLens */}
+        <section className="border-t border-line py-24">
+          <div className="mx-auto max-w-5xl px-4 sm:px-6">
+            <SectionTitle
+              eyebrow="Data"
+              title={t('land.integrations.title')}
+              lead={t('land.integrations.lead')}
+            />
+            <div className="grid gap-4 md:grid-cols-2">
+              <IntegrationCard
+                mark="metrika"
+                name={t('land.int.metrika.name')}
+                what={t('land.int.metrika.what')}
+                bullets={[
+                  t('land.int.metrika.b1'),
+                  t('land.int.metrika.b2'),
+                  t('land.int.metrika.b3'),
+                ]}
+                setup={t('land.int.metrika.setup')}
+                helpPath="/help/admin"
+              />
+              <IntegrationCard
+                mark="datalens"
+                name={t('land.int.datalens.name')}
+                what={t('land.int.datalens.what')}
+                bullets={[
+                  t('land.int.datalens.b1'),
+                  t('land.int.datalens.b2'),
+                  t('land.int.datalens.b3'),
+                ]}
+                setup={t('land.int.datalens.setup')}
+                helpPath="/help/datalens"
+              />
             </div>
           </div>
         </section>

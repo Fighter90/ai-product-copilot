@@ -84,6 +84,16 @@ The admin page talks to the Metrika **Management API**, so routine goal maintena
 2. **Archive a goal** — pick the dead or duplicate goal (statuses and duplicate groups are shown on the **Goals** page) and archive it. Archived goals stop counting toward KPI; the **Archived goals** header toggle controls their visibility.
 3. Verify on **Goals**: the new goal should appear within one sync cycle, with status Live once it starts firing.
 
+**Settings (the server `.env` file, see docs/deploy.md):**
+
+- `COUNTER_ID` — the counter id (ProductCamp: 54280963).
+- `YANDEX_OAUTH_TOKEN` — an OAuth token with Metrika read access; to get one: create an app at oauth.yandex.ru (scope `metrika:read`) → open the authorization link → copy the `access_token` from the address bar.
+- `GOAL_ID` — pin the KPI goal manually (by default the purchase goal is auto-detected).
+- `ARCHIVED_GOAL_ID_THRESHOLD` — the goal-id archive threshold (fallback; `archived`/`status` API fields take priority).
+- `INCLUDE_TEST_TRAFFIC=1` — disable the service-traffic filter (robots and local visits are excluded from both the sync and live by default).
+
+**Goal condition types:** the Management API accepts exact / contains / starts / regex on a URL. The API rejects `js` — JS-event goals are created as an `action` goal with a URL condition.
+
 ## Integrations
 
 **Admin → Integrations** holds the DataLens webhook token and the integration status.

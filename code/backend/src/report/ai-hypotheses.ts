@@ -35,7 +35,7 @@ export function buildHypothesesRequest(
 ): AnthropicHypothesesRequest {
   const system =
     'Ты продуктовый аналитик ProductCamp. Отвечай СТРОГО JSON — никакого текста до или после ' +
-    'фигурных скобок. Используй ТОЛЬКО числа и факты из данных снапшота — НИЧЕГО не выдумывай. ' +
+    'фигурных скобок, без markdown-обёрток. Пиши компактно: каждое rationale-поле — одно предложение. Используй ТОЛЬКО числа и факты из данных снапшота — НИЧЕГО не выдумывай. ' +
     'ПРИНЦИП «заявка ≠ оплата»: b2cApplications — это достижения цели (заявки), а не оплаты; ' +
     'b2bPaidTickets — реально оплаченные B2B-билеты. Не путай эти два числа. ' +
     'Формат ответа: JSON объект {"problems":[...],"solutions":[...]}. ' +
@@ -145,12 +145,35 @@ const RawHypothesesSchema = z.object({
  * For each solution, ice.score is computed deterministically via iceScore() — the AI value
  * is never trusted.
  */
+/**
+ * Extract the outermost JSON object from an AI reply: strips ```json fences and any prose
+ * before/after the braces. Models routinely wrap strict-JSON answers in fences or add a
+ * closing sentence — the raw JSON.parse would reject a perfectly valid payload.
+ */
+export function extractJsonObject(text: string): string | null {
+  const fence = /```(?:json)?\s*([\s\S]*?)```/m.exec(text);
+  const candidate = fence ? fence[1]! : text;
+  const start = candidate.indexOf('{');
+  const end = candidate.lastIndexOf('}');
+  return start >= 0 && end > start ? candidate.slice(start, end + 1) : null;
+}
+
 export function parseHypotheses(text: string): GeneratedHypotheses {
   let json: unknown;
   try {
     json = JSON.parse(text);
   } catch {
-    throw new Error('AI returned invalid JSON for hypotheses');
+    const extracted = extractJsonObject(text);
+    if (!extracted) {
+      throw new Error('AI returned invalid JSON for hypotheses (no JSON object found)');
+    }
+    try {
+      json = JSON.parse(extracted);
+    } catch (err) {
+      throw new Error(
+        `AI returned invalid JSON for hypotheses: ${(err as Error).message.slice(0, 200)}. Повторите генерацию.`,
+      );
+    }
   }
 
   const parsed = RawHypothesesSchema.safeParse(json);

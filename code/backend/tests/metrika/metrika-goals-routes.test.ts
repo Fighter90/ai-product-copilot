@@ -42,7 +42,7 @@ async function build(
 const validSpec = {
   name: 'Cart view',
   type: 'url',
-  conditions: [{ type: 'contain', url: '/cart' }],
+  conditions: [{ type: 'contains', url: '/cart' }],
 };
 
 let h: Harness;

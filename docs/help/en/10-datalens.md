@@ -54,6 +54,16 @@ All ranged datasets are one row per day per dimension combination — ideal for 
 5. Create a **Dashboard**, add both charts, and set a date **selector** widget linked to the charts' `date` field.
 6. Share the dashboard with your team or publish it per your DataLens access policy.
 
+## Provisioning via the Public API
+
+The workbook, the Metrika connection and a dataset are created by `scripts/push-datalens.mjs`:
+
+1. Get an IAM token (`yc iam create-token`, valid ≤ 12 h) and the organisation id (datalens.ru → Settings).
+2. Run: `DATALENS_IAM_TOKEN=… DATALENS_ORG_ID=… METRIKA_OAUTH_TOKEN=… node scripts/push-datalens.mjs`
+3. The script creates the “ProductCamp Analytics” workbook, the Yandex Metrika connection (counter 54280963) and the “Metrika — visits by day” dataset (the Metrika source with the full set of dimensions).
+
+CSV datasets (the Files connection) cannot be created via the API — upload them in the DataLens UI. The call contracts (createWorkbook / createConnection / createDataset) are documented in the script.
+
 ## Alerts and webhooks
 
 DataLens charts can send **alerts** (a metric crosses a threshold) to an arbitrary URL. The cabinet receives them:

@@ -293,6 +293,24 @@ export const ru = {
   'filters.archivedGoals': 'Архивные цели',
   'filters.archivedGoalsHint':
     'Показывать цели Метрики, которые были удалены или заархивированы. По умолчанию скрыты.',
+  'land.integrations.title': 'Интеграции',
+  'land.integrations.lead':
+    'Данные Яндекс.Метрики и ваш DataLens — в одной системе без ручных выгрузок.',
+  'land.int.metrika.name': 'Яндекс.Метрика',
+  'land.int.metrika.what':
+    'Счётчик ProductCamp подключён напрямую: цели, визиты, источники, поведение — в кабинете и в реальном времени.',
+  'land.int.metrika.b1': 'Синк по дням + live-запросы без записи в базу',
+  'land.int.metrika.b2': 'Цели: создание и архивация из админки',
+  'land.int.metrika.b3': 'Фильтр служебного трафика, синк каждые 3 часа',
+  'land.int.metrika.setup': 'Настройка: «Админ → Метрика и данные» — счётчик и OAuth-токен',
+  'land.int.datalens.name': 'DataLens',
+  'land.int.datalens.what':
+    'Агрегаты выгружаются в ваш DataLens: готовые CSV-датасеты, воркбук и подключение созданы, вебхук-алерты приходят в кабинет.',
+  'land.int.datalens.b1': '5 датасетов: каналы, UTM, гео/устройства, страницы, B2B',
+  'land.int.datalens.b2': 'Воркбук и коннектор Метрики созданы через Public API',
+  'land.int.datalens.b3': 'Вебхук-алерты чартов — уведомления в кабинете',
+  'land.int.datalens.setup':
+    'Настройка: «Админ → Интеграции» — токен вебхуков; CSV на странице DataLens',
   'seg.b2bHint':
     'Сегмент B2B: трафик Метрики по корпоративным каналам не размечен — B2B учитывается сделками на странице «B2B-сделки» и вкладкой B2B на KPI.',
 
@@ -610,6 +628,24 @@ export const en: Record<DictKey, string> = {
   'filters.archivedGoals': 'Archived goals',
   'filters.archivedGoalsHint':
     'Show Metrika goals that were deleted or archived. Hidden by default.',
+  'land.integrations.title': 'Integrations',
+  'land.integrations.lead':
+    'Yandex Metrika data and your DataLens — one system, no manual exports.',
+  'land.int.metrika.name': 'Yandex Metrika',
+  'land.int.metrika.what':
+    'The ProductCamp counter is connected directly: goals, visits, sources, behaviour — in the cabinet and in real time.',
+  'land.int.metrika.b1': 'Daily sync + live queries without touching the database',
+  'land.int.metrika.b2': 'Goals: create and archive from the admin UI',
+  'land.int.metrika.b3': 'Service-traffic filter, sync every 3 hours',
+  'land.int.metrika.setup': 'Setup: “Admin → Metrika & data” — counter and OAuth token',
+  'land.int.datalens.name': 'DataLens',
+  'land.int.datalens.what':
+    'Aggregates land in your DataLens: ready CSV datasets, a workbook and the Metrika connection are provisioned, chart alerts arrive in the cabinet.',
+  'land.int.datalens.b1': '5 datasets: channels, UTM, geo/devices, pages, B2B',
+  'land.int.datalens.b2': 'Workbook and Metrika connection provisioned via the Public API',
+  'land.int.datalens.b3': 'Chart-alert webhooks → cabinet notifications',
+  'land.int.datalens.setup':
+    'Setup: “Admin → Integrations” — webhook token; CSVs on the DataLens page',
   'seg.b2bHint':
     'B2B segment: corporate traffic is not tagged in Metrika — B2B is tracked as deals on the B2B deals page and the B2B tab on KPI.',
 

@@ -41,6 +41,16 @@ _Токен вебхуков для алертов DataLens администра
 
 Эндпоинт выгрузки: `GET /api/integrations/datalens/export/{datasetId}?from=YYYY-MM-DD&to=YYYY-MM-DD` (требуется вход в кабинет).
 
+## Автосоздание через Public API
+
+Воркбук, подключение Метрики и датасет создаются скриптом `scripts/push-datalens.mjs`:
+
+1. Получите IAM-токен (`yc iam create-token`, живёт ≤ 12 ч) и ID организации (datalens.ru → Настройки).
+2. Выполните: `DATALENS_IAM_TOKEN=… DATALENS_ORG_ID=… METRIKA_OAUTH_TOKEN=… node scripts/push-datalens.mjs`
+3. Скрипт создаст воркбук «ProductCamp Analytics», подключение Яндекс.Метрики (счётчик 54280963) и датасет «Метрика — визиты по дням» (источник Метрики с полным набором измерений).
+
+CSV-датасеты (подключение «Файлы») через API не создаются — загружайте их в интерфейсе DataLens. Контракты вызовов (createWorkbook / createConnection / createDataset) зафиксированы в скрипте.
+
 ## Алерты и вебхуки
 
 DataLens умеет отправлять уведомления при срабатывании алертов чартов. Адрес приёма: `POST /api/integrations/datalens/webhook/{token}`.

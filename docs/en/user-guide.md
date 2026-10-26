@@ -36,6 +36,8 @@ language**. Failed logins are rate-limited (5 per 15 minutes); passwords require
 
 Permissions are enforced on the backend; admin actions and exports are written to the audit log.
 
+The full page-by-page permission matrix is in the help: `/help/roles`.
+
 ## 3. Running
 
 See [runbook.md](runbook.md); server deployment — [../deploy.md](../deploy.md). In short:
@@ -112,6 +114,21 @@ the Reporting API request period, not to SQLite.
 - **Audit** (`/app/admin/audit`): logins (incl. failures), user management, password resets,
   DataLens exports and requests — with time, user, action, target and details.
 
+**Getting the OAuth token:** create an app at oauth.yandex.ru with `metrika:read`
+(and `metrika:write` to create goals from the admin UI), open the authorization link
+from the settings, copy the `access_token` from the address bar after the redirect and
+paste it into the “OAuth token” field.
+
+**Creating and archiving goals.** Goals are created via the Management API: type
+(URL / action / step / number …), name, conditions (exact / contains / starts / regex).
+The API rejects condition type `js` — JS events are `action` goals with a URL condition.
+New goals appear in the cabinet after the next sync (or a manual “Sync”).
+
+**Service-traffic filter.** Robots and local visits are excluded from the sync and live
+pages by default; `INCLUDE_TEST_TRAFFIC=1` returns the raw behaviour.
+
+**Scheduled sync.** On the server the sync runs every 3 hours (`pca-sync.timer`).
+
 ## 7. Reports and B2B
 
 - **Report** (`/app/report`): build a snapshot → the full report opens on screen; optional
@@ -130,6 +147,21 @@ The reverse channel is a **token-protected webhook**: DataLens sends confirmatio
 to `POST /api/integrations/datalens/webhook/:token`; admins see them under Integrations and in the
 bell. Analysts can request a DataLens connection (creates an admin notification). Every export is
 written to the audit log.
+
+### How the system works
+
+Metrika → our sync (SQLite, daily cuts, every 3 hours) → two channels into DataLens:
+the CSV datasets from `/app/datalens` (Files connection) and the native Metrika
+connector (live data, auto-refresh). The “ProductCamp Analytics” workbook and the
+Metrika connection were provisioned via the Public API (`scripts/push-datalens.mjs`).
+
+### Setup (step by step)
+
+1. Sign in at [datalens.ru](https://datalens.ru).
+2. Download the 5 CSVs from `/app/datalens` (period up to 365 days).
+3. Connections → **Files** → upload → verify column types.
+4. Build charts (line / bar / donut / funnel) and the dashboard.
+5. Chart alerts → the webhook URL from “Admin → Integrations”.
 
 ## 9. Help and the RAG assistant
 

@@ -31,12 +31,17 @@ export const GOAL_TYPES = [
 ] as const;
 export type GoalType = (typeof GOAL_TYPES)[number];
 
-/** Goal condition: `{type, url}` in the official docs; Metrika JS-event goals also use `value`. */
+/**
+ * Goal condition: `{type, url}` in the official docs. Verified live (2026-10-26): url-matching
+ * condition types are exact/contains/starts/regex with a `url` field; type "js" is REJECTED by
+ * the Management API («wrong value: "js"») — JS-event goals are created as type "action" with a
+ * URL condition (the site fires /goal/… requests that match it).
+ */
+export const GOAL_CONDITION_TYPES = ['exact', 'contains', 'starts', 'regex'] as const;
 export const GoalConditionSchema = z
   .object({
-    type: z.string().min(1).max(64),
-    url: z.string().max(16384).optional(),
-    value: z.string().max(16384).optional(),
+    type: z.enum(GOAL_CONDITION_TYPES),
+    url: z.string().min(1).max(16384),
   })
   .passthrough();
 export type GoalCondition = z.infer<typeof GoalConditionSchema>;
