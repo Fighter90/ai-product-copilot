@@ -4,6 +4,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    // scrypt-backed suites (secrets, passwords) are CPU-bound and blow the 5 s default on a
+    // loaded box; vitest 4 fails them even when the overrun comes from a blocked event loop.
+    testTimeout: 20_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
