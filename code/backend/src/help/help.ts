@@ -195,13 +195,14 @@ export async function helpRoutes(app: FastifyInstance, deps: HelpDeps): Promise<
   };
   const langOf = (q: unknown): HelpLang => ((q as { lang?: string })?.lang === 'en' ? 'en' : 'ru');
 
-  // Per-IP limiter for the assistant: 20 questions / 10 minutes.
+  // Per-IP limiter for the assistant: дифференцированно — гость 5 / авторизованный 20 вопросов
+  // за 10 минут (ревью Claude: ротация IP не должна давать анонимам тот же бюджет).
   const now = deps.now ?? Date.now;
   const hits = new Map<string, number[]>();
-  const limited = (key: string): boolean => {
+  const limited = (key: string, max: number): boolean => {
     const t = now();
     const list = (hits.get(key) ?? []).filter((x) => t - x < 600_000);
-    if (list.length >= 20) return true;
+    if (list.length >= max) return true;
     list.push(t);
     hits.set(key, list);
     return false;
@@ -232,7 +233,10 @@ export async function helpRoutes(app: FastifyInstance, deps: HelpDeps): Promise<
   app.post('/help/ask', async (req, reply) => {
     const body = Ask.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid body' });
-    if (limited(req.ip))
+    // Гость — 5 вопросов/10 мин, авторизованный — 20 (ревью: ротация IP не должна
+    // давать анонимам полный бюджет LLM-токенов).
+    const anonLimit = req.user ? 20 : 5;
+    if (limited(req.ip, anonLimit))
       return reply.code(429).send({ error: 'too many questions', code: 'RATE_LIMITED' });
     const { question, lang } = body.data;
     const found = get(lang).index.search(question, 5);

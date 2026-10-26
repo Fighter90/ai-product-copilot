@@ -55,8 +55,7 @@ export function isPublicPath(url: string): boolean {
   const path = url.split('?')[0] ?? '';
   if (!path.startsWith('/api/')) return true; // swagger UI etc. handled by nginx in prod
   // /api/help/ask остаётся ПУБЛИЧНЫМ (пользовательское решение): ассистент отвечает и гостю.
-  // Защита расхода LLM — IP-limiter в help.ts (20 вопросов / 10 мин) + nginx limit_req.
-  // if (path.startsWith('/api/help/ask')) return false;
+  // Расход LLM ограничен: help.ts — гость 5 / юзер 20 вопросов за 10 мин по IP; nginx limit_req.
   return PUBLIC_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
 }
 
