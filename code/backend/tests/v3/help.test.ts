@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +12,7 @@ import {
   parseFrontMatter,
   tokenize,
   type HelpArticle,
+  type HelpDeps,
 } from '../../src/help/help';
 
 const ARTICLE_RU = `---
@@ -187,7 +188,7 @@ describe('buildAssistantPrompt', () => {
 describe('helpRoutes', () => {
   let dir: string;
   let app: FastifyInstance;
-  let complete: ReturnType<typeof vi.fn>;
+  let complete: Mock<NonNullable<HelpDeps['complete']>>;
   let now: number;
 
   const build = async (): Promise<void> => {

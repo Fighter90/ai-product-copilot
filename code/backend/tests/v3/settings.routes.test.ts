@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { appSettingsRoutes } from '../../src/settings/routes';
 import { AppSettings } from '../../src/settings/app-settings';
@@ -15,7 +15,7 @@ let settings: AppSettings;
 let users: UsersRepo;
 let adminCookie: string;
 let analystCookie: string;
-let onChange: ReturnType<typeof vi.fn>;
+let onChange: Mock<() => void>;
 
 beforeEach(async () => {
   db = freshDb();
