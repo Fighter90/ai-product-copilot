@@ -27,9 +27,17 @@ export async function renderReportCharts(snapshot: ReportSnapshot): Promise<Repo
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
   let echartsScript: string;
   try {
-    const echartsPath = require.resolve('echarts/dist/echarts.min.js', {
-      paths: [join(repoRoot, 'code/frontend')],
-    });
+    let echartsPath: string;
+    try {
+      echartsPath =
+        process.env.ECHARTS_PATH ||
+        require.resolve('echarts/dist/echarts.min.js', {
+          paths: [join(repoRoot, 'code/frontend')],
+        });
+    } catch {
+      // Прод: deploy.sh кладёт UMD-файл сюда (echarts — devDep фронтенда, на сервере его нет).
+      echartsPath = '/opt/pca/assets/echarts.min.js';
+    }
     echartsScript = readFileSync(echartsPath, 'utf8');
   } catch {
     return {};

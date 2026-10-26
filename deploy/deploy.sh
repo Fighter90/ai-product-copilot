@@ -142,3 +142,10 @@ done
 
 log "Готово: build ${BUILD_SHA_SHORT} задеплоен, /api/health отвечает."
 log "Проверьте сайт: curl -sI https://dashboardcamp.ru"
+
+# --- echarts UMD для серверного рендера графиков отчёта (chart-renderer) ---------------------
+ECHARTS_SRC="$(find "$REPO_ROOT/node_modules/.pnpm" -path "*echarts/dist/echarts.min.js" 2>/dev/null | head -1)"
+if [[ -n "$ECHARTS_SRC" ]]; then
+  push_rsync "$ECHARTS_SRC" /opt/pca/assets/echarts.min.js
+  log "echarts.min.js выложен для серверного рендера графиков"
+fi
