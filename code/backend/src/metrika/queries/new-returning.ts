@@ -2,6 +2,8 @@ import { DIMENSION_NONE } from '@pca/shared';
 import type { MetrikaClient } from '../client';
 import { ENDPOINTS } from '../endpoints';
 import { StatDataResponseSchema, type StatDataResponse } from '../schemas';
+import { statFilters } from '../traffic-filter';
+import { mergeByKey, reachRate } from './dedupe';
 import { ratio } from './ratio';
 
 /**
@@ -26,6 +28,11 @@ export interface NewReturningQueryOptions {
   readonly to: string;
   /** When set, goal reaches + conversion rate metrics are requested. */
   readonly goalId?: number;
+  /**
+   * Override the Reporting API `filters` value (tests). Default: {@link statFilters} —
+   * test/robot traffic excluded unless INCLUDE_TEST_TRAFFIC=1 (ANA-22).
+   */
+  readonly filters?: string;
 }
 
 type Row = StatDataResponse['data'][number];
@@ -52,11 +59,31 @@ export function newReturningMetrics(goalId?: number): string {
   return base.join(',');
 }
 
+/**
+ * Collapse rows that share the segment natural key (date, segment): metrics are summed and CR
+ * recomputed from the sums — the write-level dedup behind ANA-16.
+ */
+export function mergeNewReturningStats(rows: readonly NewReturningStat[]): NewReturningStat[] {
+  return mergeByKey(
+    rows,
+    (s) => `${s.date}|${s.segment}`,
+    (a, b) => ({
+      date: a.date,
+      segment: a.segment,
+      visits: a.visits + b.visits,
+      users: a.users + b.users,
+      goalReaches: a.goalReaches + b.goalReaches,
+      conversionRate: reachRate(a.goalReaches + b.goalReaches, a.visits + b.visits),
+    }),
+  );
+}
+
 /** Fetch the new/returning visitor split; returns raw response + parsed stats. */
 export async function newReturningBreakdown(
   client: MetrikaClient,
   opts: NewReturningQueryOptions,
 ): Promise<{ raw: StatDataResponse; stats: NewReturningStat[] }> {
+  const filters = opts.filters ?? statFilters();
   const raw = await client.get(
     ENDPOINTS.statData,
     {
@@ -66,8 +93,9 @@ export async function newReturningBreakdown(
       date1: opts.from,
       date2: opts.to,
       attribution: 'lastsign',
+      ...(filters ? { filters } : {}),
     },
     StatDataResponseSchema,
   );
-  return { raw, stats: raw.data.map((row) => mapRow(row, opts)) };
+  return { raw, stats: mergeNewReturningStats(raw.data.map((row) => mapRow(row, opts))) };
 }

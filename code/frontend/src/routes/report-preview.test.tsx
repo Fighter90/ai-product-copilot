@@ -82,18 +82,18 @@ describe('ReportPreviewView', () => {
     expect(onExport).toHaveBeenCalledWith('snap-1', 'pdf');
   });
 
-  it('KPI label follows the snapshot goalLabel (Оплат for a purchase goal)', () => {
+  it('KPI label follows the snapshot goalLabel (Заказов for a purchase goal — ANA-19)', () => {
     const paidSnapshot = {
       ...snapshot,
       goalLabel: {
-        title: 'Оплат',
+        title: 'Заказов',
         isPaid: true,
         showApplicationsCaveat: false,
         showEstimate: false,
       },
     };
     render(<ReportPreviewView {...baseProps} snapshot={paidSnapshot} />);
-    expect(screen.getByText('Оплат')).toBeInTheDocument();
+    expect(screen.getByText('Заказов')).toBeInTheDocument();
     expect(screen.queryByText('Заявок B2C')).not.toBeInTheDocument();
   });
 
@@ -140,7 +140,8 @@ describe('ReportPreviewView', () => {
     // CR hint appears in the funnel section - use getAllByText since it also appears in report sections
     expect(screen.getAllByText(/CR 5\.0%/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('B2B в работе')).toBeInTheDocument();
-    expect(screen.getByText('B2B оплачено')).toBeInTheDocument();
+    // ANA-19: B2B paid tickets are labelled as created orders
+    expect(screen.getAllByText('Заказов создано (B2B)').length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows B2B summary when there are deals', () => {

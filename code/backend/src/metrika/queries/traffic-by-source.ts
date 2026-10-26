@@ -2,6 +2,8 @@ import type { ChannelStat } from '@pca/shared';
 import type { MetrikaClient } from '../client';
 import { ENDPOINTS } from '../endpoints';
 import { StatDataResponseSchema, type StatDataResponse } from '../schemas';
+import { statFilters } from '../traffic-filter';
+import { mergeByKey, reachRate, weightedRate } from './dedupe';
 import { ratio } from './ratio';
 
 export interface TrafficQueryOptions {
@@ -10,6 +12,11 @@ export interface TrafficQueryOptions {
   readonly to: string;
   /** When set, goal reaches + conversion rate metrics are requested. */
   readonly goalId?: number;
+  /**
+   * Override the Reporting API `filters` value (tests). Default: {@link statFilters} —
+   * test/robot traffic excluded unless INCLUDE_TEST_TRAFFIC=1 (ANA-22).
+   */
+  readonly filters?: string;
 }
 
 type Row = StatDataResponse['data'][number];
@@ -95,11 +102,36 @@ export function trafficMetrics(goalId?: number): string {
   return base.join(',');
 }
 
+/**
+ * Cross-chunk safety net (ANA-16): unlike {@link aggregateByChannel} this keys on (date, channel),
+ * so rows accumulated over several request chunks collapse to one row per `channel_stats` PK.
+ */
+export function mergeChannelStats(rows: readonly ChannelStat[]): ChannelStat[] {
+  return mergeByKey(
+    rows,
+    (s) => `${s.date}|${s.channel}`,
+    (a, b) => ({
+      date: a.date,
+      channel: a.channel,
+      utmSource: a.utmSource ?? b.utmSource,
+      utmMedium: a.utmMedium ?? b.utmMedium,
+      utmCampaign: a.utmCampaign ?? b.utmCampaign,
+      visits: a.visits + b.visits,
+      users: a.users + b.users,
+      bounceRate: weightedRate(a.bounceRate, a.visits, b.bounceRate, b.visits),
+      avgDuration: weightedRate(a.avgDuration, a.visits, b.avgDuration, b.visits),
+      goalReaches: a.goalReaches + b.goalReaches,
+      conversionRate: reachRate(a.goalReaches + b.goalReaches, a.visits + b.visits),
+    }),
+  );
+}
+
 /** Fetch traffic broken down by last source, returning both the raw response and parsed stats. */
 export async function trafficBySource(
   client: MetrikaClient,
   opts: TrafficQueryOptions,
 ): Promise<{ raw: StatDataResponse; stats: ChannelStat[] }> {
+  const filters = opts.filters ?? statFilters();
   const raw = await client.get(
     ENDPOINTS.statData,
     {
@@ -113,8 +145,12 @@ export async function trafficBySource(
       date1: opts.from,
       date2: opts.to,
       attribution: 'lastsign',
+      ...(filters ? { filters } : {}),
     },
     StatDataResponseSchema,
   );
-  return { raw, stats: aggregateByChannel(raw.data.map((row) => mapRow(row, opts))) };
+  return {
+    raw,
+    stats: mergeChannelStats(aggregateByChannel(raw.data.map((row) => mapRow(row, opts)))),
+  };
 }

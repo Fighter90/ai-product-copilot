@@ -6,9 +6,12 @@ import type { NewDecision, NewHypothesis } from '@pca/shared';
  * validateHypothesis (≥3 assumptions across behavior/market/tech, ≥2 distinct method types,
  * rationales, traffic-light, deadline). Decisions reference hypotheses by 1-based index into the
  * array returned by {@link buildSeedHypotheses} — the seeder remaps these to real DB ids.
+ *
+ * ANA-18: every seed row is marked `isDemo: true` (persisted as `is_demo`), so demo content is
+ * always distinguishable from real data — the report renders a «ДЕМО» badge for it.
  */
 export function buildSeedHypotheses(): NewHypothesis[] {
-  return [
+  const rows = [
     {
       diamondPhase: 'define',
       kind: 'problem',
@@ -348,12 +351,13 @@ export function buildSeedHypotheses(): NewHypothesis[] {
       redCriteria: '<5% — письма не влияют на оплату.',
       deadlineDays: 14,
     },
-  ];
+  ] satisfies readonly NewHypothesis[];
+  return rows.map((h) => ({ ...h, isDemo: true as const }));
 }
 
 /** Demo Decision Log entries. hypothesisId is a 1-based index into buildSeedHypotheses(). */
 export function buildSeedDecisions(): NewDecision[] {
-  return [
+  const rows = [
     {
       hypothesisId: 1,
       date: '2025-01-05',
@@ -395,5 +399,6 @@ export function buildSeedDecisions(): NewDecision[] {
       nextStep: 'Зафиксировать дашборд как основной инструмент трека.',
       decidedBy: 'Команда трека',
     },
-  ];
+  ] satisfies readonly NewDecision[];
+  return rows.map((d) => ({ ...d, isDemo: true as const }));
 }

@@ -5,8 +5,8 @@ import type { DailyPoint } from './trends';
 
 /**
  * ANA-50 «Цели и „Что если“»: линейный прогноз достижения KPI-цели по дневным достижениям цели.
- * All math is pure and side-effect free so it is fully unit-testable (see forecast.test.ts) and the
- * page (routes/goals.tsx, /app/kpi) stays a thin UI over these functions.
+ * All math is pure and side-effect free so it is fully unit-testable (forecast.test.ts) and the
+ * KPI page stays a thin UI over these functions.
  *
  * Model: pace = цель-достижения за окно / дней в окне (linear rate, orders/day). A scenario scales
  * traffic (±%) and shifts conversion by percentage points, then the same linear model is re-run.
@@ -246,7 +246,7 @@ export function forecastChartOption(input: ForecastChartInput): object {
   ];
 
   const allValues = [...factCum, ...tailValues, target];
-  const yMax = Math.ceil(Math.max(...allValues) * 1.05);
+  const yMax = Math.ceil(Math.max(1, ...allValues) * 1.05); // max(1,…) — ось не вырождается при пустых данных
 
   return {
     tooltip: { trigger: 'axis', ...intTooltip },

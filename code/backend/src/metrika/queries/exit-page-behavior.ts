@@ -3,9 +3,10 @@ import { DIMENSION_NONE } from '@pca/shared';
 import type { MetrikaClient } from '../client';
 import { ENDPOINTS } from '../endpoints';
 import { StatDataResponseSchema, type StatDataResponse } from '../schemas';
+import { statFilters } from '../traffic-filter';
+import { aggregatePages, mergePageStats } from './normalize-page';
 import { pageMetrics, type PageQueryOptions } from './page-behavior';
 import { ratio } from './ratio';
-import { aggregatePages } from './normalize-page';
 
 type Row = StatDataResponse['data'][number];
 
@@ -23,11 +24,19 @@ function mapRow(row: Row, opts: PageQueryOptions): PageStat {
   };
 }
 
-/** Fetch behaviour broken down by exit page (exitURL); returns raw response + parsed stats. */
+/**
+ * Fetch behaviour broken down by exit page; returns raw response + parsed stats.
+ *
+ * Dimension: `ym:s:endURL` — verified against the live API. The Reporting API REJECTS the
+ * intuitive `ym:s:exitURL` ("Incorrectly specified attribute … error code: 4001", audit bug
+ * ANA-15); `endURL` with `attribution: lastsign` is the equivalent of "the page where the
+ * session ended".
+ */
 export async function exitPageBehavior(
   client: MetrikaClient,
   opts: PageQueryOptions,
 ): Promise<{ raw: StatDataResponse; stats: PageStat[] }> {
+  const filters = opts.filters ?? statFilters();
   const raw = await client.get(
     ENDPOINTS.statData,
     {
@@ -37,8 +46,12 @@ export async function exitPageBehavior(
       date1: opts.from,
       date2: opts.to,
       attribution: 'lastsign',
+      ...(filters ? { filters } : {}),
     },
     StatDataResponseSchema,
   );
-  return { raw, stats: aggregatePages(raw.data.map((row) => mapRow(row, opts))) };
+  return {
+    raw,
+    stats: mergePageStats(aggregatePages(raw.data.map((row) => mapRow(row, opts)))),
+  };
 }

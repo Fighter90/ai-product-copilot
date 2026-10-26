@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, useEffect } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { queryClient } from './lib/query';
@@ -49,14 +49,6 @@ const Integrations = lazy(() =>
 const Audit = lazy(() => import('./pages/admin/Audit').then((m) => ({ default: m.Audit })));
 
 /** Same look as auth's Splash — shown while a lazy route chunk loads. */
-function RouteFallback(): JSX.Element {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas">
-      <div className="h-10 w-10 animate-spin rounded-full border-2 border-line border-t-accent" />
-    </div>
-  );
-}
-
 /** Pre-v3 URLs (/traffic, /report, …) keep working by redirecting into the cabinet. */
 function LegacyRedirect(): JSX.Element {
   const { pathname, search } = useLocation();
@@ -82,95 +74,93 @@ export function App(): JSX.Element {
         <BrowserRouter>
           <AuthProvider>
             <PrefsSync />
-            <Suspense fallback={<RouteFallback />}>
-              <Routes>
-                <Route path="/" element={<Landing />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/help" element={<HelpCenter />} />
-                <Route path="/help/:slug" element={<HelpCenter />} />
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/help" element={<HelpCenter />} />
+              <Route path="/help/:slug" element={<HelpCenter />} />
+              <Route
+                path="/app"
+                element={
+                  <RequireAuth>
+                    <CabinetLayout />
+                  </RequireAuth>
+                }
+              >
+                <Route index element={<Overview />} />
+                <Route path="live" element={<Live />} />
+                <Route path="goals" element={<Goals />} />
+                <Route path="goals/:id" element={<GoalDetail />} />
+                <Route path="funnel-live" element={<FunnelLive />} />
+                <Route path="traffic" element={<Traffic />} />
+                <Route path="behavior" element={<Behavior />} />
+                <Route path="funnel" element={<Funnel />} />
+                <Route path="kpi" element={<KpiPage />} />
+                <Route path="explore" element={<Navigate to="/app/explore/sources" replace />} />
+                <Route path="explore/:preset" element={<Explore />} />
+                <Route path="report" element={<ReportPreview />} />
+                <Route path="history" element={<History />} />
+                <Route path="b2b" element={<B2b />} />
+                <Route path="datalens" element={<DataLens />} />
+                <Route path="hypotheses" element={<Navigate to="/app/report" replace />} />
                 <Route
-                  path="/app"
+                  path="admin/users"
                   element={
-                    <RequireAuth>
-                      <CabinetLayout />
-                    </RequireAuth>
+                    <RequireAdmin>
+                      <Users />
+                    </RequireAdmin>
                   }
-                >
-                  <Route index element={<Overview />} />
-                  <Route path="live" element={<Live />} />
-                  <Route path="goals" element={<Goals />} />
-                  <Route path="goals/:id" element={<GoalDetail />} />
-                  <Route path="funnel-live" element={<FunnelLive />} />
-                  <Route path="traffic" element={<Traffic />} />
-                  <Route path="behavior" element={<Behavior />} />
-                  <Route path="funnel" element={<Funnel />} />
-                  <Route path="kpi" element={<KpiPage />} />
-                  <Route path="explore" element={<Navigate to="/app/explore/sources" replace />} />
-                  <Route path="explore/:preset" element={<Explore />} />
-                  <Route path="report" element={<ReportPreview />} />
-                  <Route path="history" element={<History />} />
-                  <Route path="b2b" element={<B2b />} />
-                  <Route path="datalens" element={<DataLens />} />
-                  <Route path="hypotheses" element={<Navigate to="/app/report" replace />} />
-                  <Route
-                    path="admin/users"
-                    element={
-                      <RequireAdmin>
-                        <Users />
-                      </RequireAdmin>
-                    }
-                  />
-                  <Route
-                    path="admin/ai"
-                    element={
-                      <RequireAdmin>
-                        <AiProviders />
-                      </RequireAdmin>
-                    }
-                  />
-                  <Route
-                    path="admin/metrika"
-                    element={
-                      <RequireAdmin>
-                        <MetrikaSettings />
-                      </RequireAdmin>
-                    }
-                  />
-                  <Route
-                    path="admin/integrations"
-                    element={
-                      <RequireAdmin>
-                        <Integrations />
-                      </RequireAdmin>
-                    }
-                  />
-                  <Route
-                    path="admin/audit"
-                    element={
-                      <RequireAdmin>
-                        <Audit />
-                      </RequireAdmin>
-                    }
-                  />
-                  <Route path="*" element={<Navigate to="/app" replace />} />
-                </Route>
-                {[
-                  '/traffic',
-                  '/behavior',
-                  '/funnel',
-                  '/goals',
-                  '/report',
-                  '/history',
-                  '/settings',
-                  '/hypotheses',
-                  '/decisions',
-                  '/b2b',
-                ].map((p) => (
-                  <Route key={p} path={p} element={<LegacyRedirect />} />
-                ))}
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </Suspense>
+                />
+                <Route
+                  path="admin/ai"
+                  element={
+                    <RequireAdmin>
+                      <AiProviders />
+                    </RequireAdmin>
+                  }
+                />
+                <Route
+                  path="admin/metrika"
+                  element={
+                    <RequireAdmin>
+                      <MetrikaSettings />
+                    </RequireAdmin>
+                  }
+                />
+                <Route
+                  path="admin/integrations"
+                  element={
+                    <RequireAdmin>
+                      <Integrations />
+                    </RequireAdmin>
+                  }
+                />
+                <Route
+                  path="admin/audit"
+                  element={
+                    <RequireAdmin>
+                      <Audit />
+                    </RequireAdmin>
+                  }
+                />
+                <Route path="*" element={<Navigate to="/app" replace />} />
+              </Route>
+              {[
+                '/traffic',
+                '/behavior',
+                '/funnel',
+                '/goals',
+                '/report',
+                '/history',
+                '/settings',
+                '/hypotheses',
+                '/decisions',
+                '/b2b',
+              ].map((p) => (
+                <Route key={p} path={p} element={<LegacyRedirect />} />
+              ))}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
             <ErrorBoundary>
               <Assistant />
             </ErrorBoundary>

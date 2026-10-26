@@ -3,6 +3,8 @@ import { UTM_NONE } from '@pca/shared';
 import type { MetrikaClient } from '../client';
 import { ENDPOINTS } from '../endpoints';
 import { StatDataResponseSchema, type StatDataResponse } from '../schemas';
+import { statFilters } from '../traffic-filter';
+import { mergeByKey, reachRate } from './dedupe';
 import { ratio } from './ratio';
 
 export interface UtmQueryOptions {
@@ -11,6 +13,11 @@ export interface UtmQueryOptions {
   readonly to: string;
   /** When set, goal reaches + conversion rate metrics are requested. */
   readonly goalId?: number;
+  /**
+   * Override the Reporting API `filters` value (tests). Default: {@link statFilters} —
+   * test/robot traffic excluded unless INCLUDE_TEST_TRAFFIC=1 (ANA-22).
+   */
+  readonly filters?: string;
 }
 
 type Row = StatDataResponse['data'][number];
@@ -44,11 +51,34 @@ export function utmMetrics(goalId?: number): string {
   return base.join(',');
 }
 
+/**
+ * Collapse rows that share the `utm_stats` natural key (date, source, medium, campaign): metrics
+ * are summed and CR recomputed from the sums. Guards the upsert against repeated keys within one
+ * response or across chunks — the write-level dedup behind ANA-16.
+ */
+export function mergeUtmStats(rows: readonly UtmStat[]): UtmStat[] {
+  return mergeByKey(
+    rows,
+    (s) => `${s.date}|${s.utmSource}|${s.utmMedium}|${s.utmCampaign}`,
+    (a, b) => ({
+      date: a.date,
+      utmSource: a.utmSource,
+      utmMedium: a.utmMedium,
+      utmCampaign: a.utmCampaign,
+      visits: a.visits + b.visits,
+      users: a.users + b.users,
+      goalReaches: a.goalReaches + b.goalReaches,
+      conversionRate: reachRate(a.goalReaches + b.goalReaches, a.visits + b.visits),
+    }),
+  );
+}
+
 /** Fetch traffic broken down by UTM source/medium/campaign; returns raw response + parsed stats. */
 export async function utmBreakdown(
   client: MetrikaClient,
   opts: UtmQueryOptions,
 ): Promise<{ raw: StatDataResponse; stats: UtmStat[] }> {
+  const filters = opts.filters ?? statFilters();
   const raw = await client.get(
     ENDPOINTS.statData,
     {
@@ -58,8 +88,9 @@ export async function utmBreakdown(
       date1: opts.from,
       date2: opts.to,
       attribution: 'lastsign',
+      ...(filters ? { filters } : {}),
     },
     StatDataResponseSchema,
   );
-  return { raw, stats: raw.data.map((row) => mapRow(row, opts)) };
+  return { raw, stats: mergeUtmStats(raw.data.map((row) => mapRow(row, opts))) };
 }

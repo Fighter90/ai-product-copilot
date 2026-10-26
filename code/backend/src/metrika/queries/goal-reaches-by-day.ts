@@ -1,6 +1,8 @@
 import type { MetrikaClient } from '../client';
 import { ENDPOINTS } from '../endpoints';
 import { StatDataResponseSchema, type StatDataResponse } from '../schemas';
+import { statFilters } from '../traffic-filter';
+import { mergeByKey } from './dedupe';
 
 /**
  * Per-day goal reaches for EVERY goal on the counter, via the time-series endpoint
@@ -19,6 +21,11 @@ export interface GoalReachesQueryOptions {
   readonly goalIds: readonly number[];
   /** Override the batch size (tests). */
   readonly batchSize?: number;
+  /**
+   * Override the Reporting API `filters` value (tests). Default: {@link statFilters} —
+   * test/robot traffic excluded unless INCLUDE_TEST_TRAFFIC=1 (ANA-22).
+   */
+  readonly filters?: string;
 }
 
 export interface GoalDayRow {
@@ -59,6 +66,18 @@ export function daysBetween(from: string, to: string): string[] {
 }
 
 /**
+ * Collapse rows that share the (date, goalId) reach pair, summing reaches — the write-level dedup
+ * behind ANA-16 (a repeated pair must add up, never double-insert).
+ */
+export function mergeGoalDayRows(rows: readonly GoalDayRow[]): GoalDayRow[] {
+  return mergeByKey(
+    rows,
+    (r) => `${r.date}|${r.goalId}`,
+    (a, b) => ({ date: a.date, goalId: a.goalId, reaches: a.reaches + b.reaches }),
+  );
+}
+
+/**
  * Fetch one batch: the daily reaches series for each goal in `goalIds`.
  * bytime nests metrics as number[][] — row `metrics[i]` holds the per-day values of metric i.
  */
@@ -66,6 +85,7 @@ export async function goalReachesByDay(
   client: MetrikaClient,
   opts: GoalReachesQueryOptions,
 ): Promise<{ raw: StatDataResponse; rows: GoalDayRow[] }> {
+  const filters = opts.filters ?? statFilters();
   const raw = await client.get(
     ENDPOINTS.statByTime,
     {
@@ -74,6 +94,7 @@ export async function goalReachesByDay(
       group: 'day',
       date1: opts.from,
       date2: opts.to,
+      ...(filters ? { filters } : {}),
     },
     StatDataResponseSchema,
   );
@@ -88,5 +109,5 @@ export async function goalReachesByDay(
       rows.push({ date: days[d] ?? opts.from, goalId, reaches: value ?? 0 });
     }
   }
-  return { raw, rows };
+  return { raw, rows: mergeGoalDayRows(rows) };
 }

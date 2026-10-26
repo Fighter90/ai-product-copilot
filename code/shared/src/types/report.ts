@@ -112,7 +112,7 @@ export interface ReportSnapshot {
    */
   readonly generatedDecisions?: GeneratedDecisions;
   /**
-   * Label for the primary goal's reaches (formatGoalLabel): «Оплат» for purchase goals, else
+   * Label for the primary goal's reaches (formatGoalLabel): «Заказов» for purchase goals, else
    * «Заявок B2C». Lets the report/DOCX/PDF headline match the dashboard. Absent → treat as applications.
    */
   readonly goalLabel?: GoalLabel;

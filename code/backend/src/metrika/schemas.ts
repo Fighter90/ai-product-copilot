@@ -19,12 +19,18 @@ export const StatDataResponseSchema = z
   .passthrough();
 export type StatDataResponse = z.infer<typeof StatDataResponseSchema>;
 
-/** A goal from the Management API. */
+/**
+ * A goal from the Management API. `archived`/`status` are Metrika's own archive state —
+ * authoritative when present; the id-threshold heuristic is only a fallback for counters whose
+ * responses lack both fields (audit bug ANA-23: «163 активных, 163 архивных»).
+ */
 export const GoalSchema = z
   .object({
     id: z.number(),
     name: z.string(),
     type: z.string(),
+    archived: z.boolean().optional(),
+    status: z.string().optional(),
   })
   .passthrough();
 

@@ -1,4 +1,5 @@
 import type { PageStat } from '@pca/shared';
+import { mergeByKey, weightedRate } from './dedupe';
 
 /**
  * Canonicalise a page URL so trailing-slash / host-case variants collapse to one key
@@ -59,4 +60,25 @@ export function aggregatePages(stats: readonly PageStat[]): PageStat[] {
     bounceRate: a.visits > 0 ? a.bounceWeighted / a.visits : 0,
     conversionRate: a.visits > 0 ? a.crWeighted / a.visits : 0,
   }));
+}
+
+/**
+ * Cross-chunk safety net (ANA-16): unlike {@link aggregatePages} this keys on (date, page), so
+ * page rows accumulated over several request chunks collapse to one row per `page_stats` /
+ * `exit_page_stats` primary key. Metrics are summed, rates are visit-weighted.
+ */
+export function mergePageStats(rows: readonly PageStat[]): PageStat[] {
+  return mergeByKey(
+    rows,
+    (s) => `${s.date}|${s.page}`,
+    (a, b) => ({
+      date: a.date,
+      page: a.page,
+      visits: a.visits + b.visits,
+      users: a.users + b.users,
+      bounceRate: weightedRate(a.bounceRate, a.visits, b.bounceRate, b.visits),
+      goalReaches: a.goalReaches + b.goalReaches,
+      conversionRate: weightedRate(a.conversionRate, a.visits, b.conversionRate, b.visits),
+    }),
+  );
 }

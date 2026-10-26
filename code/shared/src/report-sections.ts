@@ -22,6 +22,7 @@ import {
   METHOD_LABEL,
   STATUS_LABEL,
   channelTotals,
+  demoTag,
   pct,
   priorityLine,
   hypothesisStatement,
@@ -132,6 +133,9 @@ function hypothesisDetail(h: Hypothesis): ReportSection {
     `Формулировка: ${hypothesisStatement(h)}`,
     `Тип: ${KIND_LABEL[h.kind]} · фаза Double Diamond: ${phase} · статус: ${STATUS_LABEL[h.status]}`,
   ];
+  if (h.isDemo) {
+    lines.push('Демо-данные: гипотеза добавлена сидом (npm run seed), а не заведена командой.');
+  }
   if (h.description) lines.push(`Описание: ${h.description}`);
 
   lines.push(
@@ -182,7 +186,7 @@ function hypothesisDetail(h: Hypothesis): ReportSection {
 
   // No leading ordinal — the builder adds ГОСТ through-numbering (D-DOUBLE-NUM). The
   // «(гипотеза)» suffix distinguishes data-driven cards from AI narrative sections.
-  return { heading: `${h.title} (гипотеза)`, lines };
+  return { heading: `${demoTag(h)}${h.title} (гипотеза)`, lines };
 }
 
 /** An expanded Decision Log entry: findings, evidence quotes, rationale and next step. */
@@ -192,6 +196,9 @@ function decisionDetail(d: Decision): ReportSection {
     `Охват проверки: ${d.scope}`,
     `Обоснование вывода: ${d.outcomeRationale}`,
   ];
+  if (d.isDemo) {
+    lines.push('Демо-данные: решение добавлено сидом (npm run seed), а не зафиксировано командой.');
+  }
   lines.push('', `Находки (${d.findings.length}):`);
   if (d.findings.length === 0) {
     lines.push('  — не зафиксированы');
@@ -209,7 +216,7 @@ function decisionDetail(d: Decision): ReportSection {
   lines.push(
     `Решение принял: ${d.decidedBy}${d.participants ? ` · участники: ${d.participants}` : ''}`,
   );
-  return { heading: `${d.number}: итог проверки`, lines };
+  return { heading: `${demoTag(d)}${d.number}: итог проверки`, lines };
 }
 
 /** «ОБОЗНАЧЕНИЯ, ТЕРМИНЫ И СОКРАЩЕНИЯ» — только сокращения; принципы методологии живут в
@@ -717,7 +724,13 @@ export function reportSections(s: ReportSnapshot): ReportSection[] {
         '',
         ...tableHeader('Гипотеза', 'I', 'C', 'E', 'ICE'),
         ...allByPriority.map((h) =>
-          row(h.title, String(h.impact), String(h.confidence), String(h.ease), String(h.iceScore)),
+          row(
+            `${demoTag(h)}${h.title}`,
+            String(h.impact),
+            String(h.confidence),
+            String(h.ease),
+            String(h.iceScore),
+          ),
         ),
         '',
         'Детально (формулировки, статусы и дедлайны):',
@@ -730,7 +743,7 @@ export function reportSections(s: ReportSnapshot): ReportSection[] {
       heading: 'Define — проблемные гипотезы (обзор)',
       lines: [
         `Заведено ${problems.length} проблемных гипотез. Полная карточка каждой — ниже.`,
-        ...problems.map((h, i) => `  ${i + 1}) ${h.title} [ICE ${h.iceScore}]`),
+        ...problems.map((h, i) => `  ${i + 1}) ${demoTag(h)}${h.title} [ICE ${h.iceScore}]`),
       ],
     });
     sections.push(...problems.map((h) => hypothesisDetail(h)));
@@ -739,7 +752,7 @@ export function reportSections(s: ReportSnapshot): ReportSection[] {
       heading: 'Develop — решенческие гипотезы (обзор)',
       lines: [
         `Заведено ${solutions.length} решенческих гипотез. Полная карточка каждой — ниже.`,
-        ...solutions.map((h, i) => `  ${i + 1}) ${h.title} [ICE ${h.iceScore}]`),
+        ...solutions.map((h, i) => `  ${i + 1}) ${demoTag(h)}${h.title} [ICE ${h.iceScore}]`),
       ],
     });
     sections.push(...solutions.map((h) => hypothesisDetail(h)));
@@ -877,7 +890,7 @@ export function reportSections(s: ReportSnapshot): ReportSection[] {
               .slice(0, 3)
               .map(
                 (h, i) =>
-                  `${i + 1}. [ICE ${h.iceScore}] ${h.title} → цель: ${h.greenCriteria} (дедлайн ${h.deadlineDays} дн.)`,
+                  `${i + 1}. [ICE ${h.iceScore}] ${demoTag(h)}${h.title} → цель: ${h.greenCriteria} (дедлайн ${h.deadlineDays} дн.)`,
               ),
             '',
             'Порядок работы: бьём сверху вниз, после каждой проверки фиксируем исход в Decision Log',

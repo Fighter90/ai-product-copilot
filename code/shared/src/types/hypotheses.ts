@@ -48,6 +48,8 @@ export interface NewHypothesis {
   readonly redCriteria: string;
   readonly deadlineDays: number;
   readonly evidence?: readonly HypothesisEvidence[];
+  /** True for seeded demo content (ANA-18) — the report renders a «ДЕМО» badge for it. */
+  readonly isDemo?: boolean;
 }
 
 /** A persisted hypothesis as returned by the repository. */

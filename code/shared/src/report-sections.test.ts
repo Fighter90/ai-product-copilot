@@ -791,3 +791,37 @@ describe('aiDecisionSections + generatedDecisions in reportSections', () => {
     expect(headings.some((h) => /Decision Log \(предполагаемые/.test(h))).toBe(true);
   });
 });
+
+describe('reportSections — demo marks (ANA-18)', () => {
+  it('badges seeded demo hypotheses and decisions with «[ДЕМО]» and an explanatory line', () => {
+    const s: ReportSnapshot = {
+      ...baseSnapshot,
+      hypotheses: { problems: [hyp({ isDemo: true })], solutions: [] },
+      decisions: [decision({ isDemo: true })],
+    };
+    const sections = reportSections(s);
+
+    const hypCard = sections.find((sec) => sec.heading === '[ДЕМО] Гипотеза (гипотеза)');
+    expect(hypCard).toBeTruthy();
+    expect(hypCard!.lines.join('\n')).toContain(
+      'Демо-данные: гипотеза добавлена сидом (npm run seed)',
+    );
+
+    const decCard = sections.find((sec) => sec.heading === '[ДЕМО] DL-001: итог проверки');
+    expect(decCard).toBeTruthy();
+    expect(decCard!.lines.join('\n')).toContain('Демо-данные');
+
+    // Overview list and the prioritization table carry the badge too.
+    const overview = sections.find((sec) => sec.heading === 'Define — проблемные гипотезы (обзор)');
+    expect(overview!.lines.join('\n')).toContain('1) [ДЕМО] Гипотеза [ICE 336]');
+    const priority = sections.find((sec) => sec.heading === 'Приоритизация гипотез (по ICE)');
+    expect(priority!.lines.join('\n')).toMatch(/\[ICE 336 · [^\]]+\] \[ДЕМО\]/);
+  });
+
+  it('leaves real (non-seed) rows unbadged', () => {
+    const text = reportSections(baseSnapshot)
+      .map((sec) => `${sec.heading}\n${sec.lines.join('\n')}`)
+      .join('\n');
+    expect(text).not.toContain('[ДЕМО]');
+  });
+});

@@ -6,7 +6,7 @@ v3 — многопользовательский **личный кабинет*
 Яндекс.Метрику → SQLite → API → кабинет (роли, аудит) + DataLens + AI-провайдеры.
 Публичная часть (лендинг, вход, справка) — без сессии; всё под `/app` — только после логина.
 
-**Текущая версия:** v3.1.0 (2026-10-25)
+**Текущая версия:** v3.1.0 (2026-10-26)
 
 ## Компоненты
 
@@ -203,6 +203,32 @@ sequenceDiagram
   админ видит статистику за 30 дней.
 - Потребители AI: отчёт (AI-анализ, AI-гипотезы, AI Decision Log) и RAG-ассистент по справке
   (`POST /api/help/ask` — ответ только из чанков статей `docs/help/<lang>`).
+
+## Публичные интеграции
+
+Часть API доступна без сессии; защита — лимиты на двух уровнях: в приложении и в nginx.
+
+**DataLens Public API** (`scripts/push-datalens.mjs`): воркбук «ProductCamp Analytics» и
+подключение `metrika_api` (счётчик + OAuth-токен) создаются автоматически через
+`https://api.datalens.tech/rpc` (заголовки `Authorization: Bearer <IAM>`, `x-dl-org-id`,
+`x-dl-api-version`). Нужны IAM-токен Yandex Cloud (`yc iam create-token`, живёт ≤12 ч) и
+`DATALENS_ORG_ID`, у аккаунта — роль `dataLens.editor`. CSV-датасеты через Public API
+загрузить нельзя (типа `file` нет) — подключаются вручную в UI: воркбук → Подключения →
+Файлы; исходники — `GET /api/integrations/datalens/export/:id`. Датасеты/чарты/дашборд
+поверх коннектора Метрики — следующая волна (ANA-61).
+
+**Публичные эндпоинты:** `/api/health`, `/api/auth/login|logout`, `/api/help/*`
+(включая `POST /api/help/ask` — ассистент отвечает и гостю), `/api/integrations/datalens/webhook/*`.
+
+**Rate-limits** (`deploy/nginx-ratelimit.conf` → `/etc/nginx/conf.d/pca-ratelimit.conf`;
+превышение — 503, дефолт `limit_req_status`):
+
+| Уровень    | Что                                     | Ограничение                                        |
+| ---------- | --------------------------------------- | -------------------------------------------------- |
+| nginx      | `POST /api/auth/login` (зона pca_login) | 10 r/m на IP, burst 5 nodelay                      |
+| nginx      | прочее `/api/` (зона pca_api)           | 120 r/m на IP, burst 240 nodelay                   |
+| приложение | вход (пара ip+email)                    | 5 неудач за 15 минут → 429                         |
+| приложение | ассистент `/api/help/ask`               | гость 5 / пользователь 20 вопросов за 10 мин → 429 |
 
 ## Слои
 

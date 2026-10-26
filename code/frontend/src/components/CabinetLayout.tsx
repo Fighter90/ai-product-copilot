@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ComponentType } from 'react';
+import { Suspense, useEffect, useRef, useState, type ComponentType } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { ErrorBoundary, RouteFallback } from './ErrorBoundary';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
@@ -254,6 +255,16 @@ export function CabinetLayout(): JSX.Element {
 
   useEffect(() => setMobileOpen(false), [location.pathname]);
 
+  // Close the mobile drawer on Escape.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobileOpen]);
+
   return (
     <div className="min-h-screen bg-canvas text-ink">
       {/* Desktop sidebar */}
@@ -292,34 +303,47 @@ export function CabinetLayout(): JSX.Element {
         </div>
       </aside>
 
-      {/* Mobile drawer */}
-      {mobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div
-            className="absolute inset-0 bg-black/60 animate-fade-in"
-            onClick={() => setMobileOpen(false)}
-          />
-          <aside className="absolute inset-y-0 left-0 flex w-72 flex-col border-r border-line bg-surface animate-fade-up">
-            <div className="flex h-14 items-center justify-between border-b border-line px-4">
-              <span className="flex items-center gap-2 text-sm font-bold">
-                <BrandMark className="h-7 w-7" /> Product
-                <span className="-ml-2 text-accent">Camp</span>
-              </span>
-              <button
-                type="button"
-                aria-label={t('common.close')}
-                onClick={() => setMobileOpen(false)}
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <SideNav collapsed={false} onNavigate={() => setMobileOpen(false)} />
-            <div className="border-t border-line p-3">
-              <VersionBadge />
-            </div>
-          </aside>
-        </div>
-      )}
+      {/* Mobile drawer: always mounted below lg so the open/close transition
+          (transform/opacity, 200ms) runs both ways. Inert when closed. */}
+      <div
+        id="mobile-drawer"
+        className={`fixed inset-0 z-50 lg:hidden ${mobileOpen ? '' : 'pointer-events-none'}`}
+        aria-hidden={!mobileOpen}
+      >
+        <div
+          data-testid="mobile-drawer-backdrop"
+          className={`absolute inset-0 bg-black/60 transition-opacity duration-200 ${
+            mobileOpen ? 'opacity-100' : 'opacity-0'
+          }`}
+          onClick={() => setMobileOpen(false)}
+        />
+        <aside
+          data-testid="mobile-drawer-panel"
+          className={`absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-line bg-surface transition-[transform,opacity,visibility] duration-200 ease-out ${
+            mobileOpen
+              ? 'visible translate-x-0 opacity-100'
+              : 'invisible -translate-x-full opacity-0'
+          }`}
+        >
+          <div className="flex h-14 items-center justify-between border-b border-line px-4">
+            <span className="flex items-center gap-2 text-sm font-bold">
+              <BrandMark className="h-7 w-7" /> Product
+              <span className="-ml-2 text-accent">Camp</span>
+            </span>
+            <button
+              type="button"
+              aria-label={t('common.close')}
+              onClick={() => setMobileOpen(false)}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <SideNav collapsed={false} onNavigate={() => setMobileOpen(false)} />
+          <div className="border-t border-line p-3">
+            <VersionBadge />
+          </div>
+        </aside>
+      </div>
 
       <div
         className={`transition-[padding] duration-300 ${sidebarCollapsed ? 'lg:pl-[68px]' : 'lg:pl-64'}`}
@@ -330,6 +354,8 @@ export function CabinetLayout(): JSX.Element {
               type="button"
               className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-line lg:hidden"
               aria-label="menu"
+              aria-expanded={mobileOpen}
+              aria-controls="mobile-drawer"
               onClick={() => setMobileOpen(true)}
             >
               <Menu className="h-4 w-4" />
@@ -368,7 +394,11 @@ export function CabinetLayout(): JSX.Element {
           key={location.pathname}
           className="mx-auto max-w-7xl px-4 pb-28 pt-6 animate-fade-in sm:px-6 lg:pb-12"
         >
-          <Outlet />
+          <ErrorBoundary compact>
+            <Suspense fallback={<RouteFallback />}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
         </main>
 
         <footer className="hidden border-t border-line px-6 py-4 text-xs text-muted lg:flex lg:items-center lg:justify-between">

@@ -95,10 +95,10 @@ describe('OverviewView', () => {
     expect(screen.getAllByText('podcast').length).toBeGreaterThan(0);
     expect(screen.getByText(/100 визитов · CR/)).toBeInTheDocument();
     expect(screen.queryByText(/Нет слабых мест/)).not.toBeInTheDocument();
-    // Deep-link to a prefilled hypothesis from the weak spot.
+    // Deep-link to a prefilled hypothesis from the weak spot (targets the v3 report page).
     expect(screen.getByRole('link', { name: /гипотеза/ })).toHaveAttribute(
       'href',
-      expect.stringContaining('/hypotheses?'),
+      expect.stringContaining('/app/report?'),
     );
   });
 });

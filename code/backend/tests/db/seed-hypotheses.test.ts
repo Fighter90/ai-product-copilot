@@ -21,6 +21,11 @@ describe('buildSeedHypotheses', () => {
     }
   });
 
+  it('marks every seed row as demo (isDemo, ANA-18) so it never mixes with real data', () => {
+    expect(buildSeedHypotheses().every((h) => h.isDemo === true)).toBe(true);
+    expect(buildSeedDecisions().every((d) => d.isDemo === true)).toBe(true);
+  });
+
   it('parent references point to earlier hypotheses (1-based index)', () => {
     const hs = buildSeedHypotheses();
     for (const [i, h] of hs.entries()) {

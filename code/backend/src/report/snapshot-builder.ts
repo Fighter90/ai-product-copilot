@@ -84,7 +84,7 @@ export class SnapshotBuilder {
       .filter((d) => d.stage !== 'paid')
       .reduce((a, d) => a + d.tickets, 0);
 
-    // Label for the primary goal's reaches — «Оплат» for a purchase goal, else «Заявок B2C».
+    // Label for the primary goal's reaches — «Заказов» for a purchase goal, else «Заявок B2C».
     const goalLabel = formatGoalLabel(selectPrimaryGoal(this.deps.metrics.listGoals(true)));
     // When the primary goal is a purchase goal, its reaches ARE payments and count toward the
     // 300-ticket target alongside B2B paid (matches the Goals page). Otherwise only B2B paid counts.
