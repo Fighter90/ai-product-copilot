@@ -3,8 +3,12 @@ import { iceScore } from '@pca/shared';
 import type { ReportSnapshot } from '@pca/shared';
 import {
   buildHypothesesRequest,
+  buildHypothesesRetryRequest,
   parseHypotheses,
   generateHypotheses,
+  extractJsonObject,
+  repairJson,
+  HYPOTHESES_MAX_TOKENS,
   ANTHROPIC_URL,
   type AnthropicFetch,
 } from '../../src/report/ai-hypotheses';
@@ -104,6 +108,24 @@ function anthropicEnvelope(payload: unknown): string {
   });
 }
 
+/** Envelope around an arbitrary model text, optionally with a stop_reason. */
+function textEnvelope(text: string, stopReason?: string): string {
+  return JSON.stringify({
+    content: [{ type: 'text', text }],
+    ...(stopReason ? { stop_reason: stopReason } : {}),
+  });
+}
+
+/** A fetch returning the given bodies in order (200 OK each). */
+function sequenceFetch(bodies: string[]): AnthropicFetch {
+  let i = 0;
+  return vi.fn(async () => {
+    const body = bodies[Math.min(i, bodies.length - 1)]!;
+    i++;
+    return { ok: true, status: 200, text: async () => body };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // buildHypothesesRequest
 // ---------------------------------------------------------------------------
@@ -157,6 +179,136 @@ describe('buildHypothesesRequest', () => {
   it('role is always "user"', () => {
     const req = buildHypothesesRequest(snapshot, 'm');
     expect(req.messages[0]?.role).toBe('user');
+  });
+
+  it('uses a 16000-token output budget', () => {
+    const req = buildHypothesesRequest(snapshot, 'm');
+    expect(req.max_tokens).toBe(16000);
+    expect(HYPOTHESES_MAX_TOKENS).toBe(16000);
+  });
+
+  it('asks for short fields and properly escaped quotes', () => {
+    const req = buildHypothesesRequest(snapshot, 'm');
+    expect(req.system).toContain('160 символов');
+    expect(req.system).toContain('\\"');
+    expect(req.system).toContain('висячих запятых');
+  });
+});
+
+describe('buildHypothesesRetryRequest', () => {
+  it('keeps the original request and appends an invalid-JSON note to the single user message', () => {
+    const base = buildHypothesesRequest(snapshot, 'm');
+    const retry = buildHypothesesRetryRequest(base, 'invalid');
+    expect(retry.model).toBe(base.model);
+    expect(retry.max_tokens).toBe(base.max_tokens);
+    expect(retry.system).toBe(base.system);
+    expect(retry.messages).toHaveLength(1);
+    expect(retry.messages[0]?.content.startsWith(base.messages[0]!.content)).toBe(true);
+    expect(retry.messages[0]?.content).toContain('previous answer was invalid JSON');
+    expect(retry.messages[0]?.content).toContain('strictly valid compact JSON');
+  });
+
+  it('mentions truncation when the previous answer hit max_tokens', () => {
+    const base = buildHypothesesRequest(snapshot, 'm');
+    const retry = buildHypothesesRetryRequest(base, 'truncated');
+    expect(retry.messages[0]?.content).toContain('truncated');
+    expect(retry.messages[0]?.content).toContain('strictly valid compact JSON');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractJsonObject
+// ---------------------------------------------------------------------------
+
+describe('extractJsonObject', () => {
+  it('strips ```json fences', () => {
+    expect(extractJsonObject('```json\n{"a":1}\n```')).toBe('{"a":1}');
+  });
+
+  it('strips bare ``` fences', () => {
+    expect(extractJsonObject('```\n{"a":[1,2]}\n```')).toBe('{"a":[1,2]}');
+  });
+
+  it('strips prose before and after the object', () => {
+    expect(extractJsonObject('Вот ответ: {"a":{"b":2}} Надеюсь, помог!')).toBe('{"a":{"b":2}}');
+  });
+
+  it('returns null when there is no object', () => {
+    expect(extractJsonObject('no json here')).toBeNull();
+    expect(extractJsonObject('} {')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// repairJson
+// ---------------------------------------------------------------------------
+
+describe('repairJson', () => {
+  const parse = (s: string) => JSON.parse(repairJson(s)) as unknown;
+
+  it('leaves valid JSON semantically unchanged', () => {
+    const payload = makeRawPayload(10, 10);
+    expect(parse(JSON.stringify(payload))).toEqual(payload);
+    expect(parse(JSON.stringify(payload, null, 2))).toEqual(payload);
+  });
+
+  it('returns an empty string when there is no object', () => {
+    expect(repairJson('nothing')).toBe('');
+  });
+
+  it('removes trailing commas in objects and arrays', () => {
+    expect(parse('{"a":[1,2,],"b":{"c":"x",},}')).toEqual({ a: [1, 2], b: { c: 'x' } });
+    expect(parse('{"a":[1,,2]}')).toEqual({ a: [1, 2] });
+  });
+
+  it('strips fences and prose around the object', () => {
+    expect(parse('Ответ:\n```json\n{"a":1}\n```\nГотово.')).toEqual({ a: 1 });
+    expect(parse('{"a":1} и ещё {"b":2}')).toEqual({ a: 1 });
+  });
+
+  it('escapes unescaped double quotes inside strings', () => {
+    expect(parse('{"note":"кнопка "Купить" не видна","x":1}')).toEqual({
+      note: 'кнопка "Купить" не видна',
+      x: 1,
+    });
+  });
+
+  it('escapes raw newlines and tabs inside strings', () => {
+    expect(parse('{"a":"line1\nline2\tend"}')).toEqual({ a: 'line1\nline2\tend' });
+  });
+
+  it('inserts a missing comma between pretty-printed properties', () => {
+    expect(parse('{\n  "a": "x"\n  "b": "y"\n}')).toEqual({ a: 'x', b: 'y' });
+    expect(parse('{"a":[{"x":1}{"x":2}]}')).toEqual({ a: [{ x: 1 }, { x: 2 }] });
+  });
+
+  it('closes a string truncated mid-value plus all open containers', () => {
+    expect(parse('{"problems":[{"id":"P01","trouble":"высокий отк')).toEqual({
+      problems: [{ id: 'P01', trouble: 'высокий отк' }],
+    });
+  });
+
+  it('drops a dangling escape when truncated right after a backslash', () => {
+    expect(parse('{"a":"x\\')).toEqual({ a: 'x' });
+    expect(parse('{"a":"x\\u04')).toEqual({ a: 'x' });
+  });
+
+  it('closes an array truncated mid-array (after a comma)', () => {
+    expect(parse('{"a":[1,2,')).toEqual({ a: [1, 2] });
+    expect(parse('{"a":[{"x":1},{"x":2},')).toEqual({ a: [{ x: 1 }, { x: 2 }] });
+  });
+
+  it('closes an array truncated right after an opening bracket', () => {
+    expect(parse('{"a":[')).toEqual({ a: [] });
+    expect(parse('{"a":[{')).toEqual({ a: [{}] });
+  });
+
+  it('cuts back a dangling key, colon or partial literal', () => {
+    expect(parse('{"a":1,"b":[1],"c')).toEqual({ a: 1, b: [1] });
+    expect(parse('{"a":1,"b":[1],"c":')).toEqual({ a: 1, b: [1] });
+    expect(parse('{"a":"x","b":tru')).toEqual({ a: 'x' });
+    expect(parse('{"a":"x","b":true')).toEqual({ a: 'x', b: true });
+    expect(parse('{"a":"x","b":12')).toEqual({ a: 'x', b: 12 });
   });
 });
 
@@ -267,6 +419,49 @@ describe('parseHypotheses', () => {
 
   it('throws when the JSON object is completely wrong shape', () => {
     expect(() => parseHypotheses('{"unexpected":true}')).toThrow(/schema/);
+  });
+
+  it('parses a valid payload wrapped in ```json fences with prose around', () => {
+    const text = `Вот гипотезы:\n\`\`\`json\n${JSON.stringify(makeRawPayload(10, 10))}\n\`\`\`\nГотово.`;
+    const result = parseHypotheses(text);
+    expect(result.problems).toHaveLength(10);
+    expect(result.solutions).toHaveLength(10);
+  });
+
+  it('repairs trailing commas and unescaped quotes', () => {
+    const json = JSON.stringify(makeRawPayload(10, 10))
+      .replace(
+        '"evidence":"287 заявок B2C при 60 визитах с мобильных"',
+        '"evidence":"287 "заявок" B2C"',
+      )
+      .replace(/\]\}$/, '],}');
+    const result = parseHypotheses(json);
+    expect(result.problems[0]?.evidence).toBe('287 "заявок" B2C');
+    expect(result.solutions).toHaveLength(10);
+  });
+
+  it('salvages a truncated payload when ≥10 complete items remain (incomplete tail dropped)', () => {
+    const full = JSON.stringify(makeRawPayload(10, 11));
+    // Cut inside the 11th solution's validation block.
+    const cut = full.slice(0, full.lastIndexOf('"whatToVerify"') + 20);
+    const result = parseHypotheses(cut, { truncated: true });
+    expect(result.problems).toHaveLength(10);
+    expect(result.solutions).toHaveLength(10);
+  });
+
+  it('fails the schema clearly when a truncated payload has fewer than 10 complete items', () => {
+    const full = JSON.stringify(makeRawPayload(10, 10));
+    const cut = full.slice(0, full.lastIndexOf('"whatToVerify"') + 20);
+    expect(() => parseHypotheses(cut, { truncated: true })).toThrow(
+      /schema \(ответ модели обрезан по лимиту токенов\)/,
+    );
+    expect(() => parseHypotheses(cut)).toThrow(/schema/);
+  });
+
+  it('does not drop invalid items from a well-formed (non-repaired) payload', () => {
+    const payload = makeRawPayload(10, 11) as { solutions: Array<{ deadline: string }> };
+    payload.solutions[10]!.deadline = 'скоро';
+    expect(() => parseHypotheses(JSON.stringify(payload))).toThrow(/schema/);
   });
 });
 
@@ -382,5 +577,110 @@ describe('generateHypotheses', () => {
     });
 
     expect(result.problems).toHaveLength(10);
+  });
+
+  it('makes exactly one call when the first answer is valid', async () => {
+    const doFetch = sequenceFetch([anthropicEnvelope(makeRawPayload(10, 10))]);
+    await generateHypotheses(snapshot, { fetch: doFetch, apiKey: 'sk', model: 'm' });
+    expect(vi.mocked(doFetch).mock.calls).toHaveLength(1);
+  });
+
+  it('retries once when the first answer is broken JSON and succeeds on the second', async () => {
+    const doFetch = sequenceFetch([
+      textEnvelope('{"problems": [ {"id": "P01" "oops": }}}'),
+      anthropicEnvelope(makeRawPayload(10, 10)),
+    ]);
+    const result = await generateHypotheses(snapshot, {
+      fetch: doFetch,
+      apiKey: 'sk',
+      model: 'm',
+    });
+    expect(result.problems).toHaveLength(10);
+    expect(result.solutions).toHaveLength(10);
+
+    const calls = vi.mocked(doFetch).mock.calls;
+    expect(calls).toHaveLength(2);
+    const firstBody = JSON.parse(calls[0]![1].body) as {
+      messages: Array<{ content: string }>;
+    };
+    const secondBody = JSON.parse(calls[1]![1].body) as {
+      model: string;
+      max_tokens: number;
+      messages: Array<{ content: string }>;
+    };
+    expect(secondBody.model).toBe('m');
+    expect(secondBody.max_tokens).toBe(16000);
+    expect(secondBody.messages).toHaveLength(1);
+    expect(firstBody.messages[0]?.content).not.toContain('previous answer was invalid JSON');
+    expect(secondBody.messages[0]?.content).toContain('previous answer was invalid JSON');
+  });
+
+  it('retries once on a schema failure (too few items)', async () => {
+    const doFetch = sequenceFetch([
+      anthropicEnvelope(makeRawPayload(3, 3)),
+      anthropicEnvelope(makeRawPayload(10, 10)),
+    ]);
+    const result = await generateHypotheses(snapshot, { fetch: doFetch, apiKey: 'sk', model: 'm' });
+    expect(result.problems).toHaveLength(10);
+    expect(vi.mocked(doFetch).mock.calls).toHaveLength(2);
+  });
+
+  it('throws after the second broken answer (no third call)', async () => {
+    const doFetch = sequenceFetch([textEnvelope('not json at all'), textEnvelope('still no json')]);
+    await expect(
+      generateHypotheses(snapshot, { fetch: doFetch, apiKey: 'sk', model: 'm' }),
+    ).rejects.toThrow('AI returned invalid JSON for hypotheses');
+    expect(vi.mocked(doFetch).mock.calls).toHaveLength(2);
+  });
+
+  it('does not retry on a non-2xx response', async () => {
+    const doFetch = fakeFetch({ ok: false, status: 500, body: 'boom' });
+    await expect(
+      generateHypotheses(snapshot, { fetch: doFetch, apiKey: 'sk', model: 'm' }),
+    ).rejects.toThrow(/HTTP 500/);
+    expect(vi.mocked(doFetch).mock.calls).toHaveLength(1);
+  });
+
+  it('treats stop_reason=max_tokens as truncated: salvages ≥10 complete items without a retry', async () => {
+    const full = JSON.stringify(makeRawPayload(10, 11));
+    const cut = full.slice(0, full.lastIndexOf('"whatToVerify"') + 20);
+    const doFetch = sequenceFetch([textEnvelope(cut, 'max_tokens')]);
+    const result = await generateHypotheses(snapshot, { fetch: doFetch, apiKey: 'sk', model: 'm' });
+    expect(result.solutions).toHaveLength(10);
+    expect(vi.mocked(doFetch).mock.calls).toHaveLength(1);
+  });
+
+  it('on stop_reason=max_tokens with <10 items retries with a truncation note', async () => {
+    const full = JSON.stringify(makeRawPayload(10, 10));
+    const cut = full.slice(0, full.lastIndexOf('"whatToVerify"') + 20);
+    const doFetch = sequenceFetch([
+      textEnvelope(cut, 'max_tokens'),
+      textEnvelope(JSON.stringify(makeRawPayload(10, 10)), 'end_turn'),
+    ]);
+    const result = await generateHypotheses(snapshot, { fetch: doFetch, apiKey: 'sk', model: 'm' });
+    expect(result.solutions).toHaveLength(10);
+    const calls = vi.mocked(doFetch).mock.calls;
+    expect(calls).toHaveLength(2);
+    const secondBody = JSON.parse(calls[1]![1].body) as { messages: Array<{ content: string }> };
+    expect(secondBody.messages[0]?.content).toContain('truncated');
+  });
+
+  it('reports truncation when both answers hit max_tokens', async () => {
+    const full = JSON.stringify(makeRawPayload(10, 10));
+    const cut = full.slice(0, full.lastIndexOf('"whatToVerify"') + 20);
+    const doFetch = sequenceFetch([
+      textEnvelope(cut, 'max_tokens'),
+      textEnvelope(cut, 'max_tokens'),
+    ]);
+    await expect(
+      generateHypotheses(snapshot, { fetch: doFetch, apiKey: 'sk', model: 'm' }),
+    ).rejects.toThrow(/обрезан по лимиту токенов/);
+  });
+
+  it('throws an envelope error when the response body is not JSON', async () => {
+    const doFetch = fakeFetch({ ok: true, status: 200, body: '<html>gateway</html>' });
+    await expect(
+      generateHypotheses(snapshot, { fetch: doFetch, apiKey: 'sk', model: 'm' }),
+    ).rejects.toThrow(/envelope/);
   });
 });

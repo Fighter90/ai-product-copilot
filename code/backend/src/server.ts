@@ -26,7 +26,6 @@ async function main(): Promise<void> {
   const hypotheses = new HypothesesRepo(db);
   const decisions = new DecisionsRepo(db);
   const b2b = new B2bRepo(db);
-  const builder = new SnapshotBuilder({ metrics, hypotheses, decisions, b2b });
 
   // APP_SECRET шифрует токены/ключи, хранящиеся в БД. На сервере (NODE_ENV=production)
   // старт без него запрещён: предсказуемый fallback = компрометация всех секретов.
@@ -57,6 +56,15 @@ async function main(): Promise<void> {
     COUNTER_ID: config.COUNTER_ID ? String(config.COUNTER_ID) : '',
     GOAL_ID: config.GOAL_ID ? String(config.GOAL_ID) : '',
     KPI_TARGET: '300',
+  });
+  // Report snapshots read the admin's runtime KPI target and pinned goal on every build.
+  const builder = new SnapshotBuilder({
+    metrics,
+    hypotheses,
+    decisions,
+    b2b,
+    kpiTarget: () => settings.get('KPI_TARGET'),
+    primaryGoalId: () => settings.getNumber('GOAL_ID'),
   });
 
   const llm = new LlmService(db, appSecret, globalThis.fetch as unknown as HttpFetch);

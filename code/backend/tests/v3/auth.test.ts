@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isPublicPath,
+  isSessionProbe,
   LoginLimiter,
   parseCookies,
   requiresAdmin,
@@ -86,6 +87,19 @@ describe('isPublicPath', () => {
   });
 });
 
+describe('isSessionProbe', () => {
+  it('matches only GET/HEAD /api/auth/me (query ignored)', () => {
+    expect(isSessionProbe('GET', '/api/auth/me')).toBe(true);
+    expect(isSessionProbe('get', '/api/auth/me?x=1')).toBe(true);
+    expect(isSessionProbe('HEAD', '/api/auth/me')).toBe(true);
+    expect(isSessionProbe('PATCH', '/api/auth/me')).toBe(false);
+    expect(isSessionProbe('POST', '/api/auth/me')).toBe(false);
+    expect(isSessionProbe('GET', '/api/auth/me/x')).toBe(false);
+    expect(isSessionProbe('GET', '/api/auth/password')).toBe(false);
+    expect(isSessionProbe('GET', '/api/metrics/channels')).toBe(false);
+  });
+});
+
 describe('requiresAdmin', () => {
   it('guards /api/admin and /api/users for every method', () => {
     expect(requiresAdmin('GET', '/api/admin/audit')).toBe(true);
@@ -108,7 +122,32 @@ describe('requiresAdmin', () => {
   it('lowercase methods are normalised; data wipe is DELETE-only', () => {
     expect(requiresAdmin('delete', '/api/data/metrika')).toBe(true);
     expect(requiresAdmin('GET', '/api/data/metrika')).toBe(false);
-    expect(requiresAdmin('POST', '/api/sync')).toBe(false);
+  });
+
+  it('sync (wipes + reloads Metrika data) is admin-only for every method', () => {
+    expect(requiresAdmin('POST', '/api/sync')).toBe(true);
+    expect(requiresAdmin('post', '/api/sync?x=1')).toBe(true);
+  });
+
+  it('settings sub-routes (refresh, datalens token) and PATCH are admin-only', () => {
+    expect(requiresAdmin('POST', '/api/settings/refresh')).toBe(true);
+    expect(requiresAdmin('POST', '/api/settings/datalens-token')).toBe(true);
+    expect(requiresAdmin('PATCH', '/api/settings')).toBe(true);
+  });
+
+  it('percent-encoded / duplicate-slash paths cannot dodge a rule', () => {
+    expect(requiresAdmin('POST', '/api/%73ync')).toBe(true);
+    expect(requiresAdmin('POST', '/api/%73%65ttings')).toBe(true);
+    expect(requiresAdmin('GET', '/api//admin/audit')).toBe(true);
+    expect(requiresAdmin('DELETE', '/api/data%2Fmetrika')).toBe(true);
+    expect(requiresAdmin('POST', '/api/%E0%A4%A')).toBe(false); // malformed escape → raw path
+  });
+
+  it('analyst work routes stay open', () => {
+    expect(requiresAdmin('POST', '/api/hypotheses')).toBe(false);
+    expect(requiresAdmin('POST', '/api/b2b')).toBe(false);
+    expect(requiresAdmin('POST', '/api/report/snapshot')).toBe(false);
+    expect(requiresAdmin('POST', '/api/notifications/read')).toBe(false);
   });
 });
 

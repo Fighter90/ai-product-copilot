@@ -161,11 +161,84 @@ export function exportDataset(db: DB, ds: Dataset, from: string, to: string): un
   return (ds.ranged ? stmt.all({ from, to }) : stmt.all()) as unknown[][];
 }
 
+/** Minimal fetch contract used for the DataLens Public API (injectable in tests). */
+export type DataLensFetch = (
+  url: string,
+  init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
+) => Promise<{ ok: boolean; status: number; text: () => Promise<string> }>;
+
+/** DataLens Public API base (same contract as scripts/push-datalens.mjs). */
+export const DATALENS_API_BASE = 'https://api.datalens.tech/rpc';
+const DATALENS_CHECK_TIMEOUT_MS = 15_000;
+
+export interface DataLensCheckResult {
+  readonly ok: boolean;
+  readonly message: string;
+  readonly workbookTitle?: string;
+}
+
+/**
+ * Verify DataLens access: POST /rpc/getWorkbook with the IAM token and org id.
+ * Never includes the token in the returned message or in logs.
+ */
+export async function checkDataLensConnection(
+  fetchImpl: DataLensFetch,
+  cfg: { iamToken: string; orgId: string; workbookId: string },
+  timeoutMs = DATALENS_CHECK_TIMEOUT_MS,
+): Promise<DataLensCheckResult> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(`${DATALENS_API_BASE}/getWorkbook`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${cfg.iamToken}`,
+        'content-type': 'application/json',
+        'x-dl-api-version': '2',
+        'x-dl-org-id': cfg.orgId,
+      },
+      body: JSON.stringify({ workbookId: cfg.workbookId }),
+      signal: ctrl.signal,
+    });
+    const text = await res.text().catch(() => '');
+    if (!res.ok) {
+      const hint =
+        res.status === 401
+          ? 'IAM-токен недействителен или истёк (живёт ≤12 ч)'
+          : res.status === 403
+            ? 'нет доступа: проверьте Org ID и роль в организации DataLens'
+            : res.status === 404
+              ? 'воркбук не найден: проверьте Workbook ID'
+              : 'ошибка DataLens API';
+      return { ok: false, message: `HTTP ${res.status}: ${hint}` };
+    }
+    let title: string | undefined;
+    try {
+      const j = JSON.parse(text) as { title?: unknown; workbook?: { title?: unknown } };
+      const t = j.title ?? j.workbook?.title;
+      if (typeof t === 'string') title = t;
+    } catch {
+      /* non-JSON body — still a successful response */
+    }
+    return { ok: true, message: 'Подключение к DataLens работает', workbookTitle: title };
+  } catch (err) {
+    const aborted = (err as { name?: string }).name === 'AbortError';
+    return {
+      ok: false,
+      message: aborted ? 'Таймаут запроса к DataLens (15 с)' : 'Сеть: DataLens API недоступен',
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface DataLensDeps {
   readonly db: DB;
   readonly settings: AppSettings;
   readonly users: UsersRepo;
   readonly now?: () => Date;
+  /** HTTP client for the DataLens Public API; defaults to global fetch. */
+  readonly fetch?: DataLensFetch;
 }
 
 /** Extract a confirmation code from an arbitrary DataLens webhook payload. */
@@ -276,6 +349,30 @@ export async function dataLensRoutes(app: FastifyInstance, deps: DataLensDeps): 
       )
       .get();
     return { hasToken: !!token, token, events, lastCode: lastCode ?? null };
+  });
+
+  /** Admin-only (guarded by the /api/admin ADMIN_RULES): verify the DataLens API connection. */
+  app.post('/admin/integrations/datalens/check', async (req, reply) => {
+    const iamToken = deps.settings.get('DATALENS_IAM_TOKEN');
+    const orgId = deps.settings.get('DATALENS_ORG_ID');
+    const workbookId = deps.settings.get('DATALENS_WORKBOOK_ID');
+    const missing = [
+      !orgId && 'DATALENS_ORG_ID',
+      !workbookId && 'DATALENS_WORKBOOK_ID',
+      !iamToken && 'DATALENS_IAM_TOKEN',
+    ].filter(Boolean) as string[];
+    if (missing.length) {
+      return reply.code(400).send({
+        ok: false,
+        code: 'NOT_CONFIGURED',
+        message: `Не заполнено: ${missing.join(', ')}`,
+        missing,
+      });
+    }
+    const fetchImpl = deps.fetch ?? (globalThis.fetch as unknown as DataLensFetch);
+    const result = await checkDataLensConnection(fetchImpl, { iamToken, orgId, workbookId });
+    deps.users.audit(req.user ?? null, 'datalens.check', workbookId, { ok: result.ok });
+    return result;
   });
 
   /** Analyst → admin: request DataLens setup (creates an admin notification + audit entry).

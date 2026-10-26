@@ -4,6 +4,7 @@ import {
   duplicateGroups,
   eventOf,
   goalStatus,
+  isArchivedLiveGoal,
   liveRoutes,
   PC_FUNNEL,
   previousPeriod,
@@ -52,6 +53,14 @@ describe('pure helpers', () => {
     expect(dupes.has(4)).toBe(false);
     expect(dupes.has(5)).toBe(false);
     expect(dupes.has(6)).toBe(false);
+  });
+
+  it('isArchivedLiveGoal: explicit flag wins, else the Management API status', () => {
+    expect(isArchivedLiveGoal({ archived: true, status: 'Active' })).toBe(true);
+    expect(isArchivedLiveGoal({ archived: false, status: 'Archived' })).toBe(false);
+    expect(isArchivedLiveGoal({ status: 'Archived' })).toBe(true);
+    expect(isArchivedLiveGoal({ status: 'Active' })).toBe(false);
+    expect(isArchivedLiveGoal({})).toBe(false);
   });
 
   it('previousPeriod: same length, ending the day before', () => {
@@ -134,6 +143,7 @@ describe('liveRoutes', () => {
           goals: [
             goal({ id: 11, conditions: [{ url: 'reg_step1' }] }),
             goal({ id: 12, type: 'url', conditions: [{ url: '/pricing' }] }),
+            goal({ id: 13, type: 'url', conditions: [{ url: '/old' }], status: 'Archived' }),
           ],
         };
       return {};
@@ -206,7 +216,9 @@ describe('liveRoutes', () => {
     const body = res.json();
     expect(body.previous).toEqual({ from: '2025-05-25', to: '2025-05-31' });
     expect(body.visits).toBe(10);
-    expect(body.goals).toHaveLength(2);
+    expect(body.goals).toHaveLength(3);
+    // Archive state is passed through so the frontend can honour the «Архивные цели» filter.
+    expect(body.goals.map((x: { archived: boolean }) => x.archived)).toEqual([false, false, true]);
     const g = body.goals[0];
     expect(g).toMatchObject({
       id: 11,
@@ -234,7 +246,7 @@ describe('liveRoutes', () => {
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.goal).toMatchObject({ id: 11, event: 'reg_step1' });
+    expect(body.goal).toMatchObject({ id: 11, event: 'reg_step1', archived: false });
     expect(body.totals).toEqual({ visits: 10, reaches: 8, conversionRate: 20 });
     // Фейковый клиент отдаёт в строке данных только 2 метрики → третья (conversionRate) = 0
     expect(body.bySource).toEqual([

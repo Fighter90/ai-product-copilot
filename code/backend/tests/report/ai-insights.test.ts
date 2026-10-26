@@ -7,6 +7,7 @@ import {
   parseInsights,
   generateInsights,
   ANTHROPIC_URL,
+  INSIGHTS_CONCURRENCY,
 } from '../../src/report/ai-insights';
 
 const snapshot: ReportSnapshot = {
@@ -51,6 +52,15 @@ describe('buildInsightsRequest', () => {
     expect(req.system).toContain('ТОЛЬКО');
     expect(req.messages[0]?.content).toContain('snap-1');
     expect(req.max_tokens).toBeGreaterThan(0);
+  });
+
+  it('uses the snapshot KPI target (admin setting), not a hardcoded 300', () => {
+    const req = buildInsightsRequest(
+      { ...snapshot, kpi: { ...snapshot.kpi, target: 450 } },
+      'claude-sonnet-4-6',
+    );
+    expect(req.messages[0]?.content).toContain('цели в 450 платных билетов');
+    expect(req.messages[0]?.content).not.toContain('300 платных');
   });
 });
 
@@ -101,6 +111,30 @@ describe('generateInsights', () => {
       expect(sys).toMatch(/ПРОИЗВЕДЕНИЕ|произведение/);
       expect(sys).toMatch(/НЕ.*средне/i);
     }
+  });
+
+  it('runs chunks concurrently (bounded) and keeps the section order', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let n = 0;
+    const doFetch = vi.fn<AnthropicFetch>().mockImplementation(async () => {
+      const id = n++;
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      // Earlier chunks finish LATER — the output must still follow the chunk order.
+      await new Promise((r) => setTimeout(r, 30 - id * 4));
+      inFlight--;
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ content: [{ type: 'text', text: `body-${id}` }] }),
+      };
+    });
+    const out = await generateInsights(doFetch, { apiKey: 'k', model: 'm', snapshot });
+    expect(maxInFlight).toBe(INSIGHTS_CONCURRENCY);
+    const order = [...out.matchAll(/body-(\d)/g)].map((m) => Number(m[1]));
+    expect(order).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(out.indexOf('## Итоговый вывод')).toBeGreaterThan(out.indexOf('body-4'));
   });
 
   it('handles partial failures (some chunks fail, others succeed)', async () => {

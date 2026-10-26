@@ -231,6 +231,26 @@ export class MetricsRepo {
     tx();
   }
 
+  /**
+   * Windowed wipe used by every sync: removes only the rows the sync is about to re-fetch —
+   * per-day stat rows inside [from, to], raw responses fully inside the window, and the goals
+   * catalog (always reloaded in full). History OUTSIDE the window is preserved, so a scheduled
+   * 14-day sync no longer erases a one-off 365-day backfill. Dedupe inside the window is still
+   * guaranteed (the NULL-UTM composite-key caveat only matters for rows we re-insert).
+   */
+  resetSyncedWindow(from: string, to: string): void {
+    const tx = this.db.transaction(() => {
+      for (const t of MetricsRepo.DERIVED_STAT_TABLES) {
+        this.db.prepare(`DELETE FROM ${t} WHERE date >= ? AND date <= ?`).run(from, to);
+      }
+      this.db
+        .prepare('DELETE FROM raw_responses WHERE date_from >= ? AND date_to <= ?')
+        .run(from, to);
+      this.db.prepare('DELETE FROM goals').run();
+    });
+    tx();
+  }
+
   upsertChannelStats(rows: readonly ChannelStat[]): void {
     const stmt = this.db.prepare(
       `INSERT OR REPLACE INTO channel_stats

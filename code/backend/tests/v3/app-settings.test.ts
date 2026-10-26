@@ -117,12 +117,31 @@ describe('AppSettings.source / view', () => {
     // Masked secret can be echoed back into set() as "keep" (handled by the route, not here).
   });
 
-  it('SECRET_KEYS are exactly the three documented keys', () => {
+  it('SECRET_KEYS are exactly the four documented keys', () => {
     expect([...SECRET_KEYS].sort()).toEqual([
+      'DATALENS_IAM_TOKEN',
       'DATALENS_WEBHOOK_TOKEN',
       'YANDEX_CLIENT_SECRET',
       'YANDEX_OAUTH_TOKEN',
     ]);
+  });
+
+  it('DataLens connection keys: org/workbook plain, IAM token encrypted at rest and masked', () => {
+    const s = make();
+    s.set('DATALENS_ORG_ID', 'org-abc', 'a@x.ru');
+    s.set('DATALENS_WORKBOOK_ID', 'wb-123', 'a@x.ru');
+    s.set('DATALENS_IAM_TOKEN', 't1.iam-secret-value-9876', 'a@x.ru');
+    const raw = db
+      .prepare("SELECT value, is_secret FROM app_settings WHERE key = 'DATALENS_IAM_TOKEN'")
+      .get() as { value: string; is_secret: number };
+    expect(raw.is_secret).toBe(1);
+    expect(raw.value).not.toContain('iam-secret-value');
+    expect(s.get('DATALENS_IAM_TOKEN')).toBe('t1.iam-secret-value-9876');
+    const v = s.view();
+    expect(v.DATALENS_IAM_TOKEN).toEqual({ value: '••••9876', isSecret: true, source: 'db' });
+    expect(v.DATALENS_ORG_ID).toEqual({ value: 'org-abc', isSecret: false, source: 'db' });
+    expect(v.DATALENS_WORKBOOK_ID).toEqual({ value: 'wb-123', isSecret: false, source: 'db' });
+    expect(JSON.stringify(v)).not.toContain('iam-secret-value');
   });
 
   it('settings survive re-instantiation (encrypted at rest)', () => {

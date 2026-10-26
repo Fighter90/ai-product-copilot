@@ -1,20 +1,20 @@
-import {
-  KPI_TARGET_PAID_TICKETS,
-  selectPrimaryGoal,
-  formatGoalLabel,
-  type ReportSnapshot,
-} from '@pca/shared';
+import { resolveKpiTarget, formatGoalLabel, type ReportSnapshot } from '@pca/shared';
 import type { MetricsRepo } from '../db/repositories/metrics-repo';
 import type { HypothesesRepo } from '../db/repositories/hypotheses-repo';
 import type { DecisionsRepo } from '../db/repositories/decisions-repo';
 import type { B2bRepo } from '../db/repositories/b2b-repo';
 import { topUtm, topGeoDevice, topPages } from './breakdowns';
+import { resolvePrimaryGoal } from '../metrika/primary-goal';
 
 export interface SnapshotBuilderDeps {
   readonly metrics: MetricsRepo;
   readonly hypotheses: HypothesesRepo;
   readonly decisions: DecisionsRepo;
   readonly b2b: B2bRepo;
+  /** Raw «Цель по оплатам» setting (runtime KPI_TARGET); normalised, defaults to 300. */
+  readonly kpiTarget?: () => number | string;
+  /** Admin-pinned KPI goal (runtime GOAL_ID; 0 = auto-detect) — same goal the sync used. */
+  readonly primaryGoalId?: () => number;
 }
 
 export interface BuildOptions {
@@ -85,18 +85,21 @@ export class SnapshotBuilder {
       .reduce((a, d) => a + d.tickets, 0);
 
     // Label for the primary goal's reaches — «Заказов» for a purchase goal, else «Заявок B2C».
-    const goalLabel = formatGoalLabel(selectPrimaryGoal(this.deps.metrics.listGoals(true)));
+    const goalLabel = formatGoalLabel(
+      resolvePrimaryGoal(this.deps.metrics.listGoals(true), this.deps.primaryGoalId?.()),
+    );
     // When the primary goal is a purchase goal, its reaches ARE payments and count toward the
-    // 300-ticket target alongside B2B paid (matches the Goals page). Otherwise only B2B paid counts.
+    // KPI target alongside B2B paid (matches the Goals page). Otherwise only B2B paid counts.
+    const target = resolveKpiTarget(this.deps.kpiTarget?.());
     const metrikaPaid = goalLabel.isPaid ? b2cApplications : 0;
-    const gap = Math.max(0, KPI_TARGET_PAID_TICKETS - b2bPaidTickets - metrikaPaid);
+    const gap = Math.max(0, target - b2bPaidTickets - metrikaPaid);
 
     return {
       id: opts.id,
       generatedAt: opts.generatedAt,
       period: { from: opts.from, to: opts.to },
       kpi: {
-        target: KPI_TARGET_PAID_TICKETS,
+        target,
         b2cApplications,
         b2bPaidTickets,
         gap,

@@ -10,6 +10,20 @@ const SyncBody = z.object({
 
 export type SyncRunner = (body: z.infer<typeof SyncBody>) => Promise<SyncSummary>;
 
+/**
+ * Apply the runtime GOAL_ID setting: an explicit positive `goalId` in the request wins, else the
+ * admin-pinned goal (read per call, so a settings change applies without a restart). 0 / empty /
+ * invalid means "auto-detect" — `goalId` is then omitted and the sync picks the KPI goal itself.
+ */
+export function withDefaultGoal(run: SyncRunner, pinnedGoalId: () => number): SyncRunner {
+  const valid = (n: number | undefined): n is number => Number.isInteger(n) && (n as number) > 0;
+  return ({ from, to, goalId }) => {
+    const pinned = pinnedGoalId();
+    const resolved = valid(goalId) ? goalId : valid(pinned) ? pinned : undefined;
+    return run(resolved === undefined ? { from, to } : { from, to, goalId: resolved });
+  };
+}
+
 export interface SyncRouteOptions {
   readonly runSync: SyncRunner;
 }

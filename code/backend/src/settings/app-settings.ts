@@ -13,6 +13,9 @@ export const SETTING_KEYS = [
   'KPI_TARGET',
   'DATALENS_WEBHOOK_TOKEN',
   'DATALENS_LINKS',
+  'DATALENS_ORG_ID',
+  'DATALENS_WORKBOOK_ID',
+  'DATALENS_IAM_TOKEN',
   'TEST_TRAFFIC_PATTERNS',
 ] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
@@ -21,6 +24,7 @@ export const SECRET_KEYS: ReadonlySet<SettingKey> = new Set([
   'YANDEX_OAUTH_TOKEN',
   'YANDEX_CLIENT_SECRET',
   'DATALENS_WEBHOOK_TOKEN',
+  'DATALENS_IAM_TOKEN',
 ]);
 
 interface Row {

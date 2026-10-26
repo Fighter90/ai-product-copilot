@@ -21,6 +21,7 @@ describe('migrate', () => {
       '009_exit_page_stats.sql',
       '010_auth_settings_ai.sql',
       '011_demo_marks.sql',
+      '012_ai_usage_tokens.sql',
     ]);
   });
 

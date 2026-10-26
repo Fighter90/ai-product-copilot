@@ -155,6 +155,53 @@ describe('SnapshotBuilder', () => {
     expect(snap.kpi.gap).toBe(273);
   });
 
+  it('uses the runtime KPI target setting for target + gap (default 300 when unset/invalid)', () => {
+    const deps = {
+      metrics,
+      hypotheses: new HypothesesRepo(db),
+      decisions: new DecisionsRepo(db),
+      b2b: new B2bRepo(db),
+    };
+    const opts = { id: 'k', generatedAt: 'T', from: '2025-01-01', to: '2025-01-07' };
+    const custom = new SnapshotBuilder({ ...deps, kpiTarget: () => '500' }).build(opts);
+    // gap = 500 − B2B paid 20 (application goal → Metrika reaches are not payments) = 480.
+    expect(custom.kpi).toMatchObject({ target: 500, gap: 480 });
+    const invalid = new SnapshotBuilder({ ...deps, kpiTarget: () => '0' }).build(opts);
+    expect(invalid.kpi).toMatchObject({ target: 300, gap: 280 });
+  });
+
+  it('labels the admin-pinned GOAL_ID goal instead of the auto-detected one', () => {
+    metrics.upsertGoals([
+      {
+        id: 1,
+        name: 'Ecommerce: покупка',
+        type: 'e_purchase',
+        isB2b: false,
+        isArchived: false,
+        syncedAt: 'T',
+      },
+      {
+        id: 2,
+        name: 'Заявка на билет',
+        type: 'action',
+        isB2b: false,
+        isArchived: false,
+        syncedAt: 'T',
+      },
+    ]);
+    const opts = { id: 'g', generatedAt: 'T', from: '2025-01-01', to: '2025-01-07' };
+    const deps = {
+      metrics,
+      hypotheses: new HypothesesRepo(db),
+      decisions: new DecisionsRepo(db),
+      b2b: new B2bRepo(db),
+    };
+    expect(builder.build(opts).goalLabel).toMatchObject({ isPaid: true }); // auto → purchase
+    const pinned = new SnapshotBuilder({ ...deps, primaryGoalId: () => 2 }).build(opts);
+    expect(pinned.goalLabel).toMatchObject({ isPaid: false });
+    expect(pinned.kpi.gap).toBe(280); // application goal → only B2B paid counts
+  });
+
   it('groups B2B deals by same stage (exercises the merge branch in computeB2bSummary)', () => {
     // Create a third deal with the same 'paid' stage to exercise the "key exists" ?? branch
     const b2b = new B2bRepo(db);

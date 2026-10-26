@@ -26,6 +26,8 @@ const GoalsSchema = z.object({
         .array(z.object({ type: z.string().optional(), url: z.string().optional() }))
         .optional(),
       steps: z.array(z.unknown()).optional(),
+      archived: z.boolean().optional(),
+      status: z.string().optional(),
     }),
   ),
 });
@@ -69,6 +71,14 @@ export function goalStatus(r14: number, r90: number): 'live' | 'sleeping' | 'dea
   if (r90 > 0) return 'sleeping';
   return 'dead';
 }
+
+/**
+ * Metrika's archive state of a goal: the explicit `archived` flag wins, otherwise the free-form
+ * Management API `status` ("Archived"). The frontend hides archived goals unless the
+ * «Архивные цели» filter is on.
+ */
+export const isArchivedLiveGoal = (g: Pick<LiveGoal, 'archived' | 'status'>): boolean =>
+  g.archived ?? /archiv/i.test(g.status ?? '');
 
 /** Group goals whose type + conditions are identical (duplicates). */
 export function duplicateGroups(goals: LiveGoal[]): Map<number, number[]> {
@@ -302,6 +312,7 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
           reaches14: d14.get(g.id)!.reaches,
           reaches90: d90.get(g.id)!.reaches,
           status: goalStatus(d14.get(g.id)!.reaches, d90.get(g.id)!.reaches),
+          archived: isArchivedLiveGoal(g),
           duplicateOf: dupes.get(g.id) ?? [],
         };
       }),
@@ -359,6 +370,7 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
         name: g.name,
         type: g.type,
         event: eventOf(g) ?? null,
+        archived: isArchivedLiveGoal(g),
         conditions: g.conditions ?? [],
       },
       from,

@@ -1,9 +1,14 @@
 import type { FastifyInstance } from 'fastify';
-import { selectPrimaryGoal } from '@pca/shared';
+import { KPI_TARGET_PAID_TICKETS, resolveKpiTarget } from '@pca/shared';
 import type { MetricsRepo } from '../db/repositories/metrics-repo';
+import { resolvePrimaryGoal } from '../metrika/primary-goal';
 
 export interface MetricsRouteOptions {
   readonly repo: MetricsRepo;
+  /** Admin-pinned KPI goal (runtime GOAL_ID; 0 = auto-detect). */
+  readonly primaryGoalId?: () => number;
+  /** Raw «Цель по оплатам» setting (runtime KPI_TARGET); normalised, defaults to 300. */
+  readonly kpiTarget?: () => number | string;
 }
 
 /** Read-only metrics endpoints backed by the cached SQLite tables. */
@@ -68,11 +73,23 @@ export async function metricsRoutes(
 
   app.get(
     '/metrics/primary-goal',
-    { schema: { tags: ['metrics'], summary: 'Auto-detected primary KPI goal' } },
+    {
+      schema: { tags: ['metrics'], summary: 'Primary KPI goal (pinned GOAL_ID or auto-detected)' },
+    },
     async (_req, reply) => {
-      const primary = selectPrimaryGoal(opts.repo.listGoals());
+      const primary = resolvePrimaryGoal(opts.repo.listGoals(), opts.primaryGoalId?.());
       return primary ?? reply.code(404).send({ error: 'no primary goal detected' });
     },
+  );
+
+  // Analyst-readable: the admin's «Цель по оплатам» (GET /settings carries it too, but that view
+  // is meant for the admin UI and is absent in legacy mode).
+  app.get(
+    '/metrics/kpi-target',
+    { schema: { tags: ['metrics'], summary: 'KPI target (paid tickets)' } },
+    async () => ({
+      target: opts.kpiTarget ? resolveKpiTarget(opts.kpiTarget()) : KPI_TARGET_PAID_TICKETS,
+    }),
   );
 
   app.get(

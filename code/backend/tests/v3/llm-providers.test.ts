@@ -75,7 +75,12 @@ describe('completeOpenRouter', () => {
       { ...req, temperature: 0.7, maxTokens: 100 },
       fetchFn as unknown as HttpFetch,
     );
-    expect(res).toEqual({ text: 'привет', provider: 'openrouter', model: 'm/1' });
+    expect(res).toEqual({
+      text: 'привет',
+      provider: 'openrouter',
+      model: 'm/1',
+      stopReason: 'end_turn',
+    });
     const [url, init] = fetchFn.mock.calls[0] as unknown as [
       string,
       { headers: Record<string, string>; body: string },
@@ -145,7 +150,12 @@ describe('completeAnthropic', () => {
       req,
       fetchFn as unknown as HttpFetch,
     );
-    expect(res).toEqual({ text: 'a\nb', provider: 'anthropic', model: 'test-model' });
+    expect(res).toEqual({
+      text: 'a\nb',
+      provider: 'anthropic',
+      model: 'test-model',
+      stopReason: 'end_turn',
+    });
     const body = JSON.parse(
       (fetchFn.mock.calls[0] as unknown as [string, { body: string }])[1].body,
     );
@@ -199,7 +209,12 @@ describe('completeYandexGpt', () => {
       { ...req, maxTokens: 9000 }, // clamped to 7400
       fetchFn as unknown as HttpFetch,
     );
-    expect(res).toEqual({ text: 'ответ', provider: 'yandexgpt', model: 'yandexgpt/latest' });
+    expect(res).toEqual({
+      text: 'ответ',
+      provider: 'yandexgpt',
+      model: 'yandexgpt/latest',
+      stopReason: 'end_turn',
+    });
     const [url, init] = fetchFn.mock.calls[0] as unknown as [
       string,
       { headers: Record<string, string>; body: string },
@@ -236,7 +251,12 @@ describe('completeGigaChat', () => {
   it('requests an OAuth token then posts the chat completion with it', async () => {
     const fetchFn = vi.fn((url: string) => (url.includes('/oauth') ? okOauth : okChat));
     const res = await completeGigaChat(gigaCfg(), req, fetchFn as unknown as HttpFetch);
-    expect(res).toEqual({ text: 'ок', provider: 'gigachat', model: 'GigaChat' });
+    expect(res).toEqual({
+      text: 'ок',
+      provider: 'gigachat',
+      model: 'GigaChat',
+      stopReason: 'end_turn',
+    });
     const calls = fetchFn.mock.calls as unknown as Array<
       [string, { headers: Record<string, string>; body: string }]
     >;

@@ -24,8 +24,10 @@ let db: DB;
 beforeEach(() => {
   db = freshDb();
 });
+/** Retries without real waiting. */
+const NO_WAIT = { sleep: async () => {} };
 const make = (fetchFn: HttpFetch = okFetch, now = () => new Date()) =>
-  new LlmService(db, APP_SECRET, fetchFn, now);
+  new LlmService(db, APP_SECRET, fetchFn, now, NO_WAIT);
 
 describe('LlmService.init / list / available', () => {
   it('init creates one row per provider, seeded from env; list masks secrets', () => {
@@ -132,7 +134,7 @@ describe('LlmService.complete', () => {
   })) as unknown as HttpFetch;
 
   const seeded = (fetchFn: HttpFetch) => {
-    const svc = new LlmService(db, APP_SECRET, fetchFn);
+    const svc = new LlmService(db, APP_SECRET, fetchFn, undefined, NO_WAIT);
     svc.init({
       openrouter: { secret: 'sk-or-1', model: 'm-or' },
       anthropic: { secret: 'sk-an-1', model: 'm-an' },
@@ -149,7 +151,14 @@ describe('LlmService.complete', () => {
     expect(res.text).toBe('answer');
     const usage = svc.usage();
     expect(usage).toEqual([
-      { provider: 'anthropic', calls: 1, failures: 0, outputChars: expect.any(Number) },
+      {
+        provider: 'anthropic',
+        calls: 1,
+        failures: 0,
+        outputChars: expect.any(Number),
+        inputTokens: 0,
+        outputTokens: 0,
+      },
     ]);
   });
 
@@ -170,7 +179,7 @@ describe('LlmService.complete', () => {
     ).toEqual(['anthropic', 'openrouter']);
     expect(svc.usage().find((u) => u.provider === 'anthropic')!.failures).toBe(1);
 
-    const allBad = new LlmService(db, APP_SECRET, failFetch);
+    const allBad = new LlmService(db, APP_SECRET, failFetch, undefined, NO_WAIT);
     allBad.init({
       openrouter: { secret: 'x1', model: 'm1' },
       anthropic: { secret: 'x2', model: 'm2' },
@@ -240,7 +249,7 @@ describe('LlmService.test / usage', () => {
   });
 
   it('test: provider failure → ok:false with the error message persisted', async () => {
-    const svc = new LlmService(db, APP_SECRET, failFetch);
+    const svc = new LlmService(db, APP_SECRET, failFetch, undefined, NO_WAIT);
     svc.init({ anthropic: { secret: 'sk-an-1', model: 'm-an' } });
     const res = await svc.test('anthropic', 'a@x.ru');
     expect(res.ok).toBe(false);
@@ -276,7 +285,11 @@ describe('chainAsAnthropicFetch', () => {
     expect(res.ok).toBe(true);
     expect(res.status).toBe(200);
     const payload = JSON.parse(await res.text());
-    expect(payload).toEqual({ content: [{ type: 'text', text: 'answer' }] });
+    expect(payload).toEqual({
+      content: [{ type: 'text', text: 'answer' }],
+      model: 'm',
+      stop_reason: 'end_turn',
+    });
     expect(onResult).toHaveBeenCalledWith(expect.objectContaining({ text: 'answer' }));
   });
 

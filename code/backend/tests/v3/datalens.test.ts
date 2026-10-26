@@ -8,7 +8,10 @@ import {
   extractCode,
   toCsv,
   type DataLensDeps,
+  type DataLensFetch,
+  checkDataLensConnection,
 } from '../../src/integrations/datalens';
+import { registerAuth } from '../../src/auth/auth';
 import { AppSettings } from '../../src/settings/app-settings';
 import { UsersRepo } from '../../src/auth/users-repo';
 import { freshDb } from '../db/helpers';
@@ -342,5 +345,142 @@ describe('dataLensRoutes', () => {
       .prepare('SELECT read_by FROM notifications ORDER BY id DESC LIMIT 1')
       .all() as Array<{ read_by: string }>;
     expect(JSON.parse(row!.read_by)).toEqual([1]);
+  });
+});
+
+describe('POST /api/admin/integrations/datalens/check', () => {
+  let db: DB;
+  let app: FastifyInstance;
+  let settings: AppSettings;
+  let users: UsersRepo;
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let adminCookie: string;
+  let analystCookie: string;
+  const url = '/api/admin/integrations/datalens/check';
+
+  const respond = (status: number, body: unknown) =>
+    fetchMock.mockResolvedValueOnce({
+      ok: status >= 200 && status < 300,
+      status,
+      text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
+    });
+
+  beforeEach(async () => {
+    db = freshDb();
+    settings = new AppSettings(db, 'dl-secret', {});
+    users = new UsersRepo(db);
+    users.create({ email: 'admin@x.ru', name: 'A', role: 'admin', password: 'admin-pass-123' });
+    users.create({ email: 'an@x.ru', name: 'B', role: 'analyst', password: 'analyst-pass-12' });
+    fetchMock = vi.fn();
+    app = Fastify({ logger: false });
+    // Real session guard: /api/admin/* must be admin-only.
+    registerAuth(app, { users, cookieSecure: false, sessionDays: 1 });
+    await app.register(dataLensRoutes, {
+      prefix: '/api',
+      db,
+      settings,
+      users,
+      fetch: fetchMock as unknown as DataLensFetch,
+    });
+    await app.ready();
+    adminCookie = `pca_session=${users.createSession(users.getByEmail('admin@x.ru')!.id, 1)}`;
+    analystCookie = `pca_session=${users.createSession(users.getByEmail('an@x.ru')!.id, 1)}`;
+  });
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  const configure = () => {
+    settings.set('DATALENS_ORG_ID', 'org-1', 'a@x.ru');
+    settings.set('DATALENS_WORKBOOK_ID', 'wb-1', 'a@x.ru');
+    settings.set('DATALENS_IAM_TOKEN', 'iam-secret-token-xyz', 'a@x.ru');
+  };
+
+  it('ok: calls getWorkbook with the DataLens contract and returns the title', async () => {
+    configure();
+    respond(200, { workbookId: 'wb-1', title: 'ProductCamp Analytics' });
+    const res = await app.inject({ method: 'POST', url, headers: { cookie: adminCookie } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      ok: true,
+      message: expect.any(String),
+      workbookTitle: 'ProductCamp Analytics',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [calledUrl, init] = fetchMock.mock.calls[0]!;
+    expect(calledUrl).toBe('https://api.datalens.tech/rpc/getWorkbook');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toEqual({
+      authorization: 'Bearer iam-secret-token-xyz',
+      'content-type': 'application/json',
+      'x-dl-api-version': '2',
+      'x-dl-org-id': 'org-1',
+    });
+    expect(JSON.parse(init.body)).toEqual({ workbookId: 'wb-1' });
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(res.body).not.toContain('iam-secret-token-xyz');
+  });
+
+  it('bad token: DataLens 401 → ok:false with a hint, token never echoed', async () => {
+    configure();
+    respond(401, { message: 'Unauthorized iam-secret-token-xyz' });
+    const res = await app.inject({ method: 'POST', url, headers: { cookie: adminCookie } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(false);
+    expect(body.message).toContain('401');
+    expect(res.body).not.toContain('iam-secret-token-xyz');
+  });
+
+  it('network failure → ok:false', async () => {
+    configure();
+    fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const res = await app.inject({ method: 'POST', url, headers: { cookie: adminCookie } });
+    expect(res.json()).toMatchObject({ ok: false });
+  });
+
+  it('missing config → 400 NOT_CONFIGURED listing missing keys; no HTTP call', async () => {
+    settings.set('DATALENS_ORG_ID', 'org-1', 'a@x.ru');
+    const res = await app.inject({ method: 'POST', url, headers: { cookie: adminCookie } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      ok: false,
+      code: 'NOT_CONFIGURED',
+      missing: ['DATALENS_WORKBOOK_ID', 'DATALENS_IAM_TOKEN'],
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('analyst → 403, anonymous → 401 (check and webhook-token GET are admin-only)', async () => {
+    configure();
+    const a = await app.inject({ method: 'POST', url, headers: { cookie: analystCookie } });
+    expect(a.statusCode).toBe(403);
+    const g = await app.inject({
+      method: 'GET',
+      url: '/api/admin/integrations/datalens',
+      headers: { cookie: analystCookie },
+    });
+    expect(g.statusCode).toBe(403);
+    expect((await app.inject({ method: 'POST', url })).statusCode).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('checkDataLensConnection', () => {
+  it('aborts after the timeout and reports it', async () => {
+    const hang: DataLensFetch = (_u, init) =>
+      new Promise((_r, reject) =>
+        init.signal?.addEventListener('abort', () =>
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+        ),
+      );
+    const r = await checkDataLensConnection(
+      hang,
+      { iamToken: 't', orgId: 'o', workbookId: 'w' },
+      20,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/Таймаут/);
   });
 });

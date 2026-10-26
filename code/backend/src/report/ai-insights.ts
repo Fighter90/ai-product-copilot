@@ -230,8 +230,8 @@ const ANALYSIS_CHUNKS: AnalysisChunk[] = [
       'Ты — старший продуктовый аналитик и руководитель трека. Пиши по-русски, развёрнуто. ' +
       'Используй ТОЛЬКО приведённые числа; принцип «заявка ≠ оплата» соблюдай строго. ' +
       'Это ФИНАЛЬНЫЙ раздел отчёта — подробный итоговый вывод ПОСЛЕ анализа, гипотез, решений и ' +
-      'приоритизации. Синтезируй всё вместе (5–7 абзацев): где трек находится относительно цели ' +
-      '300 оплат и какой gap; что в данных главное (каналы/UTM/воронка/B2B); какие 3 гипотезы бьём ' +
+      'приоритизации. Синтезируй всё вместе (5–7 абзацев): где трек находится относительно ' +
+      'KPI-цели по оплатам (число — в строке «KPI» данных) и какой gap; что в данных главное (каналы/UTM/воронка/B2B); какие 3 гипотезы бьём ' +
       'первыми и почему (по ICE); какие решения предлагаются и какой ожидаемый эффект в цифрах; ' +
       'чёткий вердикт 🟢/🟡/🔴 по достижимости цели и приоритетные следующие шаги на оставшийся срок. ' +
       'Не повторяй разделы дословно — дай связный управленческий вывод.',
@@ -240,6 +240,9 @@ const ANALYSIS_CHUNKS: AnalysisChunk[] = [
       `гипотез, решений и приоритизации + вердикт по цели и следующие шаги.`,
   },
 ];
+
+/** Parallel LLM calls for the chunked analysis (keeps total time well under the proxy timeout). */
+export const INSIGHTS_CONCURRENCY = 3;
 
 /** Generate one analysis chunk via Anthropic with timeout. */
 async function generateChunk(
@@ -309,7 +312,7 @@ export function buildInsightsRequest(snapshot: ReportSnapshot, model: string): A
     `Снапшот ${snapshot.id}. Данные:\n${snapshotFacts(snapshot)}\n\n` +
     'Сделай подробный разбор для команды трека «Конверсии и лидген». Проанализируй:\n' +
     '1) Какой трафик приносит заявки, а какой — пустые визиты.\n' +
-    '2) Где точки роста к цели в 300 платных билетов.\n' +
+    `2) Где точки роста к цели в ${snapshot.kpi.target} платных билетов.\n` +
     '3) Какие гипотезы проверить в первую очередь.\n' +
     '4) Что делать с B2B-треком (если есть данные).\n' +
     '5) Слабые места сайта (высокий bounce, низкий CR).\n' +
@@ -343,19 +346,28 @@ export async function generateInsightsChunked(
   input: { apiKey: string; model: string; snapshot: ReportSnapshot },
 ): Promise<string> {
   const facts = snapshotFacts(input.snapshot);
-  const sections: string[] = [];
+  const sections: string[] = new Array<string>(ANALYSIS_CHUNKS.length);
 
-  for (const chunk of ANALYSIS_CHUNKS) {
-    try {
-      const result = await generateChunk(doFetch, input.apiKey, input.model, chunk, facts);
-      sections.push(`## ${chunk.section}\n\n${result}`);
-    } catch (err) {
-      // If one chunk fails or times out, skip it and continue with the rest
-      sections.push(
-        `## ${chunk.section}\n\n[Ошибка генерации: ${(err as Error).message} — раздел пропущен]`,
-      );
+  // Chunks are independent → run them with bounded concurrency (order preserved by index).
+  // Sequentially 6 chunks took 6–9 minutes and hit the 300 s proxy timeout (504 on prod).
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < ANALYSIS_CHUNKS.length) {
+      const i = next++;
+      const chunk = ANALYSIS_CHUNKS[i]!;
+      try {
+        const result = await generateChunk(doFetch, input.apiKey, input.model, chunk, facts);
+        sections[i] = `## ${chunk.section}\n\n${result}`;
+      } catch (err) {
+        // If one chunk fails or times out, skip it and continue with the rest
+        sections[i] =
+          `## ${chunk.section}\n\n[Ошибка генерации: ${(err as Error).message} — раздел пропущен]`;
+      }
     }
-  }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(INSIGHTS_CONCURRENCY, ANALYSIS_CHUNKS.length) }, worker),
+  );
 
   return sections.join('\n\n---\n\n');
 }

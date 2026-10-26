@@ -332,12 +332,12 @@ export class SyncService {
     // Validate connectivity + auth with the (required) goals call BEFORE wiping anything, so a
     // failed sync (e.g. expired token) leaves the existing dataset intact instead of an empty DB.
     const goals = await this.fetchGoals();
-    // Full wipe of all synced data (stat tables + goals + raw_responses) before reloading so a
-    // re-sync always yields a fresh, duplicate-free dataset. SQLite treats NULL as distinct in the
-    // (date, channel, utm_*) primary key, so INSERT OR REPLACE cannot dedupe rows with NULL UTM —
-    // a full wipe+reload is the reliable guarantee. User-entered data (b2b/hypotheses/decisions/
-    // snapshots) is preserved.
-    this.deps.metrics.resetSyncedData();
+    // Wipe only the [from, to] window (+ the goals catalog) before reloading: the window is
+    // duplicate-free (SQLite treats NULL as distinct in the (date, channel, utm_*) key, so
+    // INSERT OR REPLACE alone can't dedupe), while history outside the window survives — the
+    // scheduled 14-day sync used to erase everything older (only 14 days were ever available).
+    // User-entered data (b2b/hypotheses/decisions/snapshots) is never touched.
+    this.deps.metrics.resetSyncedWindow(from, to);
     this.deps.metrics.upsertGoals(goals);
     // Auto-detect the KPI goal when the caller didn't pin one — so the user never hand-picks a
     // GOAL_ID. An explicit goalId always wins; otherwise pick the payment/purchase goal.

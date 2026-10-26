@@ -38,7 +38,7 @@ function clientOf(fetchFn: ReturnType<typeof vi.fn>): MetrikaClient {
 }
 
 const created = {
-  goal: { id: 222, name: 'MyGoal', type: 'url', conditions: [{ type: 'contains', url: '/cart' }] },
+  goal: { id: 222, name: 'MyGoal', type: 'url', conditions: [{ type: 'contain', url: '/cart' }] },
 };
 
 afterEach(() => vi.clearAllMocks());
@@ -49,7 +49,7 @@ describe('createGoal', () => {
     const goal = await createGoal(clientOf(fetchFn), 123, {
       name: 'MyGoal',
       type: 'url',
-      conditions: [{ type: 'contains', url: '/cart' }],
+      conditions: [{ type: 'contain', url: '/cart' }],
     });
     expect(goal.id).toBe(222);
 
@@ -62,7 +62,7 @@ describe('createGoal', () => {
     });
     // The documented envelope: an unwrapped body fails with 400 "must not be null, location goal".
     expect(JSON.parse(init.body as string)).toEqual({
-      goal: { name: 'MyGoal', type: 'url', conditions: [{ type: 'contains', url: '/cart' }] },
+      goal: { name: 'MyGoal', type: 'url', conditions: [{ type: 'contain', url: '/cart' }] },
     });
   });
 
@@ -112,11 +112,8 @@ describe('archiveGoal / unarchiveGoal', () => {
 describe('parseGoalSpec validation (fails before any HTTP call)', () => {
   const fetchFn = vi.fn();
   const cases: Array<[string, unknown]> = [
-    ['empty name', { name: '', type: 'url', conditions: [{ type: 'contains', url: '/x' }] }],
-    [
-      'unknown type',
-      { name: 'x', type: 'teleport', conditions: [{ type: 'contains', url: '/x' }] },
-    ],
+    ['empty name', { name: '', type: 'url', conditions: [{ type: 'contain', url: '/x' }] }],
+    ['unknown type', { name: 'x', type: 'teleport', conditions: [{ type: 'contain', url: '/x' }] }],
     ['url goal without conditions', { name: 'x', type: 'url' }],
     ['action goal without conditions', { name: 'x', type: 'action' }],
     ['step goal without steps', { name: 'x', type: 'step' }],
@@ -131,7 +128,7 @@ describe('parseGoalSpec validation (fails before any HTTP call)', () => {
 
   it('accepts the valid url / action / step specs from the task brief', () => {
     expect(
-      parseGoalSpec({ name: 'a', type: 'url', conditions: [{ type: 'contains', url: '/p' }] }).type,
+      parseGoalSpec({ name: 'a', type: 'url', conditions: [{ type: 'contain', url: '/p' }] }).type,
     ).toBe('url');
     expect(
       parseGoalSpec({
@@ -160,7 +157,7 @@ describe('error handling', () => {
       createGoal(clientOf(fetchFn), 123, {
         name: 'x',
         type: 'url',
-        conditions: [{ type: 'contains', url: '/p' }],
+        conditions: [{ type: 'contain', url: '/p' }],
       }),
     ).rejects.toThrow('must not be null, location goal');
     // 4xx is NOT retried (non-idempotent write).
@@ -175,7 +172,7 @@ describe('error handling', () => {
     const goal = await createGoal(clientOf(fetchFn), 123, {
       name: 'MyGoal',
       type: 'url',
-      conditions: [{ type: 'contains', url: '/cart' }],
+      conditions: [{ type: 'contain', url: '/cart' }],
     });
     expect(goal.id).toBe(222);
     expect(fetchFn).toHaveBeenCalledTimes(2);

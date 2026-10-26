@@ -59,23 +59,54 @@ export function isPublicPath(url: string): boolean {
   return PUBLIC_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
 }
 
-/** Paths that require the admin role (prefix match on method + path). */
+/**
+ * Session probe: `GET /api/auth/me` answers guests with 200 `{ user: null }` instead of 401, so
+ * public pages don't log a console error on every visit. Exact path only — `PATCH /api/auth/me`
+ * and every other protected route still 401 without a session.
+ */
+export function isSessionProbe(method: string, url: string): boolean {
+  const m = method.toUpperCase();
+  return (m === 'GET' || m === 'HEAD') && normalizePath(url) === '/api/auth/me';
+}
+
+/**
+ * Paths that require the admin role (method + raw path prefix — deliberately loose, so a new
+ * `/api/admin-x` route is protected by default). Everything that changes infrastructure or kicks off a Metrika pull is admin-only; analysts keep
+ * write access to their own work (hypotheses, decisions, B2B, reports, notifications).
+ */
 const ADMIN_RULES: Array<{ method?: string; prefix: string }> = [
   { prefix: '/api/admin' },
   { prefix: '/api/users' },
   { prefix: '/api/settings', method: 'POST' },
   { prefix: '/api/settings', method: 'PUT' },
+  { prefix: '/api/settings', method: 'PATCH' },
   { prefix: '/api/settings', method: 'DELETE' },
   { prefix: '/api/ai/providers', method: 'PUT' },
   { prefix: '/api/ai/providers', method: 'POST' },
   { prefix: '/api/data', method: 'DELETE' },
+  // Sync wipes and reloads every Metrika table and spends API quota — admin only.
+  { prefix: '/api/sync' },
 ];
 
+/**
+ * Normalise a request URL for rule matching the way the router does: strip the query, decode
+ * percent-escapes (`/api/%73ync` routes to `/api/sync`) and collapse duplicate slashes.
+ */
+function normalizePath(url: string): string {
+  const raw = url.split('?')[0] ?? '';
+  let path = raw;
+  try {
+    path = decodeURIComponent(raw);
+  } catch {
+    // Malformed escape: keep the raw path (the router 400s/404s it anyway).
+  }
+  return path.replace(/\/{2,}/g, '/');
+}
+
 export function requiresAdmin(method: string, url: string): boolean {
-  const path = url.split('?')[0] ?? '';
-  return ADMIN_RULES.some(
-    (r) => path.startsWith(r.prefix) && (!r.method || r.method === method.toUpperCase()),
-  );
+  const path = normalizePath(url);
+  const m = method.toUpperCase();
+  return ADMIN_RULES.some((r) => path.startsWith(r.prefix) && (!r.method || r.method === m));
 }
 
 /** Simple in-memory login rate limiter: N failures per window per key (ip+email). */
@@ -143,7 +174,7 @@ export function registerAuth(app: FastifyInstance, opts: AuthOptions): void {
       const user = opts.users.userBySession(token);
       if (user) req.user = user;
     }
-    if (isPublicPath(req.url)) return;
+    if (isPublicPath(req.url) || isSessionProbe(req.method, req.url)) return;
     if (!req.user) return reply.code(401).send({ error: 'unauthorized', code: 'AUTH_REQUIRED' });
     if (requiresAdmin(req.method, req.url) && req.user.role !== 'admin') {
       return reply.code(403).send({ error: 'forbidden', code: 'ADMIN_ONLY' });
@@ -190,7 +221,15 @@ export function registerAuth(app: FastifyInstance, opts: AuthOptions): void {
     return { ok: true };
   });
 
-  app.get('/api/auth/me', async (req) => ({ user: publicUser(req.user!) }));
+  app.get('/api/auth/me', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    if (req.user) return { user: publicUser(req.user) };
+    // Stale/forged cookie: drop it so the browser stops sending a dead session.
+    if (parseCookies(req.headers.cookie)[SESSION_COOKIE]) {
+      reply.header('set-cookie', sessionCookie('', { secure: opts.cookieSecure, maxAgeSec: 0 }));
+    }
+    return { user: null };
+  });
 
   app.patch('/api/auth/me', async (req, reply) => {
     const body = z

@@ -12,17 +12,32 @@ export interface CompletionRequest {
   readonly timeoutMs?: number;
 }
 
+export interface CompletionUsage {
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+}
+
+/** Anthropic-style stop reason; other providers' finish reasons are mapped onto it. */
+export type StopReason = 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use' | 'refusal';
+
 export interface CompletionResult {
   readonly text: string;
   readonly provider: ProviderId;
   readonly model: string;
+  readonly stopReason?: StopReason;
+  readonly usage?: CompletionUsage;
 }
 
 /** Minimal fetch shape — injectable for unit tests. */
 export type HttpFetch = (
   url: string,
   init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
-) => Promise<{ ok: boolean; status: number; text: () => Promise<string> }>;
+) => Promise<{
+  ok: boolean;
+  status: number;
+  text: () => Promise<string>;
+  headers?: { get: (name: string) => string | null };
+}>;
 
 /** Runtime config of one provider (secrets already decrypted). */
 export interface ProviderConfig {
@@ -35,13 +50,20 @@ export interface ProviderConfig {
 }
 
 export class ProviderError extends Error {
+  /** Delay requested by the provider (Retry-After), ms. */
+  public readonly retryAfterMs?: number;
+  /** The request was aborted by our own timeout (status 0). */
+  public readonly timedOut: boolean;
   constructor(
     public readonly provider: ProviderId,
     public readonly status: number,
     message: string,
+    opts: { retryAfterMs?: number; timedOut?: boolean } = {},
   ) {
     super(message);
     this.name = 'ProviderError';
+    this.retryAfterMs = opts.retryAfterMs;
+    this.timedOut = opts.timedOut ?? false;
   }
   get retryable(): boolean {
     return this.status === 0 || this.status === 429 || this.status >= 500;
@@ -95,7 +117,52 @@ export const PROVIDER_META: Record<
   },
 };
 
-const DEFAULT_TIMEOUT = 120_000;
+export const DEFAULT_TIMEOUT = 120_000;
+
+const REDACTION_PATTERNS: ReadonlyArray<[RegExp, string]> = [
+  [/\b(Bearer|Basic|Api-Key|OAuth)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 ***'],
+  [/\bsk-[A-Za-z0-9_-]{6,}/g, '***'],
+  [/\bAQVN[A-Za-z0-9_-]+/g, '***'],
+  [/\by0_[A-Za-z0-9_-]+/g, '***'],
+  [/\bt1\.[A-Za-z0-9._-]{10,}/g, '***'],
+  // Long base64/hex-like runs that contain a digit (keeps long plain words readable).
+  [/(?=[A-Za-z0-9+_-]*\d)[A-Za-z0-9+_-]{25,}={0,2}/g, '***'],
+];
+
+/**
+ * Strip anything that looks like a credential from text bound for logs, `ai_usage.error` or an
+ * exception message: auth headers, known key prefixes, long base64-ish runs and the exact
+ * `secrets` passed in.
+ */
+export function redactSecrets(
+  text: string,
+  secrets: ReadonlyArray<string | undefined> = [],
+): string {
+  let out = text;
+  for (const s of secrets) {
+    if (s && s.length >= 4) out = out.split(s).join('***');
+  }
+  for (const [re, repl] of REDACTION_PATTERNS) out = out.replace(re, repl);
+  return out;
+}
+
+/** Parse a Retry-After header (delta-seconds or HTTP date) into ms. */
+export function parseRetryAfter(
+  value: string | null | undefined,
+  now = Date.now(),
+): number | undefined {
+  if (!value) return undefined;
+  const secs = Number(value.trim());
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - now);
+}
+
+function networkMessage(err: unknown): string {
+  const e = err as Error & { cause?: { code?: string; message?: string } };
+  const code = e.cause?.code;
+  return code && !e.message.includes(code) ? `${e.message} (${code})` : e.message;
+}
 
 async function call(
   fetchFn: HttpFetch,
@@ -106,6 +173,9 @@ async function call(
 ): Promise<unknown> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const headerSecrets = [init.headers.authorization, init.headers['x-api-key']].map((v) =>
+    v?.replace(/^(Bearer|Basic|Api-Key|OAuth)\s+/i, ''),
+  );
   try {
     const res = await fetchFn(url, { ...init, signal: ctrl.signal });
     const raw = await res.text();
@@ -113,7 +183,8 @@ async function call(
       throw new ProviderError(
         provider,
         res.status,
-        `${provider} HTTP ${res.status}: ${raw.slice(0, 300)}`,
+        redactSecrets(`${provider} HTTP ${res.status}: ${raw.slice(0, 300)}`, headerSecrets),
+        { retryAfterMs: parseRetryAfter(res.headers?.get('retry-after')) },
       );
     }
     try {
@@ -123,11 +194,11 @@ async function call(
     }
   } catch (err) {
     if (err instanceof ProviderError) throw err;
-    const msg =
-      (err as Error).name === 'AbortError'
-        ? `timeout after ${timeoutMs} ms`
-        : (err as Error).message;
-    throw new ProviderError(provider, 0, `${provider}: ${msg}`);
+    const timedOut = (err as Error).name === 'AbortError' || ctrl.signal.aborted;
+    const msg = timedOut ? `timeout after ${timeoutMs} ms` : networkMessage(err);
+    throw new ProviderError(provider, 0, redactSecrets(`${provider}: ${msg}`, headerSecrets), {
+      timedOut,
+    });
   } finally {
     clearTimeout(timer);
   }
@@ -138,6 +209,33 @@ const pick = (obj: unknown, path: Array<string | number>): unknown =>
     (o, k) => (o == null ? undefined : (o as Record<string | number, unknown>)[k]),
     obj,
   );
+
+const num = (v: unknown): number | undefined => {
+  const n = typeof v === 'string' ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
+};
+
+function usageOf(input: unknown, output: unknown): CompletionUsage | undefined {
+  const inputTokens = num(input);
+  const outputTokens = num(output);
+  if (inputTokens === undefined && outputTokens === undefined) return undefined;
+  return {
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+  };
+}
+
+/** OpenAI-style finish_reason (OpenRouter, GigaChat) → Anthropic stop_reason. */
+const openAiStop = (finish: unknown): StopReason =>
+  finish === 'length' ? 'max_tokens' : 'end_turn';
+
+const ANTHROPIC_STOPS: ReadonlySet<string> = new Set([
+  'end_turn',
+  'max_tokens',
+  'stop_sequence',
+  'tool_use',
+  'refusal',
+]);
 
 function requireText(provider: ProviderId, value: unknown): string {
   if (typeof value !== 'string' || !value.trim()) {
@@ -181,6 +279,11 @@ export async function completeOpenRouter(
     text: requireText('openrouter', pick(json, ['choices', 0, 'message', 'content'])),
     provider: 'openrouter',
     model: String(pick(json, ['model']) ?? cfg.model),
+    stopReason: openAiStop(pick(json, ['choices', 0, 'finish_reason'])),
+    usage: usageOf(
+      pick(json, ['usage', 'prompt_tokens']),
+      pick(json, ['usage', 'completion_tokens']),
+    ),
   };
 }
 
@@ -219,7 +322,15 @@ export async function completeAnthropic(
     .filter((b) => b.type === 'text')
     .map((b) => b.text ?? '')
     .join('\n');
-  return { text: requireText('anthropic', text), provider: 'anthropic', model: cfg.model };
+  const stop = pick(json, ['stop_reason']);
+  return {
+    text: requireText('anthropic', text),
+    provider: 'anthropic',
+    model: cfg.model,
+    stopReason:
+      typeof stop === 'string' && ANTHROPIC_STOPS.has(stop) ? (stop as StopReason) : 'end_turn',
+    usage: usageOf(pick(json, ['usage', 'input_tokens']), pick(json, ['usage', 'output_tokens'])),
+  };
 }
 
 // --- YandexGPT (Foundation Models completion) ------------------------------------------------------
@@ -262,6 +373,14 @@ export async function completeYandexGpt(
     text: requireText('yandexgpt', pick(json, ['result', 'alternatives', 0, 'message', 'text'])),
     provider: 'yandexgpt',
     model: String(pick(json, ['result', 'modelVersion']) ? `${cfg.model}` : cfg.model),
+    stopReason:
+      pick(json, ['result', 'alternatives', 0, 'status']) === 'ALTERNATIVE_STATUS_TRUNCATED_FINAL'
+        ? 'max_tokens'
+        : 'end_turn',
+    usage: usageOf(
+      pick(json, ['result', 'usage', 'inputTextTokens']),
+      pick(json, ['result', 'usage', 'completionTokens']),
+    ),
   };
 }
 
@@ -346,15 +465,50 @@ export async function completeGigaChat(
     text: requireText('gigachat', pick(json, ['choices', 0, 'message', 'content'])),
     provider: 'gigachat',
     model: String(pick(json, ['model']) ?? cfg.model),
+    stopReason: openAiStop(pick(json, ['choices', 0, 'finish_reason'])),
+    usage: usageOf(
+      pick(json, ['usage', 'prompt_tokens']),
+      pick(json, ['usage', 'completion_tokens']),
+    ),
   };
 }
 
-export const COMPLETERS: Record<
-  ProviderId,
-  (cfg: ProviderConfig, req: CompletionRequest, fetchFn: HttpFetch) => Promise<CompletionResult>
-> = {
-  openrouter: completeOpenRouter,
-  anthropic: completeAnthropic,
-  yandexgpt: completeYandexGpt,
-  gigachat: (cfg, req, f) => completeGigaChat(cfg, req, f),
+/** Formal provider contract: one completion call plus a cheap connectivity probe. */
+export interface LlmProvider {
+  readonly id: ProviderId;
+  complete(
+    cfg: ProviderConfig,
+    req: CompletionRequest,
+    fetchFn: HttpFetch,
+  ): Promise<CompletionResult>;
+  test(cfg: ProviderConfig, fetchFn: HttpFetch): Promise<CompletionResult>;
+}
+
+/** Request used by the admin "Test connection" button. */
+export const TEST_REQUEST: CompletionRequest = {
+  system: 'Ответь одним словом.',
+  user: 'Скажи: ок',
+  maxTokens: 20,
+  timeoutMs: 30_000,
+};
+
+const provider = (id: ProviderId, complete: LlmProvider['complete']): LlmProvider => ({
+  id,
+  complete,
+  test: (cfg, fetchFn) => complete(cfg, TEST_REQUEST, fetchFn),
+});
+
+export const PROVIDERS: Record<ProviderId, LlmProvider> = {
+  openrouter: provider('openrouter', completeOpenRouter),
+  anthropic: provider('anthropic', completeAnthropic),
+  yandexgpt: provider('yandexgpt', completeYandexGpt),
+  gigachat: provider('gigachat', (cfg, req, f) => completeGigaChat(cfg, req, f)),
+};
+
+/** Back-compat: plain completion functions keyed by provider id. */
+export const COMPLETERS: Record<ProviderId, LlmProvider['complete']> = {
+  openrouter: (cfg, req, f) => PROVIDERS.openrouter.complete(cfg, req, f),
+  anthropic: (cfg, req, f) => PROVIDERS.anthropic.complete(cfg, req, f),
+  yandexgpt: (cfg, req, f) => PROVIDERS.yandexgpt.complete(cfg, req, f),
+  gigachat: (cfg, req, f) => PROVIDERS.gigachat.complete(cfg, req, f),
 };

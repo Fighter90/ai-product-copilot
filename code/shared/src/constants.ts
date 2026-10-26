@@ -34,3 +34,14 @@ export const CHANNELS = [
 ] as const;
 
 export const KPI_TARGET_PAID_TICKETS = 300;
+
+/**
+ * Effective KPI target (paid tickets) from the admin «Цель по оплатам» setting: a positive finite
+ * number, rounded to whole tickets. Anything else (unset, 0, negative, garbage) falls back to
+ * {@link KPI_TARGET_PAID_TICKETS}.
+ */
+export function resolveKpiTarget(raw: unknown): number {
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw.trim()) : NaN;
+  const rounded = Number.isFinite(n) ? Math.round(n) : 0;
+  return rounded >= 1 ? rounded : KPI_TARGET_PAID_TICKETS;
+}

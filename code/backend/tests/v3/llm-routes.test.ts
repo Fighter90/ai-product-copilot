@@ -59,7 +59,14 @@ describe('GET routes', () => {
     const res = await app.inject({ method: 'GET', url: '/api/admin/ai/usage' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual([
-      { provider: 'openrouter', calls: 1, failures: 0, outputChars: expect.any(Number) },
+      {
+        provider: 'openrouter',
+        calls: 1,
+        failures: 0,
+        outputChars: expect.any(Number),
+        inputTokens: 0,
+        outputTokens: 0,
+      },
     ]);
   });
 });

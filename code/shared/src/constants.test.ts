@@ -6,6 +6,7 @@ import {
   TRAFFIC_LIGHT,
   CHANNELS,
   KPI_TARGET_PAID_TICKETS,
+  resolveKpiTarget,
 } from './constants';
 
 describe('ICE_CONFIG', () => {
@@ -53,5 +54,19 @@ describe('domain constants', () => {
 
   it('pins the paid-tickets KPI target at 300', () => {
     expect(KPI_TARGET_PAID_TICKETS).toBe(300);
+  });
+});
+
+describe('resolveKpiTarget', () => {
+  it('accepts positive numbers and numeric strings, rounded to whole tickets', () => {
+    expect(resolveKpiTarget(500)).toBe(500);
+    expect(resolveKpiTarget(' 120 ')).toBe(120);
+    expect(resolveKpiTarget('12.5')).toBe(13);
+  });
+
+  it('falls back to 300 for unset / zero / negative / garbage', () => {
+    for (const raw of [undefined, null, '', '0', 0, -5, '0.2', 'abc', NaN, Infinity, {}]) {
+      expect(resolveKpiTarget(raw)).toBe(KPI_TARGET_PAID_TICKETS);
+    }
   });
 });

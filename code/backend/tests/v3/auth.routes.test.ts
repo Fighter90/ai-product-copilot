@@ -133,11 +133,13 @@ describe('auth flow', () => {
     expect(ctx.repo.listAudit(1)[0]!.action).toBe('auth.logout');
   });
 
-  it('GET /api/auth/me: 401 without a session, user with a session', async () => {
+  it('GET /api/auth/me: 200 {user:null} for guests, user with a session', async () => {
     ctx = await build();
     const anon = await ctx.app.inject({ method: 'GET', url: '/api/auth/me' });
-    expect(anon.statusCode).toBe(401);
-    expect(anon.json().code).toBe('AUTH_REQUIRED');
+    expect(anon.statusCode).toBe(200);
+    expect(anon.json()).toEqual({ user: null });
+    expect(anon.headers['cache-control']).toBe('no-store');
+    expect(anon.headers['set-cookie']).toBeUndefined(); // no cookie → nothing to clear
 
     const loginRes = await login(ADMIN.email, ADMIN.password);
     const token = loginRes.cookies.find((c) => c.name === SESSION_COOKIE)!.value;
@@ -148,14 +150,32 @@ describe('auth flow', () => {
     });
     expect(me.statusCode).toBe(200);
     expect(me.json().user.email).toBe(ADMIN.email);
+    expect(me.json().user.password_hash).toBeUndefined();
 
-    // A forged/unknown token is treated as anonymous.
+    // A forged/unknown/expired token is treated as anonymous, and the dead cookie is cleared.
     const forged = await ctx.app.inject({
       method: 'GET',
-      url: '/api/auth/me',
+      url: '/api/auth/me?x=1',
       headers: { cookie: `${SESSION_COOKIE}=forged-token` },
     });
-    expect(forged.statusCode).toBe(401);
+    expect(forged.statusCode).toBe(200);
+    expect(forged.json()).toEqual({ user: null });
+    expect(String(forged.headers['set-cookie'])).toContain('Max-Age=0');
+  });
+
+  it('only GET /api/auth/me is a session probe: PATCH and other routes still 401', async () => {
+    ctx = await build();
+    const patch = await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/auth/me',
+      payload: { name: 'X' },
+    });
+    expect(patch.statusCode).toBe(401);
+    expect(patch.json().code).toBe('AUTH_REQUIRED');
+    for (const url of ['/api/auth/password', '/api/auth/me/extra', '/api/auth/mex']) {
+      const r = await ctx.app.inject({ method: 'GET', url });
+      expect(r.statusCode, url).toBe(401);
+    }
   });
 
   it('PATCH /api/auth/me updates name/locale; invalid body → 400', async () => {

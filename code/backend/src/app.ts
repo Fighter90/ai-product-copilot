@@ -16,7 +16,7 @@ import { metricsRoutes } from './routes/metrics';
 import { hypothesesRoutes } from './routes/hypotheses';
 import { decisionsRoutes } from './routes/decisions';
 import { b2bRoutes } from './routes/b2b';
-import { syncRoutes } from './routes/sync';
+import { syncRoutes, withDefaultGoal } from './routes/sync';
 import { reportRoutes } from './routes/report';
 import { settingsRoutes } from './routes/settings';
 import { metrikaGoalsRoutes } from './routes/metrika-goals';
@@ -95,11 +95,26 @@ export function buildServer(
         }
       : {}),
   });
-  app.register(metricsRoutes, { prefix: '/api', repo: deps.metrics });
+  app.register(metricsRoutes, {
+    prefix: '/api',
+    repo: deps.metrics,
+    ...(cab
+      ? {
+          primaryGoalId: () => cab.settings.getNumber('GOAL_ID'),
+          kpiTarget: () => cab.settings.get('KPI_TARGET'),
+        }
+      : {}),
+  });
   app.register(hypothesesRoutes, { prefix: '/api', repo: deps.hypotheses });
   app.register(decisionsRoutes, { prefix: '/api', repo: deps.decisions });
   app.register(b2bRoutes, { prefix: '/api', repo: deps.b2b });
-  app.register(syncRoutes, { prefix: '/api', runSync: deps.runSync });
+  app.register(syncRoutes, {
+    prefix: '/api',
+    // Cabinet: honour the admin's runtime GOAL_ID (0/empty = auto-detect the KPI goal).
+    runSync: cab
+      ? withDefaultGoal(deps.runSync, () => cab.settings.getNumber('GOAL_ID'))
+      : deps.runSync,
+  });
   app.register(reportRoutes, { prefix: '/api', runner: deps.report });
 
   if (cab) {

@@ -276,3 +276,49 @@ describe('MetricsRepo — resetSyncedData', () => {
     expect(count('report_snapshots')).toBe(1);
   });
 });
+
+describe('MetricsRepo — resetSyncedWindow', () => {
+  it('wipes only the [from, to] window; history outside survives; user data untouched', () => {
+    for (const d of ['2025-01-01', '2025-01-10', '2025-01-20']) {
+      repo.upsertChannelStats([stat(d)]);
+      repo.upsertUtmStats([utm(d)]);
+      repo.upsertGeoDeviceStats([geo(d)]);
+      repo.upsertPageStats([page(d, { page: '/lp' })]);
+      repo.upsertExitPageStats([page(d, { page: '/checkout' })]);
+    }
+    repo.upsertGoals([goal(100)]);
+    repo.saveRawResponse({
+      endpoint: '/stat/v1/data',
+      queryHash: 'old',
+      dateFrom: '2025-01-01',
+      dateTo: '2025-01-01',
+      payload: {},
+      fetchedAt: 't1',
+    });
+    repo.saveRawResponse({
+      endpoint: '/stat/v1/data',
+      queryHash: 'win',
+      dateFrom: '2025-01-10',
+      dateTo: '2025-01-20',
+      payload: {},
+      fetchedAt: 't1',
+    });
+    seedUserEnteredData();
+
+    repo.resetSyncedWindow('2025-01-05', '2025-01-31');
+
+    for (const rows of [
+      repo.listChannelStats(),
+      repo.listUtmStats(),
+      repo.listGeoDeviceStats(),
+      repo.listPageStats(),
+      repo.listExitPageStats(),
+    ]) {
+      expect(rows.map((r) => r.date)).toEqual(['2025-01-01']);
+    }
+    expect(count('raw_responses')).toBe(1);
+    expect(repo.listGoals(true)).toHaveLength(0);
+    expect(count('b2b_manual')).toBe(1);
+    expect(count('report_snapshots')).toBe(1);
+  });
+});

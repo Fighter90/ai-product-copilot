@@ -1,10 +1,11 @@
 import type { DB } from '../db/connection';
 import { decryptSecret, encryptSecret, maskSecret } from '../security/crypto';
 import {
-  COMPLETERS,
+  PROVIDERS,
   PROVIDER_IDS,
   PROVIDER_META,
   ProviderError,
+  redactSecrets,
   type CompletionRequest,
   type CompletionResult,
   type HttpFetch,
@@ -60,17 +61,46 @@ export type ProviderSeeds = Partial<
   Record<ProviderId, { secret: string; model: string; extra?: Record<string, string> }>
 >;
 
+export interface RetryOptions {
+  /** Extra attempts per provider for retryable errors (429/5xx/network). Default 2. */
+  readonly maxRetries?: number;
+  /** Backoff base, ms: attempt n waits base·2ⁿ unless Retry-After says otherwise. Default 1000. */
+  readonly baseDelayMs?: number;
+  /** Upper bound for an honoured Retry-After, ms. Default 10 000. */
+  readonly maxRetryAfterMs?: number;
+  /** Injectable for tests. */
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
+const realSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Per-purpose request timeouts for the long report generations (default: adapter's 120 s). */
+export const PURPOSE_TIMEOUT_MS: Readonly<Record<string, number>> = {
+  'report-hypotheses': 240_000,
+  'report-decisions': 240_000,
+};
+
 /**
  * Stores provider settings (secrets AES-GCM encrypted) and runs completions through the
  * admin-defined fallback chain. Every call is recorded in `ai_usage` (sizes only, no content).
  */
 export class LlmService {
+  private readonly retry: Required<RetryOptions>;
+
   constructor(
     private readonly db: DB,
     private readonly appSecret: string,
     private readonly fetchFn: HttpFetch,
     private readonly now: () => Date = () => new Date(),
-  ) {}
+    retry: RetryOptions = {},
+  ) {
+    this.retry = {
+      maxRetries: retry.maxRetries ?? 2,
+      baseDelayMs: retry.baseDelayMs ?? 1000,
+      maxRetryAfterMs: retry.maxRetryAfterMs ?? 10_000,
+      sleep: retry.sleep ?? realSleep,
+    };
+  }
 
   /** Create rows for all providers; seed secrets from env on first run. */
   init(seeds: ProviderSeeds): void {
@@ -104,13 +134,22 @@ export class LlmService {
       ProviderRow | undefined;
   }
 
+  /** ciphertext → plaintext; decryption runs a scrypt KDF, too slow to repeat per row read. */
+  private readonly decrypted = new Map<string, string>();
+
   private secretOf(r: ProviderRow): string {
     if (!r.secret_enc) return '';
+    const cached = this.decrypted.get(r.secret_enc);
+    if (cached !== undefined) return cached;
+    let plain = '';
     try {
-      return decryptSecret(r.secret_enc, this.appSecret);
+      plain = decryptSecret(r.secret_enc, this.appSecret);
     } catch {
-      return '';
+      plain = '';
     }
+    if (this.decrypted.size > 32) this.decrypted.clear();
+    this.decrypted.set(r.secret_enc, plain);
+    return plain;
   }
 
   private configOf(r: ProviderRow): ProviderConfig {
@@ -184,7 +223,14 @@ export class LlmService {
   }
 
   private record(
-    res: { provider: ProviderId; model: string; ok: boolean; ms: number; error?: string },
+    res: {
+      provider: ProviderId;
+      model: string;
+      ok: boolean;
+      ms: number;
+      error?: string;
+      usage?: CompletionResult['usage'];
+    },
     req: CompletionRequest,
     out: string,
     purpose: string,
@@ -192,7 +238,7 @@ export class LlmService {
   ): void {
     this.db
       .prepare(
-        'INSERT INTO ai_usage (at, provider, model, purpose, user_email, ok, input_chars, output_chars, ms, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO ai_usage (at, provider, model, purpose, user_email, ok, input_chars, output_chars, ms, error, input_tokens, output_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         this.now().toISOString(),
@@ -204,8 +250,34 @@ export class LlmService {
         req.system.length + req.user.length,
         out.length,
         res.ms,
-        res.error?.slice(0, 300) ?? null,
+        res.error ? redactSecrets(res.error).slice(0, 300) : null,
+        res.usage?.inputTokens ?? null,
+        res.usage?.outputTokens ?? null,
       );
+  }
+
+  /**
+   * One provider with retries: 429/5xx/network errors are retried up to `maxRetries` times with
+   * exponential backoff (Retry-After honoured up to `maxRetryAfterMs`). Our own timeouts and
+   * other 4xx are not retried — the caller falls back to the next provider instead.
+   */
+  private async completeWithRetry(
+    cfg: ProviderConfig,
+    req: CompletionRequest,
+  ): Promise<CompletionResult> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await PROVIDERS[cfg.id].complete(cfg, req, this.fetchFn);
+      } catch (err) {
+        const retryable = err instanceof ProviderError && err.retryable && !err.timedOut;
+        if (!retryable || attempt >= this.retry.maxRetries) throw err;
+        const delay =
+          err.retryAfterMs !== undefined
+            ? Math.min(err.retryAfterMs, this.retry.maxRetryAfterMs)
+            : this.retry.baseDelayMs * 2 ** attempt;
+        await this.retry.sleep(delay);
+      }
+    }
   }
 
   /** Run one provider directly (used by the admin "Test connection" button). */
@@ -220,15 +292,11 @@ export class LlmService {
       message = 'Ключ не задан';
     } else {
       try {
-        const res = await COMPLETERS[id](
-          cfg,
-          { system: 'Ответь одним словом.', user: 'Скажи: ок', maxTokens: 20, timeoutMs: 30_000 },
-          this.fetchFn,
-        );
+        const res = await PROVIDERS[id].test(cfg, this.fetchFn);
         ok = true;
         message = `OK · ${res.model} · «${res.text.slice(0, 40)}»`;
       } catch (err) {
-        message = (err as Error).message.slice(0, 300);
+        message = redactSecrets((err as Error).message, [cfg.secret]).slice(0, 300);
       }
     }
     const ms = Date.now() - t0;
@@ -267,13 +335,15 @@ export class LlmService {
       );
     }
     const errors: string[] = [];
+    const secrets: string[] = [];
     for (const r of candidates) {
       const cfg = this.configOf(r);
+      secrets.push(cfg.secret);
       const t0 = Date.now();
       try {
-        const res = await COMPLETERS[r.id](cfg, req, this.fetchFn);
+        const res = await this.completeWithRetry(cfg, req);
         this.record(
-          { provider: r.id, model: res.model, ok: true, ms: Date.now() - t0 },
+          { provider: r.id, model: res.model, ok: true, ms: Date.now() - t0, usage: res.usage },
           req,
           res.text,
           opts.purpose,
@@ -281,7 +351,7 @@ export class LlmService {
         );
         return res;
       } catch (err) {
-        const msg = (err as Error).message;
+        const msg = redactSecrets((err as Error).message, secrets);
         errors.push(msg);
         this.record(
           { provider: r.id, model: cfg.model, ok: false, ms: Date.now() - t0, error: msg },
@@ -295,24 +365,33 @@ export class LlmService {
     throw new ProviderError(
       candidates[candidates.length - 1]!.id,
       502,
-      `Все провайдеры вернули ошибку: ${errors.join(' | ')}`,
+      redactSecrets(`Все провайдеры вернули ошибку: ${errors.join(' | ')}`, secrets),
     );
   }
 
-  usage(
-    days = 30,
-  ): Array<{ provider: string; calls: number; failures: number; outputChars: number }> {
+  usage(days = 30): Array<{
+    provider: string;
+    calls: number;
+    failures: number;
+    outputChars: number;
+    inputTokens: number;
+    outputTokens: number;
+  }> {
     const since = new Date(this.now().getTime() - days * 86_400_000).toISOString();
     return this.db
       .prepare(
         `SELECT provider, COUNT(*) AS calls, SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS failures,
-         SUM(output_chars) AS outputChars FROM ai_usage WHERE at >= ? GROUP BY provider ORDER BY calls DESC`,
+         SUM(output_chars) AS outputChars, COALESCE(SUM(input_tokens), 0) AS inputTokens,
+         COALESCE(SUM(output_tokens), 0) AS outputTokens
+         FROM ai_usage WHERE at >= ? GROUP BY provider ORDER BY calls DESC`,
       )
       .all(since) as Array<{
       provider: string;
       calls: number;
       failures: number;
       outputChars: number;
+      inputTokens: number;
+      outputTokens: number;
     }>;
   }
 }
@@ -328,9 +407,12 @@ export function chainAsAnthropicFetch(
     choice?: ProviderChoice;
     purpose: string;
     user?: string | null;
+    /** Per-request provider timeout; defaults to PURPOSE_TIMEOUT_MS[purpose] or the adapter's. */
+    timeoutMs?: number;
     onResult?: (r: CompletionResult) => void;
   },
 ) {
+  const timeoutMs = opts.timeoutMs ?? PURPOSE_TIMEOUT_MS[opts.purpose];
   return async (
     _url: string,
     init: { method: string; headers: Record<string, string>; body: string },
@@ -346,15 +428,32 @@ export function chainAsAnthropicFetch(
           system: body.system ?? '',
           user: body.messages.map((m) => m.content).join('\n\n'),
           maxTokens: body.max_tokens,
+          ...(timeoutMs !== undefined ? { timeoutMs } : {}),
         },
         opts,
       );
       opts.onResult?.(res);
-      const payload = JSON.stringify({ content: [{ type: 'text', text: res.text }] });
+      const payload = JSON.stringify({
+        content: [{ type: 'text', text: res.text }],
+        model: res.model,
+        stop_reason: res.stopReason ?? 'end_turn',
+        ...(res.usage
+          ? {
+              usage: {
+                ...(res.usage.inputTokens !== undefined
+                  ? { input_tokens: res.usage.inputTokens }
+                  : {}),
+                ...(res.usage.outputTokens !== undefined
+                  ? { output_tokens: res.usage.outputTokens }
+                  : {}),
+              },
+            }
+          : {}),
+      });
       return { ok: true, status: 200, text: async () => payload };
     } catch (err) {
       const status = err instanceof ProviderError ? err.status || 502 : 502;
-      const msg = (err as Error).message;
+      const msg = redactSecrets((err as Error).message);
       return { ok: false, status, text: async () => msg };
     }
   };
