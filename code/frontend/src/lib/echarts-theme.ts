@@ -1,10 +1,12 @@
 import * as echarts from 'echarts';
+import { ECHARTS_V5_LAYOUT } from '@pca/shared';
 import { METRIC_COLORS } from './chart-colors';
 
 /**
  * ECharts themes «pca» (day) and «pca-dark» (night, productcamp.ru) so every chart shares fonts,
  * axis styling and a default palette. Per-series channel colours are still set explicitly
  * (see chart-colors); this palette is the fallback for series without an explicit colour.
+ * ECHARTS_V5_LAYOUT keeps the ECharts 5 component geometry under ECharts 6.
  */
 const PALETTE = [
   '#FF4D14',
@@ -17,14 +19,16 @@ const PALETTE = [
 ];
 
 export const PCA_THEME = {
+  ...ECHARTS_V5_LAYOUT,
   color: PALETTE,
   backgroundColor: 'transparent',
   textStyle: { fontFamily: 'Inter, system-ui, sans-serif', color: '#3d3d37' },
   title: { textStyle: { color: '#1a1a1a' } },
-  legend: { textStyle: { color: '#3d3d37' } },
+  legend: { ...ECHARTS_V5_LAYOUT.legend, textStyle: { color: '#3d3d37' } },
   tooltip: { backgroundColor: '#ffffff', borderColor: '#e4e4e0', textStyle: { color: '#1a1a1a' } },
   axisPointer: { lineStyle: { color: '#a3a39d' } },
   categoryAxis: {
+    ...ECHARTS_V5_LAYOUT.categoryAxis,
     axisLine: { lineStyle: { color: '#cfcfca' } },
     axisLabel: { color: '#57574f' },
     splitLine: { lineStyle: { color: '#efefec' } },
@@ -36,14 +40,16 @@ export const PCA_THEME = {
 } as const;
 
 export const PCA_DARK_THEME = {
+  ...ECHARTS_V5_LAYOUT,
   color: PALETTE,
   backgroundColor: 'transparent',
   textStyle: { fontFamily: 'Inter, system-ui, sans-serif', color: '#c8c8c8' },
   title: { textStyle: { color: '#ffffff' } },
-  legend: { textStyle: { color: '#c8c8c8' } },
+  legend: { ...ECHARTS_V5_LAYOUT.legend, textStyle: { color: '#c8c8c8' } },
   tooltip: { backgroundColor: '#252525', borderColor: '#3b3b3b', textStyle: { color: '#ffffff' } },
   axisPointer: { lineStyle: { color: '#5a5a5a' } },
   categoryAxis: {
+    ...ECHARTS_V5_LAYOUT.categoryAxis,
     axisLine: { lineStyle: { color: '#3b3b3b' } },
     axisLabel: { color: '#a8a8a8' },
     splitLine: { lineStyle: { color: '#1d1d1d' } },

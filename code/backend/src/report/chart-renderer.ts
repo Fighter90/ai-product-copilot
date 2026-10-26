@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 import {
+  ECHARTS_V5_LAYOUT,
   REPORT_CHART_IDS,
   reportChartOption,
   type ReportCharts,
@@ -62,16 +63,19 @@ export async function renderReportCharts(snapshot: ReportSnapshot): Promise<Repo
     for (const id of REPORT_CHART_IDS) {
       const option = reportChartOption(snapshot, id);
       await page.evaluate(
-        (opt) => {
+        (opt, layout) => {
           // Runs in the browser page; backend tsconfig has no DOM lib, so go through globalThis.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const g = globalThis as any;
           const el = g.document.getElementById('c');
           const ec = g.echarts;
           ec.dispose(el);
-          ec.init(el).setOption({ ...opt, animation: false });
+          // ECharts 6 default theme moves the legend/grid — keep the v5 report geometry.
+          ec.registerTheme('pca-report', layout);
+          ec.init(el, 'pca-report').setOption({ ...opt, animation: false });
         },
         option as unknown as Record<string, unknown>,
+        ECHARTS_V5_LAYOUT as unknown as Record<string, unknown>,
       );
       const el = await page.$('#c');
       if (!el) continue;
