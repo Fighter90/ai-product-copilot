@@ -56,8 +56,7 @@ export class SnapshotRepo {
 
   getById(id: string): ReportSnapshotRecord | undefined {
     const r = this.db.prepare('SELECT * FROM report_snapshots WHERE id = ?').get(id) as
-      | SnapshotRow
-      | undefined;
+      SnapshotRow | undefined;
     return r ? toRecord(r) : undefined;
   }
 

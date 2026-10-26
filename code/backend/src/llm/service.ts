@@ -101,8 +101,7 @@ export class LlmService {
 
   private row(id: ProviderId): ProviderRow | undefined {
     return this.db.prepare('SELECT * FROM ai_providers WHERE id = ?').get(id) as
-      | ProviderRow
-      | undefined;
+      ProviderRow | undefined;
   }
 
   private secretOf(r: ProviderRow): string {

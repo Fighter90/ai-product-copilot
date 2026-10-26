@@ -139,8 +139,7 @@ export class HypothesesRepo {
 
   getById(id: number): Hypothesis | undefined {
     const r = this.db.prepare('SELECT * FROM hypotheses WHERE id = ?').get(id) as
-      | HypRow
-      | undefined;
+      HypRow | undefined;
     return r ? toHypothesis(r) : undefined;
   }
 
