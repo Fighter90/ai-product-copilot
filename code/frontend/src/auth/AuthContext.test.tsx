@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { act, render, screen, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AuthProvider, RequireAuth, RequireAdmin, useAuth } from './AuthContext';
@@ -140,7 +140,9 @@ describe('AuthProvider / useAuth', () => {
     await waitFor(() => expect(screen.getByTestId('secret')).toBeInTheDocument());
 
     // 401 от API → событие → редирект на /login?next=…&expired=1
-    window.dispatchEvent(new CustomEvent('pca:unauthorized'));
+    act(() => {
+      window.dispatchEvent(new CustomEvent('pca:unauthorized'));
+    });
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
     expect(screen.getByTestId('path').textContent).toBe(
       '/login?next=%2Fapp%2Fcurrent%3Fx%3D1&expired=1',
