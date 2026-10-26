@@ -14,7 +14,7 @@ const ProviderPatch = z.object({
   priority: z.number().int().min(0).max(1000).optional(),
   model: z.string().max(200).optional(),
   secret: z.string().max(4000).optional(),
-  extra: z.record(z.string().max(200)).optional(),
+  extra: z.record(z.string(), z.string().max(200)).optional(),
 });
 
 /** AI provider routes: analysts see available providers; admins configure and test them. */

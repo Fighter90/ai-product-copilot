@@ -30,8 +30,8 @@ export interface MetrikaGoalsDeps {
 
 /** Accept both a bare spec and the API envelope `{"goal": {...}}` — the route wraps it anyway. */
 const CreateBody = z.union([
-  z.object({ goal: z.record(z.unknown()) }).passthrough(),
-  z.record(z.unknown()),
+  z.object({ goal: z.record(z.string(), z.unknown()) }).passthrough(),
+  z.record(z.string(), z.unknown()),
 ]);
 
 const GoalIdParam = z.coerce.number().int().positive();

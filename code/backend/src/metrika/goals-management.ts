@@ -50,7 +50,7 @@ const GoalSpecShape = {
   name: z.string().min(1).max(255),
   type: z.enum(GOAL_TYPES),
   conditions: z.array(GoalConditionSchema).max(100).optional(),
-  steps: z.array(z.record(z.unknown())).max(50).optional(),
+  steps: z.array(z.record(z.string(), z.unknown())).max(50).optional(),
   /** View-depth for `number` goals, seconds threshold for `visit_duration`. */
   depth: z.number().int().min(1).max(86_400).optional(),
   default_price: z.number().min(0).optional(),
@@ -66,14 +66,14 @@ export const GoalSpecSchema = z
   .superRefine((spec, ctx) => {
     if ((spec.type === 'url' || spec.type === 'action') && !spec.conditions?.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['conditions'],
         message: `goal type "${spec.type}" requires at least one condition`,
       });
     }
     if (spec.type === 'step' && !spec.steps?.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['steps'],
         message: 'goal type "step" requires at least one step',
       });

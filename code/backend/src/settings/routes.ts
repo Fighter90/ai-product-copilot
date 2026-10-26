@@ -13,7 +13,7 @@ export interface SettingsRouteOptions {
   readonly onChange?: () => void;
 }
 
-const Patch = z.record(z.enum(SETTING_KEYS), z.union([z.string().max(8000), z.number()]));
+const Patch = z.partialRecord(z.enum(SETTING_KEYS), z.union([z.string().max(8000), z.number()]));
 
 /** Runtime settings (admin writes, everyone reads the masked view). */
 export async function appSettingsRoutes(
