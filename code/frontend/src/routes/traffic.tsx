@@ -151,7 +151,8 @@ export function TrafficView({
       </p>
     );
 
-  if (stats.length === 0 && utm.length === 0) return <EmptyState />;
+  if (stats.length === 0 && utm.length === 0)
+    return segment === 'b2b' ? <EmptyState message={t('seg.b2bHint')} /> : <EmptyState />;
 
   const cov = utmCoverage(stats, utm);
   const rows = channelRows(stats);
