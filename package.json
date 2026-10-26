@@ -21,6 +21,8 @@
     "format:check": "prettier --check .",
     "sync-versions": "node scripts/sync-versions.mjs",
     "guides": "node scripts/build-guides.mjs",
+    "guides:ru": "node scripts/build-guides.mjs --lang ru",
+    "guides:en": "node scripts/build-guides.mjs --lang en",
     "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {

@@ -146,6 +146,23 @@ log "Проверьте сайт: curl -sI https://dashboardcamp.ru"
 # --- echarts UMD для серверного рендера графиков отчёта (chart-renderer) ---------------------
 ECHARTS_SRC="$(find "$REPO_ROOT/node_modules/.pnpm" -path "*echarts/dist/echarts.min.js" 2>/dev/null | head -1)"
 if [[ -n "$ECHARTS_SRC" ]]; then
+  run_remote "mkdir -p /opt/pca/assets"
   push_rsync "$ECHARTS_SRC" /opt/pca/assets/echarts.min.js
   log "echarts.min.js выложен для серверного рендера графиков"
 fi
+
+# --- Russian Trusted Root CA (Минцифры) для GigaChat: ngw/gigachat.devices.sberbank.ru ---------
+# Node не доверяет этому корню по умолчанию → «fetch failed / SELF_SIGNED_CERT_IN_CHAIN».
+run_remote 'set -e
+CA_DIR=/usr/local/share/ca-certificates
+PEM=/opt/pca/russian-trusted-ca.pem
+if [ ! -s "$PEM" ]; then
+  curl -fsS -m 30 -o "$CA_DIR/russian_trusted_root_ca.crt" https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt
+  curl -fsS -m 30 -o "$CA_DIR/russian_trusted_sub_ca.crt" https://gu-st.ru/content/lending/russian_trusted_sub_ca_pem.crt
+  update-ca-certificates >/dev/null 2>&1 || true
+  { cat "$CA_DIR/russian_trusted_root_ca.crt"; echo; cat "$CA_DIR/russian_trusted_sub_ca.crt"; echo; } | sed "/^[[:space:]]*$/d" > "$PEM"
+fi
+if ! grep -q "^NODE_EXTRA_CA_CERTS=" /opt/pca/.env; then
+  echo "NODE_EXTRA_CA_CERTS=$PEM" >> /opt/pca/.env
+  systemctl restart pca-api
+fi' && log "Russian Trusted Root CA подключён (GigaChat TLS)" || log "WARN: не удалось подключить Russian Trusted Root CA"

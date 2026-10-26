@@ -2,15 +2,17 @@
 /**
  * build-guides.mjs — сборка пользовательского руководства (DOCX + PDF).
  *
- * Источники:
- *   - docs/user-guide.md       (основное руководство, v3)
- *   - docs/help/ru/*.md        (приложения — статьи встроенной справки)
+ * Источники (по языкам):
+ *   - RU: docs/user-guide.md     + docs/help/ru/*.md (приложения — статьи встроенной справки)
+ *   - EN: docs/en/user-guide.md  + docs/help/en/*.md
  *
  * Выход:
- *   - docs/guides/user-guide-ru-v3.docx  (пакет docx)
- *   - docs/guides/user-guide-ru-v3.pdf   (pandoc + xelatex/lualatex, если установлены)
+ *   - docs/guides/user-guide-{ru,en}-v3.docx  (пакет docx)
+ *   - docs/guides/user-guide-{ru,en}-v3.pdf   (pandoc + xelatex/lualatex, если установлены)
  *
- * Запуск: `pnpm guides` (или `node scripts/build-guides.mjs`) из корня репозитория.
+ * Запуск из корня репозитория:
+ *   pnpm guides                 — оба языка (= node scripts/build-guides.mjs)
+ *   pnpm guides:ru | guides:en  — один язык (= node scripts/build-guides.mjs --lang en)
  * Пакет docx резолвится из code/backend/node_modules через createRequire — cwd не важен.
  * Подход к DOCX повторяет code/backend/src/report/docx/builder.ts (ГОСТ-оформление).
  */
@@ -24,19 +26,55 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BACKEND = path.join(ROOT, 'code', 'backend');
-const GUIDE_MD = path.join(ROOT, 'docs', 'user-guide.md');
-const HELP_DIR = path.join(ROOT, 'docs', 'help', 'ru');
 const OUT_DIR = path.join(ROOT, 'docs', 'guides');
-const DOCX_OUT = path.join(OUT_DIR, 'user-guide-ru-v3.docx');
-const PDF_OUT = path.join(OUT_DIR, 'user-guide-ru-v3.pdf');
 
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const VERSION = pkg.version;
-const DATE_RU = new Intl.DateTimeFormat('ru-RU', {
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-}).format(new Date());
+
+const formatDate = (locale) =>
+  new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' }).format(
+    new Date(),
+  );
+
+/**
+ * Настройки сборки по языкам. Буквы приложений — по ГОСТ 2.105: кириллица без Ё, З, Й, О, Ч, Ъ,
+ * Ы, Ь; латиница без I и O.
+ */
+const LOCALES = {
+  ru: {
+    lang: 'ru',
+    guideMd: path.join(ROOT, 'docs', 'user-guide.md'),
+    helpDir: path.join(ROOT, 'docs', 'help', 'ru'),
+    docxOut: path.join(OUT_DIR, 'user-guide-ru-v3.docx'),
+    pdfOut: path.join(OUT_DIR, 'user-guide-ru-v3.pdf'),
+    date: formatDate('ru-RU'),
+    letters: 'АБВГДЕЖИКЛМНПРСТУФХЦШЩЭЮЯ'.split(''),
+    appendix: 'Приложение',
+    subtitle: 'Личный кабинет трека «Конверсии и лидген»',
+    docTitle: 'Руководство пользователя',
+    version: 'Версия',
+    contents: 'Содержание',
+    // Строка выбора языка в шапке руководства (ссылка на EN-версию) — в документ не попадает.
+    langSwitch: /^>.*en\/user-guide\.md.*\n?/m,
+    sources: 'docs/user-guide.md и docs/help/ru/*.md',
+  },
+  en: {
+    lang: 'en',
+    guideMd: path.join(ROOT, 'docs', 'en', 'user-guide.md'),
+    helpDir: path.join(ROOT, 'docs', 'help', 'en'),
+    docxOut: path.join(OUT_DIR, 'user-guide-en-v3.docx'),
+    pdfOut: path.join(OUT_DIR, 'user-guide-en-v3.pdf'),
+    date: formatDate('en-GB'),
+    letters: 'ABCDEFGHJKLMNPQRSTUVWXYZ'.split(''),
+    appendix: 'Appendix',
+    subtitle: 'Web cabinet of the "Conversions & lead-gen" track',
+    docTitle: 'User guide',
+    version: 'Version',
+    contents: 'Contents',
+    langSwitch: /^>.*\.\.\/user-guide\.md.*\n?/m,
+    sources: 'docs/en/user-guide.md and docs/help/en/*.md',
+  },
+};
 
 /** Загрузка docx из зависимостей backend (в корневых node_modules его нет). */
 function loadDocx() {
@@ -391,16 +429,15 @@ function renderBlocks(docx, blocks, { headingOffset = 0 } = {}) {
   return { children, toc };
 }
 
-/** Приложения из docs/help/ru/*.md, упорядоченные по front-matter `order`. */
-function loadAppendix() {
-  if (!fs.existsSync(HELP_DIR)) return [];
-  // Буквы приложений по ГОСТ (без Ё, З, Й, О, Ч, Ъ, Ы, Ь).
-  const letters = 'АБВГДЕЖИКЛМНПРСТУФХЦЧШЩЭЮЯ'.split('');
+/** Приложения из docs/help/<lang>/*.md, упорядоченные по front-matter `order`. */
+function loadAppendix(loc) {
+  if (!fs.existsSync(loc.helpDir)) return [];
+  const { letters } = loc;
   const files = fs
-    .readdirSync(HELP_DIR)
+    .readdirSync(loc.helpDir)
     .filter((f) => f.endsWith('.md'))
     .map((file) => {
-      const raw = fs.readFileSync(path.join(HELP_DIR, file), 'utf8');
+      const raw = fs.readFileSync(path.join(loc.helpDir, file), 'utf8');
       const { meta, body } = stripFrontMatter(raw);
       const firstH1 = /^#\s+(.+)$/m.exec(body)?.[1];
       return {
@@ -415,13 +452,13 @@ function loadAppendix() {
 
   return files.map((f, idx) => ({
     ...f,
-    label: `Приложение ${letters[idx] ?? idx + 1}. ${f.title}`,
+    label: `${loc.appendix} ${letters[idx] ?? idx + 1}. ${f.title}`,
   }));
 }
 
-async function buildDocx(docx) {
-  const guide = parseMarkdown(fs.readFileSync(GUIDE_MD, 'utf8'));
-  const appendix = loadAppendix();
+async function buildDocx(docx, loc) {
+  const guide = parseMarkdown(fs.readFileSync(loc.guideMd, 'utf8'));
+  const appendix = loadAppendix(loc);
 
   const { children: bodyChildren, toc: guideToc } = renderBlocks(docx, guide.blocks);
   const tocEntries = [...guideToc];
@@ -460,10 +497,10 @@ async function buildDocx(docx) {
 
   const titlePage = [
     centered('ProductCamp Conversion Analytics', 26, true, 1440),
-    centered('Личный кабинет трека «Конверсии и лидген»', 24, false, 160),
-    centered('Руководство пользователя', 40, true, 2600),
-    centered(`Версия ${VERSION}`, 26, false, 400),
-    centered(DATE_RU, 24, false, 160),
+    centered(loc.subtitle, 24, false, 160),
+    centered(loc.docTitle, 40, true, 2600),
+    centered(`${loc.version} ${VERSION}`, 26, false, 400),
+    centered(loc.date, 24, false, 160),
     centered('dashboardcamp.ru', 22, false, 3600),
   ];
 
@@ -473,7 +510,7 @@ async function buildDocx(docx) {
       heading: docx.HeadingLevel.HEADING_1,
       alignment: docx.AlignmentType.CENTER,
       pageBreakBefore: true,
-      children: [new docx.TextRun('Содержание')],
+      children: [new docx.TextRun(loc.contents)],
     }),
     ...tocEntries.map(
       (entry) =>
@@ -486,9 +523,8 @@ async function buildDocx(docx) {
 
   const doc = new docx.Document({
     creator: 'ProductCamp Analytics',
-    title: `Руководство пользователя — ProductCamp Conversion Analytics v${VERSION}`,
-    description:
-      'Собрано скриптом scripts/build-guides.mjs из docs/user-guide.md и docs/help/ru/*.md',
+    title: `${loc.docTitle} — ProductCamp Conversion Analytics v${VERSION}`,
+    description: `Собрано скриптом scripts/build-guides.mjs из ${loc.sources}`,
     styles: {
       default: {
         document: {
@@ -562,7 +598,7 @@ async function buildDocx(docx) {
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const buffer = await docx.Packer.toBuffer(doc);
-  fs.writeFileSync(DOCX_OUT, buffer);
+  fs.writeFileSync(loc.docxOut, buffer);
   return { tocCount: tocEntries.length };
 }
 
@@ -577,13 +613,12 @@ function commandPath(cmd) {
 
 /** Убрать эмодзи и иные символы вне Times New Roman — иначе xelatex оставит пустые боксы. */
 function stripEmoji(text) {
-  return text.replace(
-    /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0E}\u{FE0F}\u{200D}]/gu,
-    '',
-  );
+  return text
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/gu, '')
+    .replace(/\u{FE0E}|\u{FE0F}|\u{200D}/gu, '');
 }
 
-function buildPdf() {
+function buildPdf(loc) {
   const pandoc = commandPath('pandoc');
   if (!pandoc) {
     return { ok: false, reason: 'pandoc не найден (установите: brew install pandoc)' };
@@ -596,13 +631,13 @@ function buildPdf() {
     };
   }
 
-  const { body } = stripFrontMatter(fs.readFileSync(GUIDE_MD, 'utf8'));
+  const { body } = stripFrontMatter(fs.readFileSync(loc.guideMd, 'utf8'));
   // Титул даёт метаданные pandoc; строку выбора языка убираем; уровни секций поднимаем
   // (## → #), чтобы оглавление PDF имело ровную иерархию «раздел → подраздел».
   const guideBody = stripEmoji(
     body
       .replace(/^#[^\n]*\n/, '')
-      .replace(/^>.*en\/user-guide\.md.*\n?/m, '')
+      .replace(loc.langSwitch, '')
       .replace(/^####\s/gm, '##### ')
       .replace(/^###\s/gm, '## ')
       .replace(/^##\s/gm, '# '),
@@ -610,19 +645,19 @@ function buildPdf() {
   // Приложения: свой заголовок секции, front matter вычищен вручную (yaml_metadata_block выключен).
   const combined = [
     guideBody,
-    ...loadAppendix().map((app) => {
+    ...loadAppendix(loc).map((app) => {
       const { body: appBody } = stripFrontMatter(app.raw);
       return stripEmoji(`# ${app.label}\n\n${appBody.replace(/^#[^\n]*\n/, '')}`);
     }),
   ].join('\n\n');
 
-  const tmpMd = path.join(os.tmpdir(), `user-guide-ru-v3-${process.pid}.md`);
+  const tmpMd = path.join(os.tmpdir(), `user-guide-${loc.lang}-v3-${process.pid}.md`);
   fs.writeFileSync(tmpMd, combined);
 
   const args = [
     tmpMd,
     '-o',
-    PDF_OUT,
+    loc.pdfOut,
     // yaml_metadata_block выключен: строки-разделители «---» в исходниках не должны
     // считаться YAML-блоками; front matter приложений вычищен на предыдущем шаге.
     '--from',
@@ -643,15 +678,15 @@ function buildPdf() {
     '-V',
     'colorlinks=true',
     '-V',
-    'lang=ru',
+    `lang=${loc.lang}`,
     '--metadata',
-    `title=Руководство пользователя — ProductCamp Conversion Analytics`,
+    `title=${loc.docTitle} — ProductCamp Conversion Analytics`,
     '--metadata',
-    `subtitle=Версия ${VERSION} · ${DATE_RU}`,
+    `subtitle=${loc.version} ${VERSION} · ${loc.date}`,
   ];
   const res = spawnSync(pandoc, args, { encoding: 'utf8', timeout: 240_000 });
   fs.rmSync(tmpMd, { force: true });
-  if (res.status !== 0 || !fs.existsSync(PDF_OUT)) {
+  if (res.status !== 0 || !fs.existsSync(loc.pdfOut)) {
     const detail = (res.stderr || res.error?.message || 'неизвестная ошибка').slice(-800);
     return { ok: false, reason: `pandoc завершился с ошибкой: ${detail}` };
   }
@@ -660,26 +695,46 @@ function buildPdf() {
 
 // ---------------------------------------------------------------------------
 
-async function main() {
-  console.log(`Сборка руководства: версия ${VERSION}, дата ${DATE_RU}`);
-  const docx = loadDocx();
+/** Языки из аргумента `--lang ru|en|all` (по умолчанию — все). */
+function parseLangs(argv) {
+  const idx = argv.indexOf('--lang');
+  const value =
+    idx >= 0 ? argv[idx + 1] : (argv.find((a) => a.startsWith('--lang='))?.slice(7) ?? 'all');
+  if (!value || value === 'all') return Object.keys(LOCALES);
+  const langs = value.split(',').map((l) => l.trim());
+  const unknown = langs.filter((l) => !LOCALES[l]);
+  if (unknown.length)
+    throw new Error(`Неизвестный язык: ${unknown.join(', ')} (доступно: ru, en, all)`);
+  return langs;
+}
 
-  const { tocCount } = await buildDocx(docx);
-  const docxSize = fs.statSync(DOCX_OUT).size;
+async function buildLocale(docx, loc) {
+  console.log(`\n[${loc.lang}] Сборка руководства: версия ${VERSION}, дата ${loc.date}`);
+  if (!fs.existsSync(loc.guideMd))
+    throw new Error(`нет исходника ${path.relative(ROOT, loc.guideMd)}`);
+
+  const { tocCount } = await buildDocx(docx, loc);
+  const docxSize = fs.statSync(loc.docxOut).size;
   console.log(
-    `DOCX: ${path.relative(ROOT, DOCX_OUT)} (${(docxSize / 1024).toFixed(1)} КБ, разделов в оглавлении: ${tocCount})`,
+    `DOCX: ${path.relative(ROOT, loc.docxOut)} (${(docxSize / 1024).toFixed(1)} КБ, разделов в оглавлении: ${tocCount})`,
   );
 
-  const pdf = buildPdf();
+  const pdf = buildPdf(loc);
   if (pdf.ok) {
-    const pdfSize = fs.statSync(PDF_OUT).size;
+    const pdfSize = fs.statSync(loc.pdfOut).size;
     console.log(
-      `PDF:  ${path.relative(ROOT, PDF_OUT)} (${(pdfSize / 1024).toFixed(1)} КБ, движок: ${pdf.engine} через pandoc)`,
+      `PDF:  ${path.relative(ROOT, loc.pdfOut)} (${(pdfSize / 1024).toFixed(1)} КБ, движок: ${pdf.engine} через pandoc)`,
     );
   } else {
     console.warn(`PDF пропущен: ${pdf.reason}`);
     console.warn('Подробности — в docs/guides/README.md');
   }
+}
+
+async function main() {
+  const langs = parseLangs(process.argv.slice(2));
+  const docx = loadDocx();
+  for (const lang of langs) await buildLocale(docx, LOCALES[lang]);
 }
 
 main().catch((err) => {
