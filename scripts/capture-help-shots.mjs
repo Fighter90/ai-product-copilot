@@ -74,7 +74,9 @@ for (const [name, path] of SHOTS.slice(2)) {
 try {
   await page.goto(BASE + '/app', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
-  const fab = page.locator('button[aria-label*="ссистент"], button[aria-label*="ssistant"]').first();
+  const fab = page
+    .locator('button[aria-label*="ссистент"], button[aria-label*="ssistant"]')
+    .first();
   await fab.click({ timeout: 8000 });
   await page.waitForTimeout(800);
   await page.keyboard.type('Как добавить AI-провайдера?');

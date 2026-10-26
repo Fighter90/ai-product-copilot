@@ -148,7 +148,8 @@ describe('ReportPreviewView', () => {
     // B2B-пайплайн appears in both preview and report sections
     expect(screen.getAllByText('B2B-пайплайн').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/2 сделок/)).toBeInTheDocument();
-    expect(screen.getByText(/35 билетов/)).toBeInTheDocument();
+    // «35 билетов» встречается и в B2B-сводке, и в итоговой строке после переименования терминов (ANA-19)
+    expect(screen.getAllByText(/35 билетов/).length).toBeGreaterThanOrEqual(1);
     // "paid" appears in multiple places, so use getAllByText
     expect(screen.getAllByText(/paid/).length).toBeGreaterThanOrEqual(1);
   });
