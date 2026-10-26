@@ -1,7 +1,7 @@
 // E2E-проверка прода в headless Chrome: логин, обход всех страниц, сбор console-ошибок.
 // Запуск: PCA_PASSWORD='...' node scripts/e2e-prod-check.mjs [base_url]
 // Вердикт: PASS / FAIL (exit 0/1). Playwright берётся из pnpm-стора проекта.
-import { chromium } from '/Users/sergejemelanov/Projects/ai-product-copilot/node_modules/.pnpm/playwright@1.60.0/node_modules/playwright/index.mjs';
+import { chromium } from '/Users/sergejemelanov/Projects/ai-product-copilot/node_modules/.pnpm/playwright@1.64.1/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
 
 const BASE = process.argv[2] || 'https://dashboardcamp.ru';
