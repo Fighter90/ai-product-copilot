@@ -9,7 +9,7 @@
 pnpm-workspace монорепо с тремя пакетами в `code/`:
 
 - `@pca/backend` — Fastify 4 + TypeScript strict, запуск через `tsx` (dev), сборка-проверка через `tsc --noEmit`.
-- `@pca/frontend` — React 18 + Vite 5, TailwindCSS, сборка через `vite build` (артефакт `code/frontend/dist`).
+- `@pca/frontend` — React 18 + Vite 7, TailwindCSS, сборка через `vite build` (артефакт `code/frontend/dist`).
 - `@pca/shared` — общие типы и константы (`ICE_CONFIG`), экспорт исходников TS (резолвятся через tsx/vite).
 
 TypeScript strict со всеми флагами §0: `noUncheckedIndexedAccess`, `noUnusedLocals/Parameters`.
