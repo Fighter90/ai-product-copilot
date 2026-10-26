@@ -17,8 +17,8 @@
 
 ```bash
 sudo apt update && sudo apt install -y nginx git curl
-# Node 20 (NodeSource):
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# Node 22 (NodeSource; puppeteer-core 25 требует ≥ 22.12):
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
 sudo npm i -g pnpm@9
 

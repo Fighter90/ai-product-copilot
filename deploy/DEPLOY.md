@@ -27,7 +27,7 @@ SQLite: /opt/pca/data/productcamp.sqlite
 - DNS: `A dashboardcamp.ru → 5.129.219.145` и `A www.dashboardcamp.ru → 5.129.219.145`
   (проверка: `dig +short dashboardcamp.ru`).
 - SSH-доступ root'ом по ключу (или пароль + установленный `sshpass`).
-- Локально: Node 20+, `pnpm` (`corepack enable`), `rsync`.
+- Локально: Node 22.12+, `pnpm` (`corepack enable`), `rsync`.
 
 ## 1. Первый деплой
 

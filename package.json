@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@9.12.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   },
   "scripts": {
     "dev": "concurrently -n backend,frontend -c blue,green \"pnpm --filter @pca/backend dev\" \"pnpm --filter @pca/frontend dev\"",

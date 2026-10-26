@@ -122,7 +122,7 @@ pnpm auth        # из корня репозитория
 
 ## Технологический стек
 
-Backend: Node 20 · TypeScript 5 strict · Fastify 4 (tsx) · Zod · better-sqlite3 · undici ·
+Backend: Node 22 · TypeScript 5 strict · Fastify 5 (tsx) · Zod · better-sqlite3 · undici ·
 `docx` · puppeteer-core · pino.
 Frontend: React 18 · Vite · TailwindCSS · Apache ECharts · TanStack Table/Query · Zustand ·
 react-router · i18n ru/en.

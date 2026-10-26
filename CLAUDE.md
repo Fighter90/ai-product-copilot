@@ -68,7 +68,7 @@
 ## Стек
 
 - **Frontend:** React 18 + Vite + TailwindCSS + shadcn/ui + Apache ECharts + TanStack Table
-- **Backend:** Node.js 20 + Fastify + TypeScript strict
+- **Backend:** Node.js 22 + Fastify 5 + TypeScript strict
 - **БД:** SQLite (`better-sqlite3`)
 - **AI / LLM:** не используется в production-пути генерации отчёта; на стороне разработки — Claude Code с инструкциями из этого файла и `.claude/skills/`
 - **Аналитика:** Яндекс.Метрика Reporting API (OAuth), счётчик задаётся в `.env` (`COUNTER_ID`)

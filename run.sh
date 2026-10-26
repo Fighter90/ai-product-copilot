@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-command -v node >/dev/null || { echo "Node.js 20+ required"; exit 1; }
+command -v node >/dev/null || { echo "Node.js 22.12+ required"; exit 1; }
 command -v pnpm >/dev/null || npm i -g pnpm
 
 [[ -d node_modules ]] || pnpm install

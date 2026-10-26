@@ -7,7 +7,7 @@
 
 ## 1. Требования
 
-- **Node.js 20 LTS** (`node -v` → v20.x). Установка: https://nodejs.org или `nvm install 20`.
+- **Node.js 22 LTS** (`node -v` → v22.12+). Установка: https://nodejs.org или `nvm install 22`.
 - **pnpm 9** — поставится автоматически из `run.sh`, либо вручную: `npm i -g pnpm`.
 - macOS / Linux. На Windows — через WSL2.
 
@@ -91,7 +91,7 @@ pnpm build       # сборка (артефакт frontend → code/frontend/dis
 
 | Симптом                                    | Причина / решение                                                                                                                          |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Node.js 20+ required`                     | поставьте Node 20 (`nvm install 20 && nvm use 20`).                                                                                        |
+| `Node.js 22.12+ required`                  | поставьте Node 22 (`nvm install 22 && nvm use 22`).                                                                                        |
 | Браузер открылся, но «Backend недоступен»  | backend ещё стартует — обновите через 2–3 сек; проверьте `API_PORT=4000` свободен.                                                         |
 | `metrikaTokenPresent: false`               | впишите `YANDEX_OAUTH_TOKEN` в `.env` и перезапустите.                                                                                     |
 | `EADDRINUSE :4000` / `:5173`               | порт занят — поменяйте `API_PORT` / `PORT` в `.env`.                                                                                       |
