@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import type { ChannelStat, UtmStat } from '@pca/shared';
 import { api } from '../lib/api';
 import { useFilters } from '../store/filters';
+import { useT } from '../i18n';
 import { formatInt, formatPercent } from '../lib/format';
 import {
   channelBarOption,
@@ -139,6 +140,7 @@ export function TrafficView({
   stats: ChannelStat[];
   utm: UtmStat[];
 }): JSX.Element {
+  const { t } = useT();
   const [sankeyOpen, setSankeyOpen] = useState(false);
   if (status === 'pending') return <p className="text-slate-500">Загрузка…</p>;
   if (status === 'error')
@@ -160,7 +162,7 @@ export function TrafficView({
     <section className="space-y-6">
       {cov.low ? (
         <div role="status" className="rounded bg-amber-100 px-3 py-2 text-sm text-amber-800">
-          Низкое покрытие UTM: {formatPercent(cov.ratio)} (порог 70%)
+          {t('kpi.lowUtmShort', { pct: formatPercent(cov.ratio) })}
         </div>
       ) : null}
 

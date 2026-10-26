@@ -2,13 +2,15 @@
 
 > [🇷🇺 Русский](../user-guide.md) · 🇬🇧 English
 
-How to use the dashboard and generate reports. For the "Conversions & lead-gen" track team.
+How to use the ProductCamp Conversion Analytics **web cabinet** (v3). For the "Conversions &
+lead-gen" track team.
 
-> ✅ **Status: working product (v2.8.1).** A 9-page dashboard: Overview, Traffic, Behavior, Funnel,
-> Goals, Report, History, Settings, Help. Global filters up to 1 year (mobile: bottom-sheet),
-> AI report analysis (including AI-generated hypotheses and AI Decision Log), GOST-formatted DOCX/PDF
-> **with embedded chart images** (channel bar, funnel, channel mix) and a 🟢/🔴 block per chart.
-> B2B pipeline (kanban + drawer) lives in Settings. WCAG AA accessibility. Run with `./setup.sh`.
+> ✅ **Status: v3.0.0.** A multi-user cabinet with session login and **Administrator / Analyst**
+> roles plus an action audit log. Real-time monitoring: **Live**, **Goals** (+ goal detail),
+> **Live funnel**. Analytics: Traffic, Behavior, Funnel, KPI, **Explore** (presets), Report
+> (DOCX/PDF + AI), History, B2B, **DataLens**. Administration: Users, AI providers
+> (OpenRouter/Anthropic/YandexGPT/GigaChat), Metrika, Integrations, Audit. A RAG assistant over the
+> built-in help (bottom-right corner), a Help center, **ru/en** interface, dark/light theme.
 
 ## 1. What it is and why
 
@@ -16,111 +18,137 @@ The tool answers one question: **where do paid tickets come from, and how do we 
 It does not replace Yandex Metrika — it turns its raw goals into a clear picture: a per-channel
 breakdown, a "visit → application → payment" funnel, and hypothesis discipline.
 
-Core principle: **an application ≠ a payment**. A Metrika goal (application) and an actual
-payment are kept distinct everywhere in the UI.
+Core principle: **an application ≠ a payment**. A Metrika goal (application) and an actual payment
+are kept distinct everywhere in the UI; progress toward the 300 KPI is counted in payments only.
+Every number traces back to the raw Metrika response stored in `raw_responses` (SQLite) — the
+anti-hallucination invariant.
 
-## 2. Running
+## 2. Login and roles
 
-See [runbook.md](runbook.md). In short: `./setup.sh` (or `pnpm install && ./init.sh && ./run.sh`) →
-browser at `http://localhost:5173`.
+Open `/login` and sign in with the email/password issued by an administrator. Sessions last
+7 days by default; the profile menu lets a user change their **password**, **name** and **interface
+language**. Failed logins are rate-limited (5 per 15 minutes); passwords require ≥ 10 characters.
 
-## 3. Dashboard pages
+| Role              | Access                                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Analyst**       | the whole cabinet: monitoring, analytics, reports, history, B2B, DataLens export, help                             |
+| **Administrator** | everything + Administration: users, AI providers, Metrika, Integrations, audit log; runtime settings; data cleanup |
 
-The dashboard has **9 pages** (top nav; on screens < 1024px a hamburger menu).
+Permissions are enforced on the backend; admin actions and exports are written to the audit log.
 
-Global filters (header, on every page except Settings and Help): period presets
-**7d / 14d / 30d / 90d / 1y**, custom date picker (from/to, max 365 days), segment toggle
-**B2C / B2C+B2B / B2B**, "Archived goals" checkbox.
+## 3. Running
 
-| Page         | URL         | What it shows                                                                                                                                                                                                                         |
-| ------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Overview** | `/`         | KPI strip (target 300; **«Оплат»** label for purchase/payment goals); **weekly digest card** (visits + applications WoW delta, top channel, top weak spot); daily charts; channel mix; weak spots; **chart captions** 🟢/🔴/💡        |
-| **Traffic**  | `/traffic`  | channel bar chart; visits vs applications; channel table with CR; **UTM-Sankey** ("Flow: source → campaign → applications"); insights; chart captions                                                                                 |
-| **Behavior** | `/behavior` | entry (startURL) and exit (exitURL) pages: charts + tables (visits / bounce rate / applications / CR); recommendations; chart captions                                                                                                |
-| **Funnel**   | `/funnel`   | «application ≠ payment» funnel: Visits → B2C applications → B2B pipeline → B2B paid; **funnel by channel**; **CR by channel**; loss analysis; B2B by stage; chart captions                                                            |
-| **Goals**    | `/goals`    | progress ring to 300 tickets; metrics; B2B deals; data-driven recommendations                                                                                                                                                         |
-| **Report**   | `/report`   | build a snapshot; **AI-generated hypotheses** (problem + solution, «Growth Hypotheses (AI)» sections) and **AI Decision Log** embedded in the report; AI analysis (5 sections, HTML); full report on screen; export DOCX/PDF; rebuild |
-| **History**  | `/history`  | list of saved snapshots (horizontally scrollable); "View" opens a snapshot without regenerating                                                                                                                                       |
-| **Settings** | `/settings` | OAuth token, Client ID/Secret, COUNTER_ID, GOAL_ID (select from Metrika), ANTHROPIC_API_KEY; "🔄 Sync now" with a progress bar; collapsible **«B2B Pipeline»** section for manual B2B deal entry                                      |
-| **Help**     | `/help`     | built-in documentation: all pages, filters, FAQ, glossary                                                                                                                                                                             |
+See [runbook.md](runbook.md); server deployment — [../deploy.md](../deploy.md). In short:
+`./setup.sh` (or `pnpm install && ./init.sh && ./run.sh`) → `http://localhost:5173`. The first
+administrator is created from `ADMIN_EMAIL`/`ADMIN_PASSWORD` in `.env` when the users table is
+empty. Without an OAuth token the analytics run on deterministic demo data (`pnpm seed`).
 
-> `/hypotheses` and `/decisions` redirect to `/report`; `/b2b` redirects to `/settings`. Settings and Help have no filter bar.
+## 4. Cabinet UI
 
-### Chart captions (v2.6.0)
+- **Sidebar** (collapsible) grouped into Monitoring / Analytics / Work / Administration
+  (the latter — admins only). On mobile: bottom tabs + "More".
+- **Top bar**: global filters, **theme** toggle (🌙/☀️), **RU/EN** language toggle,
+  **notification bell** (DataLens events and analyst requests), user menu.
+- **Footer**: product version (from the root `package.json`) + short git SHA of the build.
+- **RAG assistant** — floating button in the bottom-right corner (see §9).
+- **Help center** — `/help`.
 
-Every chart and table in the dashboard now has a three-line caption block:
+Theme and language persist in the browser (localStorage); the language is also saved to the user
+profile.
 
-- **🟢 Correct** — the SQLite data source and what it represents.
-- **🔴 Attention** — a known limitation (e.g. exitURL is not returned by Metrika).
-- **💡 Recommendation** — what to check or how to act on the data.
+## 5. Pages
 
-This extends the anti-hallucination principle: users see not just a number but its origin.
+### Monitoring (real time — queried directly from Yandex Metrika, not cached)
 
-### Weekly digest (Overview page)
+| Page            | URL                | What it shows                                                                                                                                                                           |
+| --------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Overview**    | `/app`             | KPI strip, daily visits/applications, channel mix, weak spots — from SQLite (daily history)                                                                                             |
+| **Live**        | `/app/live`        | today in real time: visits/goals, ProductCamp events, hourly dynamics                                                                                                                   |
+| **Goals**       | `/app/goals`       | all counter goals: status (live/sleeping/dead), reaches over 14/90 days, duplicate goals; detail — `/app/goals/:id`                                                                     |
+| **Live funnel** | `/app/funnel-live` | PC-event funnel: saw tickets → CTA click → opened registration → cart → left contacts; tickets by type (standard/optimal/max), applications by role (volunteer/speaker/C-level/partner) |
 
-A card at the top of the Overview page shows the last 7 days:
-visits and applications with a WoW delta (vs the previous 7 days), the top channel by visits,
-and the top weak spot. Data comes from `channel_stats`.
+### Analytics (SQLite, daily history via `npm run sync`)
 
-### Limitation: exit pages
+| Page         | URL                    | What it shows                                                                                                                                       |
+| ------------ | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Traffic**  | `/app/traffic`         | channel bar chart, visits vs applications, channel table with CR, UTM breakdown, insights                                                           |
+| **Behavior** | `/app/behavior`        | entry/exit pages: bounce/CR charts + tables, recommendations                                                                                        |
+| **Funnel**   | `/app/funnel`          | "application ≠ payment": Visits → B2C applications → B2B pipeline → B2B paid; funnel by channel, loss analysis                                      |
+| **KPI**      | `/app/kpi`             | progress ring toward 300 paid tickets (B2B paid + purchase goals), "What if" simulator, recommendations                                             |
+| **Explore**  | `/app/explore/:preset` | quick Reporting API cuts by preset: sources, search engines, UTM, pages, devices, browsers, geo, referers, days, hours — table + chart + CSV export |
 
-Yandex Metrika does not return `ym:s:exitURL` for the ProductCamp counter, so the
-`exit_page_stats` table remains empty. The "Exit pages" block hides automatically when there
-is no data — this is a known API limitation, not a bug (see the 🔴 caption under the block).
+### Work
 
-### Where does this number come from?
+| Page         | URL             | What it shows                                                                                           |
+| ------------ | --------------- | ------------------------------------------------------------------------------------------------------- |
+| **Report**   | `/app/report`   | period snapshot, full on-screen report, AI hypotheses and AI Decision Log, AI analysis, DOCX/PDF export |
+| **History**  | `/app/history`  | saved snapshots; "View" opens a report without regenerating                                             |
+| **B2B**      | `/app/b2b`      | kanban pipeline with 4 stages (lead → negotiation → invoiced → paid), full deal table                   |
+| **DataLens** | `/app/datalens` | the 5 CSV datasets for Yandex DataLens, downloads per period, connection request (see §8)               |
 
-Every number on the dashboard and in the report traces back to the raw Metrika response in
-`raw_responses` (SQLite). No invented numbers — this is the anti-hallucination invariant.
+Legacy pre-v3 URLs (`/traffic`, `/report`, `/settings`, …) redirect into the matching `/app/…`
+section.
 
-## 4. Hypotheses and Decision Log (AI inside the report)
+### Filters (top bar on analytics pages)
 
-As of v2.7.0 there are no standalone Hypotheses or Decisions pages in the nav. Instead:
+Period presets **7d / 14d / 30d / 90d / 1y** and a custom range (from → to, max 365 days);
+**segment** B2C / B2C+B2B / B2B; **test traffic** toggle on live pages. Live-page filters apply to
+the Reporting API request period, not to SQLite.
 
-- **AI-generated hypotheses** (problem and solution) are generated when building a snapshot and
-  stored in `snapshot.generatedHypotheses`. They appear in the report under the sections
-  «Solution Hypotheses (AI)» / «Problem Hypotheses (AI)» in the structured methodology format
-  (ICE, assumptions, validation methods, traffic light).
-- **AI Decision Log** (suggested decisions) is generated similarly and stored in
-  `snapshot.generatedDecisions`. It appears in the report under «Decision Log (suggested decisions)».
+## 6. Administration (admins only)
 
-Both blocks are visible in the **on-screen report** and exported to DOCX/PDF.
-Direct URLs `/hypotheses` and `/decisions` redirect to `/report`.
+- **Users** (`/app/admin/users`): create users (a one-time password is shown exactly once), change
+  roles, deactivate, reset passwords. The last active admin cannot be demoted or blocked.
+- **AI providers** (`/app/admin/ai`): enable **OpenRouter / Anthropic / YandexGPT / GigaChat**, set
+  priority (fallback order), model, secret key and extras (YandexGPT `folderId`, GigaChat `scope`).
+  "Test" performs a live check. Keys are encrypted with **AES-256-GCM** (master key `APP_SECRET`)
+  and always masked in the UI; per-call statistics for the last 30 days are on the same page.
+  Consumers: the report (AI analysis / hypotheses / Decision Log) and the help assistant.
+- **Metrika** (`/app/admin/metrika`): OAuth token, Client ID/Secret, `COUNTER_ID`, `GOAL_ID`
+  (`0` = auto-detect the purchase goal), `ORDER_GOAL_ID`, KPI target. Secrets are masked; changes
+  apply **without a restart**. Also: "Sync from Metrika" and metric-data cleanup.
+- **Integrations** (`/app/admin/integrations`): DataLens webhook token, recent webhook events
+  (confirmation codes, alerts), dashboard links.
+- **Audit** (`/app/admin/audit`): logins (incl. failures), user management, password resets,
+  DataLens exports and requests — with time, user, action, target and details.
 
-## 5. B2B pipeline (in Settings)
+## 7. Reports and B2B
 
-Manual B2B deal entry has moved to a collapsible **«B2B Pipeline»** section on the **Settings**
-page (`/settings`). Stages: lead → negotiation → invoiced → paid. Paid tickets still count toward
-the 300 KPI and are included on the Funnel and Goals pages.
-The direct URL `/b2b` redirects to `/settings`.
+- **Report** (`/app/report`): build a snapshot → the full report opens on screen; optional
+  **"Generate AI analysis"** (6 sections) goes through the AI provider chain; **Export DOCX/PDF**
+  (PDF needs Chrome via `PUPPETEER_EXECUTABLE_PATH`). GOST-formatted, deterministic: one
+  `snapshotId` → identical content on screen and in DOCX/PDF.
+- **B2B** (`/app/b2b`): manual deal entry (Metrika does not cover the B2B pipeline) — kanban with
+  4 stages plus an editable table; paid tickets count toward the 300 KPI.
 
-## 6. Generating reports (including AI hypotheses and AI Decision Log)
+## 8. DataLens
 
-On the **Report** page:
+**DataLens** (`/app/datalens`) bridges the data into Yandex DataLens via a **Files connection**:
+download typed CSV datasets — `channels_daily`, `utm_daily`, `pages_daily`, `geo_device_daily`,
+`b2b_deals` (UTF-8 with BOM, RFC 4180, localized ru/en headers, optional `from`/`to`).
+The reverse channel is a **token-protected webhook**: DataLens sends confirmation codes and alerts
+to `POST /api/integrations/datalens/webhook/:token`; admins see them under Integrations and in the
+bell. Analysts can request a DataLens connection (creates an admin notification). Every export is
+written to the audit log.
 
-1. Pick the period in the header, then click **"Build snapshot"** — this builds and stores an
-   immutable `ReportSnapshot`, shows the KPI summary and **renders the full report on screen**
-   (the same content as the DOCX/PDF).
-2. (Optional) **"Generate AI analysis"** — calls Anthropic from the snapshot numbers and adds a
-   clearly-labelled «AI analysis» section. Needs `ANTHROPIC_API_KEY`; without it you get a clear
-   message and the report is built without that section.
-3. **Export DOCX** or **Export PDF** — renders the file into `data/reports/{snapshotId}.{docx|pdf}`.
+## 9. Help and the RAG assistant
 
-The report is **detailed** and GOST-formatted (Times New Roman 14pt, title page, table of contents,
-numbered sections, page numbers; markdown is supported — tables, bold/italic, lists). Sections:
-Cover, Executive Summary (application ≠ payment), Methodology, Visit→application→payment funnel,
-Channel analysis, **Solution/Problem Hypotheses (AI)** (from `snapshot.generatedHypotheses`),
-**Decision Log (suggested decisions)** (from `snapshot.generatedDecisions`), AI analysis (if
-generated), top breakdowns (UTM, geo+device, entry/exit pages), Data Appendix.
+- **Help center** (`/help`) — articles from `docs/help/ru` (or `docs/help/en`): pages, goals,
+  funnel, integrations; searchable.
+- **Assistant** — floating button in the bottom-right corner. Answers **only from the help
+  articles**: question → relevant chunks → model answer with article links. Uses the configured AI
+  providers; without them it asks an administrator to enable a provider.
 
-Reports are built from the immutable **snapshot**: the same `snapshotId` yields the same content in
-DOCX, PDF and on screen (no `Date.now()`/LLM in the render path — the AI narrative is generated once
-and stored; content comes from one shared `reportSections` in `@pca/shared`). PDF needs a local
-Chrome via `PUPPETEER_EXECUTABLE_PATH`; DOCX needs nothing extra.
+## 10. Language and theme
 
-## 7. Principles to remember
+- **RU/EN toggle** in the top bar; the choice persists in the browser and in the user profile.
+  Help articles and assistant answers follow the UI language.
+- **Dark/light theme** toggle (🌙/☀️), applied before first paint to avoid flashing; persisted.
+
+## 11. Principles to remember
 
 - Every number traces back to `raw_responses` — if it doesn't, that's a bug.
-- B2B is part of the 300 KPI and is managed manually via the «B2B Pipeline» section in Settings (the `b2b_manual` table, CRUD via `POST /api/b2b`).
-- Methodology under `.claude/skills/` must not change without a note in
-  `docs/methodology-hypotheses.md`.
+- An application ≠ a payment; KPI progress counts payments only.
+- Secrets (tokens, AI keys) are entered only in the admin UI or `.env`; they are always masked.
+- Admin actions and exports are recorded in the audit log — it is append-only.
+- New dependencies outside the fixed stack require an ADR in `docs/decisions/`.

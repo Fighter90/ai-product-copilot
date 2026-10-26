@@ -3,6 +3,8 @@ import { DIMENSION_NONE } from '@pca/shared';
 import type { MetrikaClient } from '../client';
 import { ENDPOINTS } from '../endpoints';
 import { StatDataResponseSchema, type StatDataResponse } from '../schemas';
+import { statFilters } from '../traffic-filter';
+import { mergeByKey, reachRate } from './dedupe';
 import { ratio } from './ratio';
 
 export interface GeoDeviceQueryOptions {
@@ -11,6 +13,11 @@ export interface GeoDeviceQueryOptions {
   readonly to: string;
   /** When set, goal reaches + conversion rate metrics are requested. */
   readonly goalId?: number;
+  /**
+   * Override the Reporting API `filters` value (tests). Default: {@link statFilters} —
+   * test/robot traffic excluded unless INCLUDE_TEST_TRAFFIC=1 (ANA-22).
+   */
+  readonly filters?: string;
 }
 
 type Row = StatDataResponse['data'][number];
@@ -43,11 +50,32 @@ export function geoDeviceMetrics(goalId?: number): string {
   return base.join(',');
 }
 
+/**
+ * Collapse rows that share the `geo_device_stats` natural key (date, country, device): metrics are
+ * summed and CR recomputed from the sums — the write-level dedup behind ANA-16.
+ */
+export function mergeGeoDeviceStats(rows: readonly GeoDeviceStat[]): GeoDeviceStat[] {
+  return mergeByKey(
+    rows,
+    (s) => `${s.date}|${s.country}|${s.device}`,
+    (a, b) => ({
+      date: a.date,
+      country: a.country,
+      device: a.device,
+      visits: a.visits + b.visits,
+      users: a.users + b.users,
+      goalReaches: a.goalReaches + b.goalReaches,
+      conversionRate: reachRate(a.goalReaches + b.goalReaches, a.visits + b.visits),
+    }),
+  );
+}
+
 /** Fetch traffic broken down by country + device category; returns raw response + parsed stats. */
 export async function geoDeviceBreakdown(
   client: MetrikaClient,
   opts: GeoDeviceQueryOptions,
 ): Promise<{ raw: StatDataResponse; stats: GeoDeviceStat[] }> {
+  const filters = opts.filters ?? statFilters();
   const raw = await client.get(
     ENDPOINTS.statData,
     {
@@ -57,8 +85,9 @@ export async function geoDeviceBreakdown(
       date1: opts.from,
       date2: opts.to,
       attribution: 'lastsign',
+      ...(filters ? { filters } : {}),
     },
     StatDataResponseSchema,
   );
-  return { raw, stats: raw.data.map((row) => mapRow(row, opts)) };
+  return { raw, stats: mergeGeoDeviceStats(raw.data.map((row) => mapRow(row, opts))) };
 }

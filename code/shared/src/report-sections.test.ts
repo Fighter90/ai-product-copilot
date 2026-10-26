@@ -154,16 +154,144 @@ function findSection(s: ReportSnapshot, predicate: (h: string) => boolean): stri
 }
 
 describe('reportSections — structure', () => {
-  it('produces cover, summary, methodology, prioritization, overviews and appendix', () => {
+  it('produces cover, designations, introduction, summary, methodology, prioritization, overviews and appendix', () => {
     const headings = reportSections(baseSnapshot).map((s) => s.heading);
     expect(headings).toContain('ProductCamp · Конверсии и лидген');
-    expect(headings).toContain('Краткие итоги');
+    expect(headings).toContain('ОБОЗНАЧЕНИЯ, ТЕРМИНЫ И СОКРАЩЕНИЯ');
+    expect(headings).toContain('ВВЕДЕНИЕ');
+    expect(headings).toContain('УПРАВЛЕНЧЕСКОЕ РЕЗЮМЕ');
+    // New sections sit right after the cover and before «Краткие итоги».
+    const order = reportSections(baseSnapshot).map((s) => s.heading);
+    expect(order.indexOf('ОБОЗНАЧЕНИЯ, ТЕРМИНЫ И СОКРАЩЕНИЯ')).toBe(1);
+    expect(order.indexOf('ВВЕДЕНИЕ')).toBe(2);
+    expect(order.indexOf('УПРАВЛЕНЧЕСКОЕ РЕЗЮМЕ')).toBe(3);
+    expect(order.indexOf('Краткие итоги')).toBe(4);
     expect(headings).toContain('Методология');
     expect(headings).toContain('Приоритизация гипотез (по ICE)');
     expect(headings).toContain('Define — проблемные гипотезы (обзор)');
     expect(headings).toContain('Develop — решенческие гипотезы (обзор)');
     expect(headings).toContain('Deliver — Decision Log (обзор)');
     expect(headings).toContain('Приложение с данными');
+  });
+
+  it('renders the designations table (term → expansion, no methodology duplication)', () => {
+    const text = findSection(baseSnapshot, (h) => h === 'ОБОЗНАЧЕНИЯ, ТЕРМИНЫ И СОКРАЩЕНИЯ').join(
+      '\n',
+    );
+    expect(text).toContain('| Термин | Расшифровка |');
+    for (const term of [
+      'KPI',
+      'CR',
+      'UTM',
+      'ICE',
+      'DL',
+      'B2B',
+      'B2C',
+      'DOCX',
+      'PDF',
+      'Gap',
+      'WoW',
+      'Snapshot',
+      'pc-goals',
+      'CRM (СРМ)',
+    ]) {
+      expect(text).toContain(`| ${term} | `);
+    }
+  });
+
+  it('renders the introduction (purpose, sources, period, sections, заявка ≠ оплата, анти-галлюцинация)', () => {
+    const text = findSection(baseSnapshot, (h) => h === 'ВВЕДЕНИЕ').join('\n');
+    expect(text).toContain('Назначение:');
+    expect(text).toContain('Reporting API');
+    expect(text).toContain('счётчик ProductCamp');
+    expect(text).toContain('Период отчёта: 2025-01-01 — 2025-01-07');
+    expect(text).toContain('заявка ≠ оплата');
+    expect(text).toContain('Анти-галлюцинация');
+  });
+
+  it('renders the executive summary strictly from snapshot facts', () => {
+    const text = findSection(baseSnapshot, (h) => h === 'УПРАВЛЕНЧЕСКОЕ РЕЗЮМЕ').join('\n');
+    expect(text).toContain(
+      '- Цель периода — 300 оплаченных билетов; зачтено 20 (выполнение 6.7%), gap — 280.',
+    );
+    expect(text).toContain(
+      '- Воронка: 100 визитов → 7 заявок B2C (CR 7.0%) → 20 оплаченных билетов B2B.',
+    );
+    expect(text).toContain('- Лучший канал по CR: podcast — 7.0% заявок с 100 визитов.');
+    expect(text).toContain('- Отказы: 20.0% визитов');
+    expect(text).toContain('- B2B-вклад: оплачено 20 из 20 билетов по 1 сделкам');
+    expect(text).toContain('- Главный риск: gap 280');
+    expect(text).toContain('- Главный рычаг: перераспределить бюджет в «podcast»');
+    expect(text).toContain('- Гипотезы: 1 проблемных + 1 решенческих');
+  });
+
+  it('renders the KPI table in Краткие итоги (CR from funnel.visits)', () => {
+    const text = findSection(baseSnapshot, (h) => h === 'Краткие итоги').join('\n');
+    expect(text).toContain('| Показатель | Значение |');
+    expect(text).toContain('| Цель периода (оплаченных билетов) | 300 |');
+    expect(text).toContain('| Заявки B2C (достижения цели Метрики) | 7 |');
+    expect(text).toContain('| Оплачено B2B (билетов) | 20 |');
+    expect(text).toContain('| Зачтено к цели (оплаченные билеты) | 20 |');
+    expect(text).toContain('| Gap до цели (билетов) | 280 |');
+    expect(text).toContain('| CR общий (заявки / визиты) | 7.0% |'); // 7 / 100 funnel.visits
+    expect(text).toContain('| CR оплаты (оплачено / визиты) | 20.0% |');
+  });
+
+  it('renders dashes (never fake 0.0%) when the funnel has no visits', () => {
+    const s: ReportSnapshot = {
+      ...baseSnapshot,
+      funnel: { visits: 0, b2cApplications: 0, b2bPipelineTickets: 0, b2bPaidTickets: 0 },
+    };
+    const text = findSection(s, (h) => h === 'Краткие итоги').join('\n');
+    expect(text).toContain('| CR общий (заявки / визиты) | — |');
+    expect(text).toContain('| CR оплаты (оплачено / визиты) | — |');
+  });
+
+  it('appends the top-10 channel table to Каналы: трафик и конверсия', () => {
+    const ch = baseSnapshot.channels[0]!;
+    const s: ReportSnapshot = {
+      ...baseSnapshot,
+      channels: [
+        { ...ch, channel: 'podcast', visits: 100, goalReaches: 5 },
+        { ...ch, date: '2025-01-03', channel: 'podcast', visits: 100, goalReaches: 5 },
+        { ...ch, channel: 'zeta', visits: 50, goalReaches: 1 },
+      ],
+    };
+    const text = findSection(s, (h) => h === 'Каналы: трафик и конверсия').join('\n');
+    expect(text).toContain('Детально (топ-10 по визитам):');
+    expect(text).toContain('| Канал | Визиты | Заявки | CR % |');
+    expect(text).toContain('| podcast | 200 | 10 | 5.0 |'); // aggregated across days
+    expect(text).toContain('| zeta | 50 | 1 | 2.0 |');
+  });
+
+  it('adds GOST figure captions to the three chart sections, numbered in section order', () => {
+    const withCharts = reportSections(baseSnapshot).filter((s) => s.chartId);
+    expect(withCharts.map((s) => s.chartId)).toEqual(['channelBar', 'funnel', 'channelMix']);
+    expect(withCharts.map((s) => s.caption)).toEqual([
+      'Рисунок 1 — Воронка конверсии',
+      'Рисунок 2 — Воронка: визит → заявка → оплата',
+      'Рисунок 3 — Структура трафика по каналам',
+    ]);
+  });
+
+  it('renders the Decision Log overview table (ID, hypothesis, outcome, next step)', () => {
+    const text = findSection(baseSnapshot, (h) => h === 'Deliver — Decision Log (обзор)').join(
+      '\n',
+    );
+    expect(text).toContain('| ID | Гипотеза | Статус | Решение |');
+    expect(text).toContain('| DL-001 | #1 Гипотеза | 🟡 доработать | онлайн-оплата |');
+  });
+
+  it('escapes raw pipes in table cells so markdown tables stay parseable', () => {
+    const s: ReportSnapshot = {
+      ...baseSnapshot,
+      hypotheses: { problems: [hyp({ title: 'a | b' })], solutions: [] },
+      decisions: [decision({ number: 'DL-002', nextStep: 'шаг | два' })],
+    };
+    const prio = findSection(s, (h) => h.startsWith('Приоритизация')).join('\n');
+    expect(prio).toContain('| a / b |'); // pipe replaced with a slash, row stays 5 cells
+    const dl = findSection(s, (h) => h === 'Deliver — Decision Log (обзор)').join('\n');
+    expect(dl).toContain('шаг / два');
   });
 
   it('is deterministic — same snapshot yields identical content', () => {
@@ -176,7 +304,7 @@ describe('reportSections — structure', () => {
     expect(lines).toContain('Impact × Confidence × Ease');
   });
 
-  it('orders prioritization by descending ICE', () => {
+  it('orders prioritization by descending ICE (table rows sorted, top first)', () => {
     const s: ReportSnapshot = {
       ...baseSnapshot,
       hypotheses: {
@@ -184,9 +312,14 @@ describe('reportSections — structure', () => {
         solutions: [hyp({ id: 2, kind: 'solution', iceScore: 800, title: 'top' })],
       },
     };
-    const lines = findSection(s, (h) => h.startsWith('Приоритизация'));
-    expect(lines[2]).toContain('ICE 800');
-    expect(lines[3]).toContain('ICE 100');
+    const table = findSection(s, (h) => h.startsWith('Приоритизация')).filter((l) =>
+      l.startsWith('| '),
+    );
+    expect(table).toHaveLength(3); // header + 2 data rows (separator row starts with |---)
+    expect(table[1]).toContain('top');
+    expect(table[1]).toContain('| 800 |');
+    expect(table[2]).toContain('low');
+    expect(table[2]).toContain('| 100 |');
   });
 
   it('renders the funnel with visit→application conversion (заявка ≠ оплата)', () => {
@@ -256,7 +389,7 @@ describe('reportSections — structure', () => {
 
 describe('reportSections — full hypothesis detail', () => {
   it('spells out hypothesis fields, ICE breakdown, assumptions, methods and traffic-light', () => {
-    const lines = findSection(baseSnapshot, (h) => h === '1. Гипотеза').join('\n');
+    const lines = findSection(baseSnapshot, (h) => h === 'Гипотеза (гипотеза)').join('\n');
     expect(lines).toContain('«слушатель не покупает билет, если нет лендинга»');
     expect(lines).toContain('I × C × E = 8 × 6 × 7 = 336');
     expect(lines).toContain('[Поведение] готов платить');
@@ -280,7 +413,7 @@ describe('reportSections — full hypothesis detail', () => {
     });
     const lines = findSection(
       { ...baseSnapshot, hypotheses: { problems: [], solutions: [h] } },
-      (x) => x.startsWith('1.'),
+      (x) => x.startsWith('Гипотеза'),
     ).join('\n');
     expect(lines).toContain('Описание: описание');
     expect(lines).toContain('Develop (решение)');
@@ -294,7 +427,7 @@ describe('reportSections — full hypothesis detail', () => {
     const h = hyp({ hiddenAssumptions: [], validationMethods: [] });
     const lines = findSection(
       { ...baseSnapshot, hypotheses: { problems: [h], solutions: [] } },
-      (x) => x.startsWith('1.'),
+      (x) => x.startsWith('Гипотеза'),
     ).join('\n');
     expect(lines).toContain('Скрытые допущения (0):');
     expect(lines).toContain('Методы проверки (0):');
@@ -364,7 +497,7 @@ describe('reportSections — decision detail', () => {
 });
 
 describe('reportSections — breakdowns, AI and empty states', () => {
-  it('renders breakdown lines with CR when present', () => {
+  it('renders breakdown tables with visits when present', () => {
     const s: ReportSnapshot = {
       ...baseSnapshot,
       breakdowns: {
@@ -374,14 +507,20 @@ describe('reportSections — breakdowns, AI and empty states', () => {
         exitPages: [{ page: '/checkout', visits: 40, bounceRate: 0.6, goalReaches: 2 }],
       },
     };
-    expect(findSection(s, (h) => h === 'Топ источников UTM')[0]).toContain('vk / cpc / spring');
-    expect(findSection(s, (h) => h === 'Топ источников UTM')[0]).toContain('CR 5.0%');
-    expect(findSection(s, (h) => h === 'Топ гео + устройства')[0]).toContain('Россия · mobile');
-    expect(findSection(s, (h) => h === 'Топ страниц входа')[0]).toContain('25.0%');
-    expect(findSection(s, (h) => h === 'Топ страниц выхода')[0]).toContain('/checkout');
+    const utm = findSection(s, (h) => h === 'Топ источников UTM').join('\n');
+    expect(utm).toContain('| Источник (source) | Medium | Визиты |');
+    expect(utm).toContain('| vk | cpc | 80 |');
+    const geo = findSection(s, (h) => h === 'Топ гео + устройства').join('\n');
+    expect(geo).toContain('| Гео | Визиты |');
+    expect(geo).toContain('| Россия | 60 |');
+    expect(geo).toContain('| mobile | 60 | 100.0 |'); // share of the geo-slice total (unit in header)
+    expect(findSection(s, (h) => h === 'Топ страниц входа').join('\n')).toContain('| /lp | 70 |');
+    expect(findSection(s, (h) => h === 'Топ страниц выхода').join('\n')).toContain(
+      '| /checkout | 40 |',
+    );
   });
 
-  it('handles zero-visit rows (CR 0.0%) without dividing by zero', () => {
+  it('renders zero-visit breakdown rows without dividing by zero (dash share)', () => {
     const s: ReportSnapshot = {
       ...baseSnapshot,
       channels: [{ ...baseSnapshot.channels[0]!, visits: 0, goalReaches: 0 }],
@@ -392,8 +531,11 @@ describe('reportSections — breakdowns, AI and empty states', () => {
         exitPages: [],
       },
     };
-    expect(findSection(s, (h) => h === 'Топ источников UTM')[0]).toContain('CR 0.0%');
-    expect(findSection(s, (h) => h === 'Топ гео + устройства')[0]).toContain('CR 0.0%');
+    expect(findSection(s, (h) => h === 'Топ источников UTM').join('\n')).toContain('| x | y | 0 |');
+    expect(findSection(s, (h) => h === 'Топ гео + устройства').join('\n')).toContain('| RU | 0 |');
+    expect(findSection(s, (h) => h === 'Топ гео + устройства').join('\n')).toContain(
+      '| mobile | 0 | — |',
+    );
     expect(findSection(s, (h) => h === 'Приложение с данными').join(' ')).toContain('CR 0.0%');
   });
 
@@ -459,21 +601,21 @@ describe('reportSections — AI-generated hypotheses', () => {
     expect(headings).toContain('Приоритизация AI-гипотез (по ICE)');
     expect(headings).toContain('Проблемные гипотезы (AI)');
     expect(headings).toContain('Решенческие гипотезы (AI)');
-    expect(headings).toContain('1. P01');
+    expect(headings).toContain('P01'); // no leading ordinal — builder adds ГОСТ numbering
 
     const prio = sections
       .find((s) => s.heading === 'Приоритизация AI-гипотез (по ICE)')!
       .lines.join('\n');
     expect(prio.indexOf('S02')).toBeLessThan(prio.indexOf('S01')); // higher ICE first
 
-    const sol = sections.find((s) => s.heading === '1. S02')!.lines.join('\n');
+    const sol = sections.find((s) => s.heading === 'S02')!.lines.join('\n');
     expect(sol).toContain('Если');
     expect(sol).toContain('Ценность:');
     expect(sol).toContain('Юридический-репутационный:');
     expect(sol).toContain('План проверки:');
     expect(sol).toContain('= 500');
 
-    const prob = sections.find((s) => s.heading === '1. P01')!.lines.join('\n');
+    const prob = sections.find((s) => s.heading === 'P01')!.lines.join('\n');
     expect(prob).toContain('испытывает');
     expect(prob).toContain('Обоснование (данные):');
   });
@@ -647,5 +789,39 @@ describe('aiDecisionSections + generatedDecisions in reportSections', () => {
     const snap = { ...baseSnapshot, generatedDecisions: { decisions: [genDecision('DL01')] } };
     const headings = reportSections(snap).map((s) => s.heading);
     expect(headings.some((h) => /Decision Log \(предполагаемые/.test(h))).toBe(true);
+  });
+});
+
+describe('reportSections — demo marks (ANA-18)', () => {
+  it('badges seeded demo hypotheses and decisions with «[ДЕМО]» and an explanatory line', () => {
+    const s: ReportSnapshot = {
+      ...baseSnapshot,
+      hypotheses: { problems: [hyp({ isDemo: true })], solutions: [] },
+      decisions: [decision({ isDemo: true })],
+    };
+    const sections = reportSections(s);
+
+    const hypCard = sections.find((sec) => sec.heading === '[ДЕМО] Гипотеза (гипотеза)');
+    expect(hypCard).toBeTruthy();
+    expect(hypCard!.lines.join('\n')).toContain(
+      'Демо-данные: гипотеза добавлена сидом (npm run seed)',
+    );
+
+    const decCard = sections.find((sec) => sec.heading === '[ДЕМО] DL-001: итог проверки');
+    expect(decCard).toBeTruthy();
+    expect(decCard!.lines.join('\n')).toContain('Демо-данные');
+
+    // Overview list and the prioritization table carry the badge too.
+    const overview = sections.find((sec) => sec.heading === 'Define — проблемные гипотезы (обзор)');
+    expect(overview!.lines.join('\n')).toContain('1) [ДЕМО] Гипотеза [ICE 336]');
+    const priority = sections.find((sec) => sec.heading === 'Приоритизация гипотез (по ICE)');
+    expect(priority!.lines.join('\n')).toMatch(/\[ICE 336 · [^\]]+\] \[ДЕМО\]/);
+  });
+
+  it('leaves real (non-seed) rows unbadged', () => {
+    const text = reportSections(baseSnapshot)
+      .map((sec) => `${sec.heading}\n${sec.lines.join('\n')}`)
+      .join('\n');
+    expect(text).not.toContain('[ДЕМО]');
   });
 });

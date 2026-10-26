@@ -19,7 +19,23 @@ describe('migrate', () => {
       '007_geo_device_stats.sql',
       '008_page_stats.sql',
       '009_exit_page_stats.sql',
+      '010_auth_settings_ai.sql',
+      '011_demo_marks.sql',
     ]);
+  });
+
+  it('adds the ANA-18 demo marks (is_demo) to hypotheses and decisions', () => {
+    db = openDb(':memory:');
+    migrate(db);
+    const columns = (table: string): string[] =>
+      (
+        db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+          name: string;
+          dflt_value: unknown;
+        }>
+      ).map((c) => c.name);
+    expect(columns('hypotheses')).toContain('is_demo');
+    expect(columns('decisions')).toContain('is_demo');
   });
 
   it('creates the expected tables', () => {

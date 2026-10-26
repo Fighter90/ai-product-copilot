@@ -42,6 +42,16 @@ describe('HypothesesRepo.create', () => {
     expect(h.evidence).toBeUndefined();
   });
 
+  it('round-trips the ANA-18 demo mark (isDemo → is_demo → isDemo)', () => {
+    const real = repo.create(validHypothesis());
+    expect(real.isDemo).toBeUndefined();
+
+    const demo = repo.create(validHypothesis({ title: 'Демо-гипотеза', isDemo: true }));
+    expect(demo.isDemo).toBe(true);
+    expect(repo.getById(demo.id)?.isDemo).toBe(true);
+    expect(repo.getById(real.id)?.isDemo).toBeUndefined();
+  });
+
   it('links a solution hypothesis to its parent problem', () => {
     const problem = repo.create(validHypothesis());
     const solution = repo.create(

@@ -1,31 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
+// The v3 shell mounts the public landing at `/`; the cabinet lives behind /app auth.
 vi.mock('./lib/api', () => ({
   api: {
-    channels: vi.fn().mockResolvedValue([
-      {
-        date: '2025-01-01',
-        channel: 'podcast',
-        utmSource: null,
-        utmMedium: null,
-        utmCampaign: null,
-        visits: 100,
-        users: 90,
-        bounceRate: 0.2,
-        avgDuration: 60,
-        goalReaches: 5,
-        conversionRate: 0.05,
-      },
-    ]),
-    primaryGoal: vi.fn().mockResolvedValue({
-      id: 8,
-      name: 'Ecommerce: покупка',
-      type: 'action',
-      isB2b: false,
-      isArchived: false,
-      syncedAt: '2025-01-01T00:00:00.000Z',
-    }),
+    me: vi.fn().mockResolvedValue(null),
+    channels: vi.fn().mockResolvedValue([]),
+    primaryGoal: vi.fn().mockResolvedValue(null),
     geoDevice: vi.fn().mockResolvedValue([]),
   },
 }));
@@ -35,12 +16,13 @@ import { queryClient } from './lib/query';
 afterEach(() => queryClient.clear());
 
 describe('<App>', () => {
-  it('renders the shell (nav) and the Overview page', async () => {
+  it('renders the public landing shell with headline and login entry', async () => {
     render(<App />);
-    // Nav hamburger button should be present
-    expect(screen.getByRole('button', { name: /открыть меню/i })).toBeInTheDocument();
-    // Overview resolves with data → KPI strip renders. The mocked primary goal is a purchase goal
-    // («Ecommerce: покупка»), so the KPI is labelled «Оплат» (formatGoalLabel), not «Заявок».
-    expect(await screen.findByText(/Оплат/)).toBeInTheDocument();
+    // Landing hero headline (locale defaults by navigator language: ru/en)
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(
+      /(От Метрики|From Metrika)/i,
+    );
+    // Public header links into the cabinet / login
+    expect(screen.getByRole('banner')).toBeInTheDocument();
   });
 });

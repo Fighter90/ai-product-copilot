@@ -1,9 +1,17 @@
 name: CI
+
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'feat/**'
   pull_request:
+    branches:
+      - main
+  # Ручной запуск (см. job e2e — заглушка под будущие браузерные E2E).
+  workflow_dispatch:
 
+# Отменяем устаревший запуск той же ветки/PR при новом пуше.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -12,84 +20,75 @@ permissions:
   contents: read
 
 jobs:
-  quality:
-    name: Lint · Format · Typecheck
+  gates:
+    name: Gates · format · lint · typecheck · tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Версия pnpm берётся из поля "packageManager" корневого package.json (pnpm@9.12.0),
+      # поэтому input "version" не задаём — так действие не спорит с packageManager.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
         with:
-          version: 9
-      - uses: actions/setup-node@v4
+          node-version: 22
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "STORE_PATH=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
         with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: ESLint
-        run: pnpm lint
-      - name: Prettier
+          path: ${{ steps.pnpm-store.outputs.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      # better-sqlite3 — нативный модуль: на ubuntu-latest с Node 22 (ABI 127) скачивается
+      # готовый prebuild. Если prebuild недоступен, модуль соберётся из исходников —
+      # build-essential и python3 уже предустановлены в ubuntu-latest, отдельный apt-шаг не нужен.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Повтор локального гейта из .githooks/pre-commit: версии в документах = версии в package.json.
+      - name: 'Gate: doc version markers (pre-commit replica)'
+        run: node scripts/sync-versions.mjs --check
+
+      - name: Format check (prettier)
         run: pnpm format:check
-      - name: Typecheck
+
+      - name: Lint (eslint)
+        run: pnpm lint
+
+      - name: Typecheck (all packages)
         run: pnpm typecheck
 
-  test:
-    name: Test + coverage (Node ${{ matrix.node }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node: [20, 22]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Coverage (100% thresholds enforced)
-        run: pnpm coverage
-      - name: Upload coverage
-        if: ${{ matrix.node == 20 }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: '**/coverage/lcov.info'
-          retention-days: 7
+      - name: Unit tests · backend (vitest)
+        run: pnpm --filter @pca/backend test
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: code/frontend/dist
-          retention-days: 7
+      - name: Unit tests · frontend (vitest)
+        run: pnpm --filter @pca/frontend test
 
-  actionlint:
-    name: Lint workflows
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: actionlint
-        uses: raven-actions/actionlint@v2
+      - name: Unit tests · shared (vitest)
+        run: pnpm --filter @pca/shared test
 
-  ci-ok:
-    name: CI passed
-    needs: [quality, test, build, actionlint]
+  # ЗАГЛУШКА под будущие браузерные E2E (Playwright). Реальный прогон требует секретов
+  # (URL стенда, тестовые учётки) и вынесен в .github/workflows/e2e.yml — здесь не подключаем.
+  # Job появляется только при ручном запуске (workflow_dispatch).
+  e2e:
+    name: E2E (stub, manual)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'workflow_dispatch'
     steps:
-      - run: echo "All CI checks passed."
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Placeholder
+        run: echo "Browser E2E is not wired into CI yet — requires staging secrets (see .github/workflows/e2e.yml)."

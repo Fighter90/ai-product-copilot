@@ -13,10 +13,10 @@ const goal = (over: Partial<Goal>): Goal => ({
 });
 
 describe('formatGoalLabel', () => {
-  it('labels a purchase goal as paid (no application caveat/estimate)', () => {
+  it('labels a purchase goal as created orders (no application caveat/estimate) — ANA-19', () => {
     const label = formatGoalLabel(goal({ name: 'Ecommerce: покупка' }));
     expect(label).toEqual({
-      title: 'Оплат',
+      title: 'Заказов',
       isPaid: true,
       showApplicationsCaveat: false,
       showEstimate: false,

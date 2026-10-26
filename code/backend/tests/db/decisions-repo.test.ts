@@ -58,6 +58,17 @@ describe('DecisionsRepo.create', () => {
     expect(d.previousDecisionId).toBeUndefined();
   });
 
+  it('round-trips the ANA-18 demo mark (isDemo → is_demo → isDemo)', () => {
+    const h = hyps.create(validHypothesis());
+    const real = decisions.create(decisionFor(h.id));
+    expect(real.isDemo).toBeUndefined();
+
+    const demo = decisions.create(decisionFor(h.id, { isDemo: true }));
+    expect(demo.isDemo).toBe(true);
+    expect(decisions.getById(demo.id)?.isDemo).toBe(true);
+    expect(decisions.getById(real.id)?.isDemo).toBeUndefined();
+  });
+
   it('requires at least one evidence item', () => {
     const h = hyps.create(validHypothesis());
     expect(() => decisions.create(decisionFor(h.id, { evidence: [] }))).toThrowError(

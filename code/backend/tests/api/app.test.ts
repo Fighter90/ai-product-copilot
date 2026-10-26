@@ -12,7 +12,7 @@ describe('app assembly', () => {
     ctx = buildTestApp();
     const res = await ctx.app.inject({ method: 'GET', url: '/docs/json' });
     expect(res.statusCode).toBe(200);
-    expect(res.json().info.title).toBe('ProductCamp Analytics API');
+    expect(res.json().info.title).toBe('ProductCamp Analytics Copilot API');
   });
 
   it('accepts an explicit logger argument', async () => {

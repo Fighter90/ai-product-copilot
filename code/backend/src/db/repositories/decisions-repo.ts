@@ -29,6 +29,7 @@ interface DecRow {
   decided_by: string;
   participants: string | null;
   exported_md_path: string | null;
+  is_demo: number;
   created_at: string;
   updated_at: string;
 }
@@ -56,6 +57,7 @@ function toDecision(r: DecRow): Decision {
     decidedBy: r.decided_by,
     participants: r.participants ?? undefined,
     exportedMdPath: r.exported_md_path ?? undefined,
+    isDemo: r.is_demo ? true : undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -84,12 +86,12 @@ export class DecisionsRepo {
          number, hypothesis_id, date, method, scope, period_days, findings, evidence,
          outcome, outcome_rationale, next_step, responsible, next_deadline,
          previous_decision_id, spawned_hypothesis_ids, decided_by, participants,
-         created_at, updated_at
+         is_demo, created_at, updated_at
        ) VALUES (
          @number, @hypothesis_id, @date, @method, @scope, @period_days, @findings, @evidence,
          @outcome, @outcome_rationale, @next_step, @responsible, @next_deadline,
          @previous_decision_id, @spawned_hypothesis_ids, @decided_by, @participants,
-         @created_at, @updated_at
+         @is_demo, @created_at, @updated_at
        ) RETURNING *`,
     );
     const updateStatus = this.db.prepare(
@@ -117,6 +119,7 @@ export class DecisionsRepo {
           : null,
         decided_by: d.decidedBy,
         participants: d.participants ?? null,
+        is_demo: d.isDemo ? 1 : 0,
         created_at: now,
         updated_at: now,
       }) as DecRow;

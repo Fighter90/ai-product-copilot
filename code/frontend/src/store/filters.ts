@@ -15,7 +15,7 @@ export interface FiltersState {
   preset: (days: number) => void;
 }
 
-function isoDaysAgo(days: number): string {
+export function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 }
 

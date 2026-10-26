@@ -128,7 +128,7 @@
 - `data/` — SQLite + отчёты + экспорт DL (gitignored, кроме `.gitkeep`).
 
 Поток: `./run.sh` → миграции → `pnpm sync` (Метрика → SQLite) → Fastify API (`/api/*`, Swagger
-`/docs`) → React-дашборд (TanStack Query) → SnapshotBuilder → DOCX/PDF. Текущий релиз — **v2.10.0**.
+`/docs`) → React-дашборд (TanStack Query) → SnapshotBuilder → DOCX/PDF. Текущий релиз — **v3.1.0**.
 
 ## Как работать в этом репозитории (для AI-агентов)
 
@@ -174,3 +174,11 @@
 - В Claude Code подгружается автоматически.
 - В Claude Web — «Прочитай CLAUDE.md и далее отвечай в контексте этого продукта».
 - В каждом новом цикле проверки гипотезы — добавляй ссылку на свежий DL в раздел `Decision Log` выше.
+
+## OpenSpec — spec-driven процесс
+
+Нетривиальные фичи идут через `openspec/`: **перед кодом** — proposal
+(`openspec/changes/<id>/proposal.md`: зачем, что, критерии, риски), **после утверждения** — чек-лист
+`tasks.md`, **после реализации** — итоговое поведение переносится в `openspec/specs/<capability>/spec.md`.
+Шаблоны и правила для агентов: `openspec/README.md`, `openspec/AGENTS.md`. Исторические спеки
+(001/002/014) мигрированы из `docs/specs/` в `openspec/specs/`.

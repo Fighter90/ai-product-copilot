@@ -150,7 +150,7 @@ describe('SnapshotBuilder', () => {
       },
     ]);
     const snap = builder.build({ id: 'p', generatedAt: 'T', from: '2025-01-01', to: '2025-01-07' });
-    expect(snap.goalLabel).toMatchObject({ title: 'Оплат', isPaid: true });
+    expect(snap.goalLabel).toMatchObject({ title: 'Заказов', isPaid: true });
     // gap = target 300 − B2B paid 20 − Metrika purchases 7 = 273.
     expect(snap.kpi.gap).toBe(273);
   });

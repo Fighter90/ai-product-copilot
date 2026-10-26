@@ -41,6 +41,7 @@ interface HypRow {
   deadline_at: string;
   evidence: string | null;
   status: HypothesisStatus;
+  is_demo: number;
   created_at: string;
   updated_at: string;
 }
@@ -77,6 +78,7 @@ function toHypothesis(r: HypRow): Hypothesis {
     deadlineAt: r.deadline_at,
     evidence: r.evidence ? JSON.parse(r.evidence) : undefined,
     status: r.status,
+    isDemo: r.is_demo ? true : undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -98,13 +100,13 @@ export class HypothesesRepo {
            parent_id, hidden_assumptions, validation_methods,
            impact, confidence, ease, impact_rationale, confidence_rationale, ease_rationale,
            green_criteria, yellow_criteria, red_criteria,
-           deadline_days, deadline_at, evidence, status, created_at, updated_at
+           deadline_days, deadline_at, evidence, is_demo, status, created_at, updated_at
          ) VALUES (
            @diamond_phase, @kind, @subject, @action, @solution, @condition, @title, @description,
            @parent_id, @hidden_assumptions, @validation_methods,
            @impact, @confidence, @ease, @impact_rationale, @confidence_rationale, @ease_rationale,
            @green_criteria, @yellow_criteria, @red_criteria,
-           @deadline_days, @deadline_at, @evidence, 'draft', @created_at, @updated_at
+           @deadline_days, @deadline_at, @evidence, @is_demo, 'draft', @created_at, @updated_at
          ) RETURNING *`,
       )
       .get({
@@ -131,6 +133,7 @@ export class HypothesesRepo {
         deadline_days: input.deadlineDays,
         deadline_at: addDays(now, input.deadlineDays),
         evidence: input.evidence ? JSON.stringify(input.evidence) : null,
+        is_demo: input.isDemo ? 1 : 0,
         created_at: now,
         updated_at: now,
       }) as HypRow;
@@ -139,8 +142,7 @@ export class HypothesesRepo {
 
   getById(id: number): Hypothesis | undefined {
     const r = this.db.prepare('SELECT * FROM hypotheses WHERE id = ?').get(id) as
-      | HypRow
-      | undefined;
+      HypRow | undefined;
     return r ? toHypothesis(r) : undefined;
   }
 

@@ -1,21 +1,34 @@
 import { selectPrimaryGoal, type Goal } from '@pca/shared';
+import type { ChannelStat, GeoDeviceStat, PageStat, UtmStat } from '@pca/shared';
 import type { MetricsRepo } from '../db/repositories/metrics-repo';
 import { dayChunks } from '../utils/date-range';
 import { stableHash } from '../utils/hash';
 import type { MetrikaClient } from './client';
 import { ENDPOINTS } from './endpoints';
-import { GoalsResponseSchema } from './schemas';
-import { trafficBySource } from './queries/traffic-by-source';
-import { utmBreakdown } from './queries/utm-breakdown';
-import { geoDeviceBreakdown } from './queries/geo-device-breakdown';
+import { GoalsResponseSchema, type GoalsResponse } from './schemas';
+import { trafficBySource, mergeChannelStats } from './queries/traffic-by-source';
+import { utmBreakdown, mergeUtmStats } from './queries/utm-breakdown';
+import { geoDeviceBreakdown, mergeGeoDeviceStats } from './queries/geo-device-breakdown';
 import { pageBehavior } from './queries/page-behavior';
 import { exitPageBehavior } from './queries/exit-page-behavior';
+import { mergePageStats } from './queries/normalize-page';
+import {
+  batchGoalIds,
+  goalReachesByDay,
+  mergeGoalDayRows,
+  type GoalDayRow,
+} from './queries/goal-reaches-by-day';
+import { browserOsBreakdown, mergeBrowserOsStats } from './queries/browser-os-breakdown';
+import { newReturningBreakdown, mergeNewReturningStats } from './queries/new-returning';
 
 export interface SyncDeps {
   readonly client: MetrikaClient;
   readonly metrics: MetricsRepo;
   readonly counterId: number;
-  /** Goals with id below this threshold are flagged archived (§5.5). */
+  /**
+   * FALLBACK archive heuristic (§5.5) used only when a goal carries neither Metrika's own
+   * `archived` flag nor a `status` field — both are authoritative when present (ANA-23).
+   */
   readonly archivedThreshold: number;
   /** ISO timestamp source (injectable for deterministic tests). */
   readonly now: () => string;
@@ -35,11 +48,30 @@ export interface SyncSummary {
   readonly geoDeviceRows: number;
   readonly pageRows: number;
   readonly exitPageRows: number;
+  /**
+   * (date, goal) reach pairs synced from bytime — one request per batch of ≤10 goals.
+   * Optional for backward compatibility with existing SyncSummary literals (0/undefined = skipped).
+   */
+  readonly goalReachesRows?: number;
+  readonly browserOsRows?: number;
+  readonly newReturningRows?: number;
 }
 
 /** Pulls Metrika data into SQLite: raw responses (for traceability) + derived channel stats. */
 export class SyncService {
   constructor(private readonly deps: SyncDeps) {}
+
+  /**
+   * Archive state of a goal. Metrika's own `archived` flag / `status` ("Active"/"Archived") wins;
+   * only when the API provides neither does the legacy id-threshold fallback apply. On counter
+   * 54280963 every goal id is ≥ 173M, so the threshold alone flagged nothing — and the admin UI
+   * showed the same 163 goals in both the active and archive views (ANA-23).
+   */
+  private isArchived(g: GoalsResponse['goals'][number]): boolean {
+    if (g.archived !== undefined) return g.archived;
+    if (g.status !== undefined) return g.status.trim().toLowerCase() !== 'active';
+    return g.id < this.deps.archivedThreshold;
+  }
 
   /** Fetch + map goals from the API without persisting — lets callers validate auth before any write. */
   private async fetchGoals(): Promise<Goal[]> {
@@ -53,7 +85,7 @@ export class SyncService {
       name: g.name,
       type: g.type,
       isB2b: false,
-      isArchived: g.id < this.deps.archivedThreshold,
+      isArchived: this.isArchived(g),
       syncedAt: this.deps.now(),
     }));
   }
@@ -64,13 +96,18 @@ export class SyncService {
     return goals;
   }
 
+  /**
+   * Accumulate rows across the day chunks and upsert ONE merged batch per table: rows are
+   * deduplicated on the table's natural key before the write (ANA-16), so a re-run or repeated
+   * keys can never inflate the tables with duplicates.
+   */
   async syncTraffic(
     from: string,
     to: string,
     goalId?: number,
   ): Promise<{ days: number; rows: number }> {
     const chunks = dayChunks(from, to);
-    let rows = 0;
+    const acc: ChannelStat[] = [];
     for (const chunk of chunks) {
       const { raw, stats } = await trafficBySource(this.deps.client, {
         counterId: this.deps.counterId,
@@ -86,15 +123,16 @@ export class SyncService {
         payload: raw,
         fetchedAt: this.deps.now(),
       });
-      this.deps.metrics.upsertChannelStats(stats);
-      rows += stats.length;
+      acc.push(...stats);
     }
-    return { days: chunks.length, rows };
+    const merged = mergeChannelStats(acc);
+    this.deps.metrics.upsertChannelStats(merged);
+    return { days: chunks.length, rows: merged.length };
   }
 
   async syncUtm(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
     const chunks = dayChunks(from, to);
-    let rows = 0;
+    const acc: UtmStat[] = [];
     for (const chunk of chunks) {
       const { raw, stats } = await utmBreakdown(this.deps.client, {
         counterId: this.deps.counterId,
@@ -110,15 +148,16 @@ export class SyncService {
         payload: raw,
         fetchedAt: this.deps.now(),
       });
-      this.deps.metrics.upsertUtmStats(stats);
-      rows += stats.length;
+      acc.push(...stats);
     }
-    return { rows };
+    const merged = mergeUtmStats(acc);
+    this.deps.metrics.upsertUtmStats(merged);
+    return { rows: merged.length };
   }
 
   async syncGeoDevice(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
     const chunks = dayChunks(from, to);
-    let rows = 0;
+    const acc: GeoDeviceStat[] = [];
     for (const chunk of chunks) {
       const { raw, stats } = await geoDeviceBreakdown(this.deps.client, {
         counterId: this.deps.counterId,
@@ -134,15 +173,16 @@ export class SyncService {
         payload: raw,
         fetchedAt: this.deps.now(),
       });
-      this.deps.metrics.upsertGeoDeviceStats(stats);
-      rows += stats.length;
+      acc.push(...stats);
     }
-    return { rows };
+    const merged = mergeGeoDeviceStats(acc);
+    this.deps.metrics.upsertGeoDeviceStats(merged);
+    return { rows: merged.length };
   }
 
   async syncPages(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
     const chunks = dayChunks(from, to);
-    let rows = 0;
+    const acc: PageStat[] = [];
     for (const chunk of chunks) {
       const { raw, stats } = await pageBehavior(this.deps.client, {
         counterId: this.deps.counterId,
@@ -158,15 +198,16 @@ export class SyncService {
         payload: raw,
         fetchedAt: this.deps.now(),
       });
-      this.deps.metrics.upsertPageStats(stats);
-      rows += stats.length;
+      acc.push(...stats);
     }
-    return { rows };
+    const merged = mergePageStats(acc);
+    this.deps.metrics.upsertPageStats(merged);
+    return { rows: merged.length };
   }
 
   async syncExitPages(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
     const chunks = dayChunks(from, to);
-    let rows = 0;
+    const acc: PageStat[] = [];
     for (const chunk of chunks) {
       const { raw, stats } = await exitPageBehavior(this.deps.client, {
         counterId: this.deps.counterId,
@@ -182,10 +223,92 @@ export class SyncService {
         payload: raw,
         fetchedAt: this.deps.now(),
       });
-      this.deps.metrics.upsertExitPageStats(stats);
-      rows += stats.length;
+      acc.push(...stats);
     }
-    return { rows };
+    const merged = mergePageStats(acc);
+    this.deps.metrics.upsertExitPageStats(merged);
+    return { rows: merged.length };
+  }
+
+  /**
+   * Daily reaches for EVERY goal on the counter via /stat/v1/data/bytime (group=day). One request
+   * returns the whole daily series for a batch of ≤10 goal metrics (the API's metric cap), so a
+   * 163-goal counter costs ~17 requests regardless of the period length.
+   */
+  async syncGoalReachesByDay(
+    from: string,
+    to: string,
+    goalIds: readonly number[],
+  ): Promise<{ batches: number; rows: number }> {
+    const batches = batchGoalIds(goalIds);
+    const acc: GoalDayRow[] = [];
+    for (const batch of batches) {
+      const { raw, rows: batchRows } = await goalReachesByDay(this.deps.client, {
+        counterId: this.deps.counterId,
+        from,
+        to,
+        goalIds: batch,
+      });
+      this.deps.metrics.saveRawResponse({
+        endpoint: ENDPOINTS.statByTime,
+        queryHash: stableHash({ q: 'goal-reaches-by-day', goals: batch, from, to }),
+        dateFrom: from,
+        dateTo: to,
+        payload: raw,
+        fetchedAt: this.deps.now(),
+      });
+      acc.push(...batchRows);
+    }
+    const merged = mergeGoalDayRows(acc);
+    return { batches: batches.length, rows: merged.length };
+  }
+
+  async syncBrowserOs(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
+    const chunks = dayChunks(from, to);
+    const acc: Awaited<ReturnType<typeof browserOsBreakdown>>['stats'] = [];
+    for (const chunk of chunks) {
+      const { raw, stats } = await browserOsBreakdown(this.deps.client, {
+        counterId: this.deps.counterId,
+        from: chunk.from,
+        to: chunk.to,
+        goalId,
+      });
+      this.deps.metrics.saveRawResponse({
+        endpoint: ENDPOINTS.statData,
+        queryHash: stableHash({ q: 'browser-os', goalId, from: chunk.from, to: chunk.to }),
+        dateFrom: chunk.from,
+        dateTo: chunk.to,
+        payload: raw,
+        fetchedAt: this.deps.now(),
+      });
+      acc.push(...stats);
+    }
+    const merged = mergeBrowserOsStats(acc);
+    return { rows: merged.length };
+  }
+
+  async syncNewReturning(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
+    const chunks = dayChunks(from, to);
+    const acc: Awaited<ReturnType<typeof newReturningBreakdown>>['stats'] = [];
+    for (const chunk of chunks) {
+      const { raw, stats } = await newReturningBreakdown(this.deps.client, {
+        counterId: this.deps.counterId,
+        from: chunk.from,
+        to: chunk.to,
+        goalId,
+      });
+      this.deps.metrics.saveRawResponse({
+        endpoint: ENDPOINTS.statData,
+        queryHash: stableHash({ q: 'new-returning', goalId, from: chunk.from, to: chunk.to }),
+        dateFrom: chunk.from,
+        dateTo: chunk.to,
+        payload: raw,
+        fetchedAt: this.deps.now(),
+      });
+      acc.push(...stats);
+    }
+    const merged = mergeNewReturningStats(acc);
+    return { rows: merged.length };
   }
 
   /**
@@ -226,6 +349,19 @@ export class SyncService {
     const exitPages = await this.best('exit-pages', () =>
       this.syncExitPages(from, to, resolvedGoalId),
     );
+    const goalReaches = await this.best('goal-reaches-by-day', () =>
+      this.syncGoalReachesByDay(
+        from,
+        to,
+        goals.map((g) => g.id),
+      ),
+    );
+    const browserOs = await this.best('browser-os', () =>
+      this.syncBrowserOs(from, to, resolvedGoalId),
+    );
+    const newReturning = await this.best('new-returning', () =>
+      this.syncNewReturning(from, to, resolvedGoalId),
+    );
     return {
       goals: goals.length,
       resolvedGoalId,
@@ -235,6 +371,9 @@ export class SyncService {
       geoDeviceRows: geo.rows,
       pageRows: pages.rows,
       exitPageRows: exitPages.rows,
+      goalReachesRows: goalReaches.rows,
+      browserOsRows: browserOs.rows,
+      newReturningRows: newReturning.rows,
     };
   }
 }

@@ -1,5 +1,6 @@
-import { useFilters, type Segment, formatDateLabel } from '../store/filters';
-import { useState } from 'react';
+import { useFilters, formatDateLabel, isoDaysAgo, type Segment } from '../store/filters';
+import { useRef, useState } from 'react';
+import { useT } from '../i18n';
 
 const PRESETS = [7, 14, 30, 90, 365] as const;
 const MAX_DAYS = 365; // Maximum allowed period: 1 year
@@ -11,30 +12,64 @@ function daysBetween(from: string, to: string): number {
   return Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+/**
+ * Validate a custom range without mutating anything (ANA-49): both dates set,
+ * from ≤ to (a single day is allowed), from not in the future — Metrika serves
+ * no future data — and at most MAX_DAYS days. Returns the violation id or null.
+ */
+function rangeError(from: string, to: string): 'empty' | 'order' | 'future' | 'max' | null {
+  if (!from || !to) return 'empty';
+  if (from > to) return 'order';
+  if (from > isoDaysAgo(0)) return 'future';
+  if (daysBetween(from, to) > MAX_DAYS) return 'max';
+  return null;
+}
+
 /** Sticky global filter header: period presets, custom date picker, segment toggle, archived toggle. */
 export function FilterBar(): JSX.Element {
+  const { t } = useT();
   const { from, to, segment, showArchived, setRange, setSegment, toggleArchived, preset } =
     useFilters();
   const [showCustom, setShowCustom] = useState(false);
   const [customFrom, setCustomFrom] = useState(from);
   const [customTo, setCustomTo] = useState(to);
-  const [dateError, setDateError] = useState('');
+  const datesToggleRef = useRef<HTMLButtonElement>(null);
   // On <768px the controls collapse into a bottom-sheet toggled by «Фильтры».
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const handleCustomApply = () => {
-    const days = daysBetween(customFrom, customTo);
-    if (days > MAX_DAYS) {
-      setDateError(`Максимальный период — ${MAX_DAYS} дней (1 год).`);
-      return;
-    }
-    if (days < 1) {
-      setDateError('Дата окончания должна быть позже даты начала.');
-      return;
-    }
-    setDateError('');
-    setRange(customFrom, customTo);
+  // Live validation (ANA-49): «Применить» stays disabled with a hint while the range is invalid.
+  const error = rangeError(customFrom, customTo);
+  const errorText =
+    error === 'max'
+      ? t('flt.error.max', { n: MAX_DAYS })
+      : error === 'order'
+        ? t('flt.error.order')
+        : error === 'future'
+          ? t('flt.error.future')
+          : error === 'empty'
+            ? t('flt.error.empty')
+            : '';
+
+  // A preset is «active» while the store range matches it exactly (ending today).
+  const isPresetActive = (d: number) => to === isoDaysAgo(0) && daysBetween(from, to) === d - 1;
+
+  const closeCustom = () => {
     setShowCustom(false);
+    datesToggleRef.current?.focus(); // return focus to the trigger (a11y)
+  };
+
+  /** Preset click: apply the range and reset the custom fields to it (ANA-49). */
+  const applyPreset = (d: number) => {
+    preset(d);
+    setCustomFrom(isoDaysAgo(d - 1));
+    setCustomTo(isoDaysAgo(0));
+    setShowCustom(false);
+  };
+
+  const handleCustomApply = () => {
+    if (error !== null) return;
+    setRange(customFrom, customTo);
+    closeCustom();
   };
 
   return (
@@ -49,16 +84,17 @@ export function FilterBar(): JSX.Element {
         type="button"
         onClick={() => setSheetOpen(true)}
         aria-expanded={sheetOpen}
-        className="ml-auto rounded border border-slate-300 px-3 py-1 text-sm md:hidden"
+        aria-controls="filter-controls"
+        className="ml-auto rounded border border-slate-300 px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-indigo-600 md:hidden"
       >
-        Фильтры
+        {t('flt.open')}
       </button>
 
       {/* Backdrop behind the mobile sheet */}
       {sheetOpen && (
         <button
           type="button"
-          aria-label="Закрыть фильтры"
+          aria-label={t('flt.close')}
           onClick={() => setSheetOpen(false)}
           className="fixed inset-0 z-20 bg-black/30 md:hidden"
         />
@@ -66,6 +102,7 @@ export function FilterBar(): JSX.Element {
 
       {/* Controls: inline on ≥768px, bottom-sheet on mobile */}
       <div
+        id="filter-controls"
         className={`${
           sheetOpen ? 'flex' : 'hidden'
         } fixed inset-x-0 bottom-0 z-30 max-h-[80vh] flex-col gap-2 overflow-y-auto rounded-t-2xl border-t border-slate-200 bg-white p-4 shadow-2xl md:static md:z-auto md:flex md:max-h-none md:flex-row md:flex-wrap md:items-center md:overflow-visible md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none`}
@@ -75,77 +112,93 @@ export function FilterBar(): JSX.Element {
           <button
             key={d}
             type="button"
-            onClick={() => {
-              setShowCustom(false);
-              setDateError('');
-              preset(d);
-            }}
-            className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-100"
-            title={
-              d === 365
-                ? 'Показать данные за последний год'
-                : `Показать данные за последние ${d} дней`
-            }
+            onClick={() => applyPreset(d)}
+            aria-pressed={isPresetActive(d)}
+            aria-label={d === 365 ? t('flt.presetYearHint') : t('flt.presetDaysHint', { d })}
+            title={d === 365 ? t('flt.presetYearHint') : t('flt.presetDaysHint', { d })}
+            className={`rounded border px-2 py-1 text-sm focus-visible:ring-2 focus-visible:ring-indigo-600 ${
+              isPresetActive(d)
+                ? 'border-indigo-500 bg-indigo-100 text-indigo-800'
+                : 'border-slate-300 hover:bg-slate-100'
+            }`}
           >
-            {d === 365 ? '1г' : `${d}д`}
+            {d === 365 ? t('flt.presetYear') : t('flt.presetDays', { d })}
           </button>
         ))}
 
-        {/* Custom date picker */}
+        {/* Custom date picker toggle */}
         <button
+          ref={datesToggleRef}
           type="button"
-          onClick={() => {
-            setShowCustom(!showCustom);
-            setDateError('');
-          }}
-          className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-100"
-          title="Выбрать произвольный период (макс. 365 дней)"
+          onClick={() => setShowCustom(!showCustom)}
+          aria-expanded={showCustom}
+          aria-label={t('flt.datesHint')}
+          title={t('flt.datesHint')}
+          className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-indigo-600"
         >
-          📅 Даты
+          📅 {t('flt.dates')}
         </button>
         {showCustom && (
-          <div className="flex w-full flex-col gap-2 rounded border border-indigo-200 bg-indigo-50 px-3 py-2 sm:w-auto sm:flex-row sm:items-center">
+          <div
+            role="group"
+            aria-label={t('flt.dates')}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') closeCustom(); // Esc closes the picker (ANA-49)
+            }}
+            className="flex w-full flex-col gap-2 rounded border border-indigo-200 bg-indigo-50 px-3 py-2 sm:w-auto sm:flex-row sm:items-center"
+          >
             <div className="flex items-center gap-2">
               <label htmlFor="custom-date-from" className="text-xs text-indigo-700">
-                От:
+                {t('flt.from')}
               </label>
               <input
                 id="custom-date-from"
                 type="date"
                 value={customFrom}
-                onChange={(e) => {
-                  setCustomFrom(e.target.value);
-                  setDateError('');
-                }}
-                className="rounded border border-indigo-300 px-2 py-1 text-sm"
+                max={isoDaysAgo(0)} // Metrika serves no future data
+                onChange={(e) => setCustomFrom(e.target.value)}
+                aria-label={t('flt.fromAria')}
+                aria-invalid={
+                  error === 'order' || error === 'future' || error === 'empty' ? true : undefined
+                }
+                className="rounded border border-indigo-300 px-2 py-1 text-sm focus-visible:ring-2 focus-visible:ring-indigo-600"
               />
               <label htmlFor="custom-date-to" className="text-xs text-indigo-700">
-                До:
+                {t('flt.to')}
               </label>
               <input
                 id="custom-date-to"
                 type="date"
                 value={customTo}
-                onChange={(e) => {
-                  setCustomTo(e.target.value);
-                  setDateError('');
-                }}
-                className="rounded border border-indigo-300 px-2 py-1 text-sm"
+                onChange={(e) => setCustomTo(e.target.value)}
+                aria-label={t('flt.toAria')}
+                aria-invalid={error === 'order' || error === 'empty' ? true : undefined}
+                className="rounded border border-indigo-300 px-2 py-1 text-sm focus-visible:ring-2 focus-visible:ring-indigo-600"
               />
               <button
                 type="button"
                 onClick={handleCustomApply}
-                className="rounded bg-indigo-600 px-3 py-1 text-sm text-white hover:bg-indigo-700"
+                disabled={error !== null}
+                aria-describedby="flt-range-hint"
+                className="rounded bg-indigo-600 px-3 py-1 text-sm text-white hover:bg-indigo-700 focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Применить
+                {t('flt.apply')}
               </button>
             </div>
-            {dateError && <p className="text-xs text-red-700">{dateError}</p>}
-            <p className="text-xs text-indigo-600">Макс. период: 365 дней (1 год)</p>
+            {errorText ? (
+              <p id="flt-range-hint" role="alert" className="text-xs text-red-700">
+                {errorText}
+              </p>
+            ) : (
+              <p id="flt-range-hint" className="text-xs text-indigo-600">
+                {t('flt.applyHint')}
+              </p>
+            )}
             <button
               type="button"
-              onClick={() => setShowCustom(false)}
-              className="rounded border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
+              onClick={closeCustom}
+              aria-label={t('common.close')}
+              className="rounded border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-indigo-600"
             >
               ✕
             </button>
@@ -155,17 +208,17 @@ export function FilterBar(): JSX.Element {
         {/* Segment selector with tooltip */}
         <div className="group relative">
           <select
-            aria-label="Сегмент"
+            aria-label={t('flt.segment')}
             value={segment}
             onChange={(e) => setSegment(e.target.value as Segment)}
-            className="rounded border border-slate-300 px-2 py-1 text-sm"
+            className="rounded border border-slate-300 px-2 py-1 text-sm focus-visible:ring-2 focus-visible:ring-indigo-600"
           >
             <option value="b2c">B2C</option>
             <option value="b2c_b2b">B2C+B2B</option>
             <option value="b2b">B2B</option>
           </select>
-          {/* Tooltip */}
-          <div className="absolute left-0 top-full z-20 mt-1 hidden w-64 rounded border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow group-hover:block">
+          {/* Tooltip (hover and keyboard focus) */}
+          <div className="absolute left-0 top-full z-20 mt-1 hidden w-64 rounded border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow group-hover:block group-focus-within:block">
             <p>
               <b>B2C:</b> только потребительские каналы (Direct, Search, Social и др.)
             </p>
@@ -181,15 +234,17 @@ export function FilterBar(): JSX.Element {
         {/* Archived goals checkbox with tooltip */}
         <div className="group relative">
           <label className="flex cursor-pointer items-center gap-1 text-sm text-slate-600">
-            <input type="checkbox" checked={showArchived} onChange={toggleArchived} />
-            Архивные цели
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={toggleArchived}
+              className="focus-visible:ring-2 focus-visible:ring-indigo-600"
+            />
+            {t('filters.archivedGoals')}
           </label>
-          {/* Tooltip */}
-          <div className="absolute left-0 top-full z-20 mt-1 hidden w-64 rounded border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow group-hover:block">
-            <p>
-              Показывать цели Метрики, которые были удалены или заархивированы. По умолчанию —
-              только активные цели.
-            </p>
+          {/* Tooltip (hover and keyboard focus) */}
+          <div className="absolute left-0 top-full z-20 mt-1 hidden w-64 rounded border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow group-hover:block group-focus-within:block">
+            <p>{t('filters.archivedGoalsHint')}</p>
           </div>
         </div>
 
@@ -197,9 +252,9 @@ export function FilterBar(): JSX.Element {
         <button
           type="button"
           onClick={() => setSheetOpen(false)}
-          className="mt-2 rounded bg-indigo-600 px-3 py-2 text-sm text-white md:hidden"
+          className="mt-2 rounded bg-indigo-600 px-3 py-2 text-sm text-white focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-1 md:hidden"
         >
-          Готово
+          {t('flt.done')}
         </button>
       </div>
     </header>

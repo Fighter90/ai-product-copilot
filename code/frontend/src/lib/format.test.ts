@@ -1,9 +1,27 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { formatInt, formatPercent, formatDate } from './format';
 
 describe('format', () => {
   it('formatInt rounds and groups', () => {
     expect(formatInt(1234.6)).toMatch(/1.235/);
+  });
+
+  it('formatInt follows pca.locale: ru thin space, en comma grouping', () => {
+    window.localStorage.setItem('pca.locale', 'en');
+    expect(formatInt(1234567)).toBe('1,234,567');
+    window.localStorage.setItem('pca.locale', 'ru');
+    expect(formatInt(1234567)).toBe('1\u00A0234\u00A0567');
+  });
+
+  it('formatInt falls back to ru-RU when localStorage throws (private mode)', () => {
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    try {
+      expect(formatInt(1234567)).toBe('1\u00A0234\u00A0567');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('formatPercent uses default and custom digits', () => {
@@ -19,4 +37,8 @@ describe('format', () => {
   it('formatDate trims to YYYY-MM-DD', () => {
     expect(formatDate('2025-01-02T10:00:00.000Z')).toBe('2025-01-02');
   });
+});
+
+afterEach(() => {
+  window.localStorage.setItem('pca.locale', 'ru');
 });

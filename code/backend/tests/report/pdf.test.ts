@@ -56,10 +56,21 @@ describe('reportHtml', () => {
     );
     expect(html).toContain('class="cover"');
     expect(html).toContain('class="cover-title"');
-    expect(html).toContain('Содержание');
-    expect(html).toContain('за период 2025-01-01 — 2025-01-07');
-    expect(html).toContain('<h1>1. Краткие итоги</h1>');
-    expect(html).toContain('<li>1. Краткие итоги</li>');
+    // ГОСТ-2: фронт-материя капсом без сквозного номера, разделы «N. ЗАГОЛОВОК»
+    expect(html).toContain('СОДЕРЖАНИЕ');
+    expect(html).toContain('Период данных: 2025-01-01 — 2025-01-07');
+    // UUID среза на титуле отсутствует (ANA-39) — он живёт в «Приложении с данными»
+    expect(html).not.toContain('Идентификатор среза');
+    // Фронт-материя (без номера): ОБОЗНАЧЕНИЯ/ВВЕДЕНИЕ/РЕЗЮМЕ
+    expect(html).toContain('<h1>ОБОЗНАЧЕНИЯ, ТЕРМИНЫ И СОКРАЩЕНИЯ</h1>');
+    expect(html).toContain('<h1>ВВЕДЕНИЕ</h1>');
+    expect(html).toContain('<h1>УПРАВЛЕНЧЕСКОЕ РЕЗЮМЕ</h1>');
+    // Первый нумерованный раздел — «Краткие итоги» (после трёх секций фронт-материи)
+    expect(html).toContain('<h1>1. КРАТКИЕ ИТОГИ</h1>');
+    expect(html).toContain('<li><a href="#sec-4">1. КРАТКИЕ ИТОГИ</a></li>');
+    // ПЕРЕЧЕНЬ РИСУНКОВ и подписи (chartId-фикстура даёт 2 рисунка)
+    expect(html).toContain('ПЕРЕЧЕНЬ РИСУНКОВ');
+    expect(html).toContain('Рисунок 1 — Воронка конверсии');
   });
 
   it('escapes &, < and > in content', () => {
@@ -123,8 +134,11 @@ describe('reportHtml', () => {
       aiNarrative: '## Single Row\n| only one row |',
     };
     const html = reportHtml(singleRowSnapshot);
-    // No table rendered — the | line falls through to inlineToHtml as a plain paragraph
-    expect(html).toContain('<p>');
-    expect(html).not.toContain('<table>');
+    // No table rendered from the single-row line — the | line falls through to inlineToHtml as a
+    // plain paragraph. (The document still contains tables — новые секции ОБОЗНАЧЕНИЯ/итогов.)
+    expect(html).toContain('<h1>11. SINGLE ROW</h1>');
+    expect(html).toContain('<p>| only one row |</p>');
+    // The single-row line must NOT become a header cell of any table.
+    expect(html).not.toContain('<th>only one row</th>');
   });
 });

@@ -1,25 +1,35 @@
 # Модель данных (SQLite)
 
-> Источник истины — миграции `code/backend/src/db/migrations/001..009`. Доступ только через
+> Источник истины — миграции `code/backend/src/db/migrations/001..010`. Доступ только через
 > репозитории (`code/backend/src/db/repositories/`). История копится **по дням** (см. ADR-007).
 > БД: `data/productcamp.sqlite` (gitignored), `better-sqlite3`, WAL + `PRAGMA foreign_keys=ON`.
+> Миграция `010_auth_settings_ai.sql` (v3.0.0) добавляет кабинет: пользователи, сессии, аудит,
+> runtime-настройки, AI-провайдеры, события DataLens и уведомления.
 
 ## Обзор таблиц
 
-| Таблица            | Назначение                                     | Ключ / история                                             |
-| ------------------ | ---------------------------------------------- | ---------------------------------------------------------- |
-| `goals`            | цели Метрики (seed при sync)                   | PK `id`                                                    |
-| `raw_responses`    | сырые ответы Stat API (прослеживаемость / кэш) | UNIQUE `(query_hash, date_from, date_to)` — идемпотентно   |
-| `channel_stats`    | нормализованные метрики по каналам             | PK `(date, channel, utm_source, utm_medium, utm_campaign)` |
-| `utm_stats`        | разбивка по UTM source/medium/campaign         | PK `(date, utm_source, utm_medium, utm_campaign)`          |
-| `geo_device_stats` | разбивка по стране + типу устройства           | PK `(date, country, device)`                               |
-| `page_stats`       | поведение страниц входа (`ym:s:startURL`)      | PK `(date, page)`                                          |
-| `exit_page_stats`  | поведение страниц выхода (`ym:s:exitURL`)      | PK `(date, page)`                                          |
-| `hypotheses`       | гипотезы методологии (ручные)                  | PK `id`; `ice_score` GENERATED                             |
-| `b2b_manual`       | ручной B2B-пайплайн                            | PK `id`; этапы lead/negotiation/invoiced/paid              |
-| `report_snapshots` | immutable срезы данных для отчётов             | PK `id` (ulid)                                             |
-| `decisions`        | Decision Log                                   | PK `id`; FK → `hypotheses`; `number` UNIQUE                |
-| `_migrations`      | трекинг применённых миграций                   | PK `name`                                                  |
+| Таблица            | Назначение                                         | Ключ / история                                             |
+| ------------------ | -------------------------------------------------- | ---------------------------------------------------------- |
+| `goals`            | цели Метрики (seed при sync)                       | PK `id`                                                    |
+| `raw_responses`    | сырые ответы Stat API (прослеживаемость / кэш)     | UNIQUE `(query_hash, date_from, date_to)` — идемпотентно   |
+| `channel_stats`    | нормализованные метрики по каналам                 | PK `(date, channel, utm_source, utm_medium, utm_campaign)` |
+| `utm_stats`        | разбивка по UTM source/medium/campaign             | PK `(date, utm_source, utm_medium, utm_campaign)`          |
+| `geo_device_stats` | разбивка по стране + типу устройства               | PK `(date, country, device)`                               |
+| `page_stats`       | поведение страниц входа (`ym:s:startURL`)          | PK `(date, page)`                                          |
+| `exit_page_stats`  | поведение страниц выхода (`ym:s:exitURL`)          | PK `(date, page)`                                          |
+| `hypotheses`       | гипотезы методологии (ручные)                      | PK `id`; `ice_score` GENERATED                             |
+| `b2b_manual`       | ручной B2B-пайплайн                                | PK `id`; этапы lead/negotiation/invoiced/paid              |
+| `report_snapshots` | immutable срезы данных для отчётов                 | PK `id` (ulid)                                             |
+| `decisions`        | Decision Log                                       | PK `id`; FK → `hypotheses`; `number` UNIQUE                |
+| `users`            | пользователи кабинета (v3)                         | PK `id`; `email` UNIQUE (NO CASE); роли admin/analyst      |
+| `sessions`         | серверные сессии (v3)                              | PK `token_hash` (sha256); FK → `users` ON DELETE CASCADE   |
+| `audit_log`        | журнал действий (v3)                               | PK `id`; индекс `at`                                       |
+| `app_settings`     | runtime-настройки админа, переопределяют .env (v3) | PK `key`; секреты — AES-256-GCM                            |
+| `ai_providers`     | AI-провайдеры и их ключи (v3)                      | PK `id` ∈ openrouter/anthropic/yandexgpt/gigachat          |
+| `ai_usage`         | журнал вызовов AI (v3)                             | PK `id`                                                    |
+| `datalens_events`  | события webhook DataLens (v3)                      | PK `id`; хвост 500 записей                                 |
+| `notifications`    | уведомления (колокольчик в кабинете, v3)           | PK `id`; `audience` ∈ admin/all; `read_by` JSON            |
+| `_migrations`      | трекинг применённых миграций                       | PK `name`                                                  |
 
 > **Где живут AI-гипотезы и AI Decision Log (с v2.7.0).** AI-сгенерированные гипотезы и решения
 > хранятся НЕ в таблицах `hypotheses`/`decisions`, а внутри JSON-payload снапшота
@@ -171,9 +181,118 @@ UNIQUE `(query_hash, date_from, date_to)` → повторный запрос и
 
 ---
 
+## Кабинет, настройки и интеграции (миграция 010, v3.0.0)
+
+### `users`
+
+| Колонка                        | Тип     | Описание                                                          |
+| ------------------------------ | ------- | ----------------------------------------------------------------- |
+| `id`                           | INTEGER | PK (AUTOINCREMENT)                                                |
+| `email`                        | TEXT    | UNIQUE, регистронезависимо (`COLLATE NOCASE`)                     |
+| `name`                         | TEXT    | отображаемое имя                                                  |
+| `role`                         | TEXT    | `admin` / `analyst` (CHECK)                                       |
+| `password_hash`                | TEXT    | scrypt (`scrypt$N$saltB64$hashB64`), без соли в отдельной колонке |
+| `is_active`                    | INTEGER | 1 = может входить; деактивация вместо удаления                    |
+| `locale`                       | TEXT    | `ru` (по умолчанию) / `en` — сохранённый язык UI                  |
+| `created_at` / `last_login_at` | TEXT    | таймстемпы                                                        |
+
+Первый администратор создаётся при старте из `ADMIN_EMAIL`/`ADMIN_PASSWORD`, когда таблица пуста
+(`ensureBootstrapUsers`); `DEMO_USERS=1` добавляет демо-админа и демо-аналитика. Защита от
+«последнего админа»: понижение/деактивация единственного активного админа отклоняется (409).
+
+### `sessions`
+
+| Колонка                     | Тип     | Описание                                                       |
+| --------------------------- | ------- | -------------------------------------------------------------- |
+| `token_hash`                | TEXT    | PK — **sha256** cookie-токена (сам токен не хранится)          |
+| `user_id`                   | INTEGER | FK → `users.id` ON DELETE CASCADE                              |
+| `created_at` / `expires_at` | TEXT    | время создания/истечения (`SESSION_DAYS`, по умолчанию 7 дней) |
+| `ip` / `user_agent`         | TEXT    | метаданные входа (опц.)                                        |
+
+Индекс `(user_id)`. Истечение проверяется при каждом запросе (guard в `auth/auth.ts`);
+logout удаляет строку.
+
+### `audit_log`
+
+| Колонка                  | Тип            | Описание (примеры действий)                                                                                                                               |
+| ------------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                     | INTEGER        | PK                                                                                                                                                        |
+| `at`                     | TEXT           | ISO-время; индекс `idx_audit_at`                                                                                                                          |
+| `user_id` / `user_email` | INTEGER / TEXT | кто (для неуспешных логинов `user_id` NULL)                                                                                                               |
+| `action`                 | TEXT           | `auth.login`, `auth.login_failed`, `auth.logout`, `auth.password_changed`, `users.create/update/reset_password`, `datalens.export`, `datalens.request`, … |
+| `target`                 | TEXT           | объект действия (напр. email пользователя, id датасета)                                                                                                   |
+| `details`                | TEXT           | JSON-детали (опц.)                                                                                                                                        |
+
+Читается в «Администрирование → Аудит» (`GET /api/admin/audit`, лимит до 1000 записей).
+
+### `app_settings`
+
+Runtime-настройки, редактируемые админом без рестарта (переопределяют `.env`):
+
+| Колонка                     | Тип     | Описание                                                                                                                                                                                                     |
+| --------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `key`                       | TEXT    | PK. Разрешены: `YANDEX_OAUTH_TOKEN`, `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET`, `COUNTER_ID`, `GOAL_ID`, `ORDER_GOAL_ID`, `KPI_TARGET`, `DATALENS_WEBHOOK_TOKEN`, `DATALENS_LINKS`, `TEST_TRAFFIC_PATTERNS` |
+| `value`                     | TEXT    | значение; для секретов — `iv:tag:ciphertext` (base64)                                                                                                                                                        |
+| `is_secret`                 | INTEGER | 1 = расшифровывать `APP_SECRET`-ключом (AES-256-GCM)                                                                                                                                                         |
+| `updated_at` / `updated_by` | TEXT    | кто и когда изменил                                                                                                                                                                                          |
+
+Секретные ключи: `YANDEX_OAUTH_TOKEN`, `YANDEX_CLIENT_SECRET`, `DATALENS_WEBHOOK_TOKEN`.
+`get(key)` возвращает: значение из БД → значение из `.env` (seed) → `''`; плейсхолдеры
+`YOUR_*_HERE` считаются пустыми. Изменение токена/счётчика пересобирает кэшированный
+Metrika-клиент без перезапуска (`onSettingsChange`).
+
+### `ai_providers`
+
+| Колонка                                               | Тип                   | Описание                                                          |
+| ----------------------------------------------------- | --------------------- | ----------------------------------------------------------------- |
+| `id`                                                  | TEXT                  | PK: `openrouter` / `anthropic` / `yandexgpt` / `gigachat` (CHECK) |
+| `enabled`                                             | INTEGER               | 1 = участвует в цепочке                                           |
+| `priority`                                            | INTEGER               | порядок обхода (меньше — раньше)                                  |
+| `model`                                               | TEXT                  | выбранная модель (напр. `anthropic/claude-sonnet-4.5`)            |
+| `secret_enc`                                          | TEXT                  | **AES-256-GCM** ключ провайдера (`iv:tag:ciphertext`, base64)     |
+| `extra_json`                                          | TEXT                  | доп. поля: `folderId` (YandexGPT), `scope` (GigaChat)             |
+| `updated_at` / `updated_by`                           | TEXT                  | кто и когда настроил                                              |
+| `last_test_at` / `last_test_ok` / `last_test_message` | TEXT / INTEGER / TEXT | результат кнопки «Проверить»                                      |
+
+Цепочка: `LlmService.complete` идёт по включённым провайдерам в порядке `priority`; сбой → следующий.
+`.env`-ключи (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `YANDEX_AI_API_KEY`, `GIGACHAT_AUTH_KEY`) —
+только первичный seed при пустой таблице.
+
+### `ai_usage`
+
+Журнал вызовов AI (статистика за 30 дней — «Администрирование → AI-провайдеры»):
+
+`id`, `at`, `provider`, `model`, `purpose` (напр. `help-assistant`, секции отчёта), `user_email`,
+`ok` (0/1), `input_chars`, `output_chars`, `ms`, `error`.
+
+### `datalens_events`
+
+Входящие события webhook-приёмника DataLens (`POST /api/integrations/datalens/webhook/:token`,
+публичный, токен сравнивается с `app_settings.DATALENS_WEBHOOK_TOKEN`):
+`id`, `received_at`, `kind` (`confirmation` — извлечён код подтверждения / `notification`), `code`,
+`payload` (JSON, обрезается до 64 КБ). Автоочистка: хвост 500 записей.
+
+### `notifications`
+
+| Колонка          | Тип     | Описание                                                                |
+| ---------------- | ------- | ----------------------------------------------------------------------- |
+| `id`             | INTEGER | PK                                                                      |
+| `at`             | TEXT    | время                                                                   |
+| `audience`       | TEXT    | `admin` / `all` (CHECK)                                                 |
+| `kind`           | TEXT    | `datalens.confirmation`, `datalens.notification`, `datalens.request`, … |
+| `title` / `body` | TEXT    | заголовок / текст (body опц.)                                           |
+| `read_by`        | TEXT    | JSON-массив id пользователей, прочитавших уведомление                   |
+
+Показываются в колокольчике кабинета (`GET /api/notifications`); «прочитать всё» —
+`POST /api/notifications/read`. Аналитик может запросить подключение DataLens
+(`POST /api/integrations/datalens/request`) → уведомление админам + запись в аудит.
+
+---
+
 ## Связи и инварианты
 
 - `decisions.hypothesis_id` → `hypotheses.id` (FK, `foreign_keys=ON`).
+- `sessions.user_id` → `users.id` (FK ON DELETE CASCADE): удаление пользователя чистит его сессии.
 - При создании `decision` статус связанной гипотезы атомарно становится `outcome` (green/yellow/red).
 - `hypotheses.parent_id` → `hypotheses.id` (solution → problem).
 - Гипотеза не сохраняется без формата методологии (≥3 допущения по 3 категориям, ≥2 метода, светофор,
@@ -181,6 +300,8 @@ UNIQUE `(query_hash, date_from, date_to)` → повторный запрос и
 - `decisions` требует ≥1 evidence.
 - KPI-прогресс: оплаты = B2B `paid` **+** достижения цели-покупки из Метрики (когда основная цель —
   `e_purchase`); заявка ≠ оплата для целей-заявок.
+- Секреты в БД (`sessions.token_hash`, `users.password_hash`, `app_settings.value` при
+  `is_secret=1`, `ai_providers.secret_enc`) хранятся только в виде хэша или шифротекста.
 
 ---
 
@@ -189,8 +310,9 @@ UNIQUE `(query_hash, date_from, date_to)` → повторный запрос и
 ```
 Stat API → raw_responses (сырьё) → нормализация → channel_stats / utm_stats / geo_device_stats /
 page_stats / exit_page_stats  →  SnapshotBuilder → report_snapshots.payload → DOCX/PDF + экран
+DataLens ← CSV-экспорт (channels/utm/pages/geo_device/b2b) ← те же таблицы метрик + b2b_manual
 ```
 
 Повторный `pnpm sync` дополняет историю по дням, не затирая прошлые даты. Смена KPI-цели или
 исправление единиц требует чистой БД (`rm data/productcamp.sqlite*`) — upsert накапливает, не удаляя
-устаревшие строки.
+устаревшие строки. Live-страницы (`/api/live/*`) в БД не пишут — читают Reporting API напрямую.

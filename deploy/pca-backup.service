@@ -1,0 +1,34 @@
+# systemd-юнит ежедневного бэкапа SQLite PCA (скрипт backup.sh).
+# Запускается по расписанию из pca-backup.timer (ежедневно 04:30).
+# Ручной запуск: systemctl start pca-backup.service
+# Логи: journalctl -u pca-backup.service -n 50  и  /opt/pca/backups/backup.log
+
+[Unit]
+Description=PCA SQLite backup (sqlite3 .backup -> gzip, keep 14)
+Documentation=file:/opt/pca/deploy/DEPLOY.md
+After=local-fs.target
+
+[Service]
+Type=oneshot
+
+# Бэкап пишет в /opt/pca/data и /opt/pca/backups — работает от владельца данных.
+User=pca
+Group=pca
+WorkingDirectory=/opt/pca
+
+ExecStart=/opt/pca/deploy/backup.sh
+TimeoutStartSec=10min
+
+# Ночная фоновая задача: на 1-CPU машине не мешаем основному API.
+Nice=10
+IOSchedulingClass=idle
+
+# Базовый харденинг: писать нужно только в /opt/pca (при ProtectSystem=full
+# /usr, /boot, /etc read-only, а /opt остаётся доступным на запись).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true

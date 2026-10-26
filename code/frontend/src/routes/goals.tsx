@@ -1,11 +1,16 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { B2bDeal, ChannelStat, GoalLabel } from '@pca/shared';
 import { periodTotals, formatGoalLabel } from '@pca/shared';
 import { api } from '../lib/api';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
-import { simulatePayments } from '../lib/what-if';
+import { dailySeries, type DailyPoint } from '../lib/trends';
+import { forecastGoal, forecastChartOption } from '../lib/forecast';
+import { pipelineSummary } from '../lib/b2b';
+import { Card } from '../components/ui';
+import { EChart } from '../components/charts/EChart';
+import { useT, fmtDate, fmtNum, type DictKey } from '../i18n';
 
 type QueryStatus = 'pending' | 'error' | 'success';
 
@@ -66,94 +71,227 @@ function calcB2bPipeline(deals: B2bDeal[]): number {
   return deals.filter((d) => d.stage !== 'paid').reduce((sum, d) => sum + d.tickets, 0);
 }
 
+/** Localised label for a B2B pipeline stage. */
+function stageKey(stage: B2bDeal['stage']): DictKey {
+  return `kpi.whatif.b2b.stage${stage.charAt(0).toUpperCase()}${stage.slice(1)}` as DictKey;
+}
+
 /**
- * «Что если» — interactive simulator card. Thin UI: all math lives in lib/what-if. Two range
- * sliders (extra traffic %, CR uplift %) recompute projected applications / payments / gap live.
+ * «Что если» (ANA-50) — pace forecast + scenario card for /app/kpi. Thin UI: all math lives in
+ * lib/forecast. Tab 1 «Прогноз»: linear pace from daily goal reaches → goal-achievement date vs
+ * the 2×-window deadline, two levers (traffic ±%, CR +п.п.) recompute it live, EChart shows the
+ * cumulative fact + dashed scenario forecast + the target line. Tab 2 «B2B»: pipeline by stage and
+ * the money summary (amount_rub does not convert to tickets — shown as a separate summary table).
  */
-function WhatIfCard({
-  visits,
-  applications,
-  b2bPaid,
+function WhatIfForecast({
+  points,
+  to,
   target,
+  deals,
 }: {
-  visits: number;
-  applications: number;
-  b2bPaid: number;
+  points: DailyPoint[];
+  to: string;
   target: number;
+  deals: B2bDeal[];
 }): JSX.Element {
-  const [extraVisitsPct, setExtraVisitsPct] = useState(0);
-  const [crUpliftPct, setCrUpliftPct] = useState(0);
-  const sim = simulatePayments({
-    visits,
-    applications,
-    b2bPaid,
-    target,
-    extraVisitsPct,
-    crUpliftPct,
-  });
+  const { t, locale } = useT();
+  const [trafficPct, setTrafficPct] = useState(0);
+  const [crUpliftPp, setCrUpliftPp] = useState(0);
+  const [tab, setTab] = useState<'forecast' | 'b2b'>('forecast');
+
+  // Client-side, on the fly: pure math, no refetch.
+  const fc = useMemo(
+    () => forecastGoal({ points, to, target, trafficPct, crUpliftPp }),
+    [points, to, target, trafficPct, crUpliftPp],
+  );
+  const summary = useMemo(() => pipelineSummary(deals), [deals]);
+
+  const scenarioDateLabel = fc.scenarioDate
+    ? fmtDate(fc.scenarioDate, locale)
+    : fc.reached
+      ? t('kpi.whatif.reached')
+      : t('kpi.whatif.unreachable');
+  // deviationDays: negative = ahead of the deadline (запас), positive = behind it (отставание).
+  const deviation =
+    fc.deviationDays === null ? (
+      <span className="text-xl font-bold text-slate-400">—</span>
+    ) : fc.deviationDays < 0 ? (
+      <span className="text-xl font-bold text-green-700">
+        {t('kpi.whatif.deviationAhead', { n: Math.abs(fc.deviationDays) })}
+      </span>
+    ) : fc.deviationDays === 0 ? (
+      <span className="text-xl font-bold text-amber-700">{t('kpi.whatif.onTime')}</span>
+    ) : (
+      <span className="text-xl font-bold text-red-700">
+        {t('kpi.whatif.deviationBehind', { n: fc.deviationDays })}
+      </span>
+    );
+
+  const amounts = deals.filter((d) => (d.amountRub ?? 0) > 0);
+  const amountSum = amounts.reduce((acc, d) => acc + (d.amountRub ?? 0), 0);
+
+  const tabBtn = (id: 'forecast' | 'b2b', label: string): JSX.Element => (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={tab === id}
+      onClick={() => setTab(id)}
+      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+        tab === id
+          ? 'border-accent/40 bg-accent/10 text-accent'
+          : 'border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-700'
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 className="mb-1 text-lg font-semibold">Что если</h3>
-      <p className="mb-4 text-xs text-slate-500">
-        Прикидка эффекта от роста трафика и конверсии. Оценка, не факт: Метрика не покрывает шаг
-        заявка→оплата.
-      </p>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <label className="block text-sm">
-          <span className="text-slate-600">
-            Доп. трафик: <b>+{extraVisitsPct}%</b>
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={200}
-            step={5}
-            value={extraVisitsPct}
-            onChange={(e) => setExtraVisitsPct(Number(e.target.value))}
-            className="mt-1 w-full"
-            aria-label="Дополнительный трафик в процентах"
-          />
-        </label>
-        <label className="block text-sm">
-          <span className="text-slate-600">
-            Рост CR: <b>+{crUpliftPct}%</b>
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={200}
-            step={5}
-            value={crUpliftPct}
-            onChange={(e) => setCrUpliftPct(Number(e.target.value))}
-            className="mt-1 w-full"
-            aria-label="Рост конверсии в процентах"
-          />
-        </label>
+    <Card title={t('kpi.whatif.title')} hint={t('kpi.whatif.hint')}>
+      <div role="tablist" aria-label={t('kpi.whatif.title')} className="mb-4 flex gap-2">
+        {tabBtn('forecast', t('kpi.whatif.tabForecast'))}
+        {tabBtn('b2b', t('kpi.whatif.tabB2b'))}
       </div>
-      <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-        <div className="rounded bg-slate-50 px-3 py-2">
-          <div className="text-xs text-slate-500">Заявки</div>
-          <div className="text-xl font-bold">{formatInt(sim.projectedApplications)}</div>
-          <div className="text-xs text-slate-500">
-            {sim.addedVsNow >= 0 ? '+' : ''}
-            {formatInt(sim.addedVsNow)} к текущему
+
+      {tab === 'forecast' ? (
+        <div role="tabpanel" aria-label={t('kpi.whatif.tabForecast')}>
+          {/* Forecast numbers: scenario pace, goal date, deviation vs the deadline */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded bg-slate-50 px-3 py-2 text-center">
+              <div className="text-xs text-slate-500">{t('kpi.whatif.paceNow')}</div>
+              <div className="text-xl font-bold">
+                {fmtNum(fc.scenarioPace, locale, 1)}{' '}
+                <span className="text-xs font-normal text-slate-500">{t('kpi.whatif.perDay')}</span>
+              </div>
+            </div>
+            <div className="rounded bg-slate-50 px-3 py-2 text-center">
+              <div className="text-xs text-slate-500">{t('kpi.whatif.forecastDate')}</div>
+              <div className="text-xl font-bold">{scenarioDateLabel}</div>
+            </div>
+            <div className="rounded bg-slate-50 px-3 py-2 text-center">
+              <div className="text-xs text-slate-500">
+                {t('kpi.whatif.deviationLabel', { date: fmtDate(fc.horizonDate, locale) })}
+              </div>
+              {deviation}
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            {t('kpi.whatif.baselineCaption', {
+              pace: fmtNum(fc.pace, locale, 1),
+              date: fc.baselineDate
+                ? fmtDate(fc.baselineDate, locale)
+                : t('kpi.whatif.unreachable'),
+            })}
+            {' · '}
+            {t('kpi.whatif.onDeadline', { n: fmtNum(fc.projectedAtHorizon, locale, 0) })}
+          </p>
+
+          {/* Scenario sliders: traffic ±% and CR +п.п., recomputed live */}
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <label className="block text-sm">
+              <span className="text-slate-600">{t('kpi.whatif.traffic', { pct: trafficPct })}</span>
+              <input
+                type="range"
+                min={0}
+                max={50}
+                step={5}
+                value={trafficPct}
+                onChange={(e) => setTrafficPct(Number(e.target.value))}
+                className="mt-1 w-full"
+                aria-label={t('kpi.whatif.trafficAria')}
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-slate-600">{t('kpi.whatif.cr', { pp: crUpliftPp })}</span>
+              <input
+                type="range"
+                min={0}
+                max={5}
+                step={0.5}
+                value={crUpliftPp}
+                onChange={(e) => setCrUpliftPp(Number(e.target.value))}
+                className="mt-1 w-full"
+                aria-label={t('kpi.whatif.crAria')}
+              />
+            </label>
+          </div>
+
+          {/* Cumulative fact + dashed scenario forecast + target line */}
+          <div className="mt-4">
+            <EChart
+              height={280}
+              option={forecastChartOption({
+                points,
+                to,
+                target,
+                totalNow: fc.totalNow,
+                scenarioPace: fc.scenarioPace,
+                scenarioDays: fc.scenarioDays,
+                horizonDays: fc.windowDays * 2,
+                labels: {
+                  fact: t('kpi.whatif.chartFact'),
+                  forecast: t('kpi.whatif.chartForecast'),
+                  target: t('kpi.whatif.chartTarget', { n: formatInt(target) }),
+                },
+              })}
+            />
+          </div>
+          <p className="mt-2 text-xs text-slate-500">{t('kpi.whatif.disclaimer')}</p>
+        </div>
+      ) : (
+        <div role="tabpanel" aria-label={t('kpi.whatif.tabB2b')}>
+          {/* Pipeline by stage (tickets) */}
+          <h4 className="mb-2 text-sm font-semibold text-slate-700">
+            {t('kpi.whatif.b2b.byStage')}
+          </h4>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {summary.byStage.map((s) => (
+              <div key={s.stage} className="rounded border border-slate-200 bg-slate-50 p-3">
+                <div className="text-xs font-semibold uppercase text-slate-500">
+                  {t(stageKey(s.stage) as never)}
+                </div>
+                <div className="text-lg font-bold">{formatInt(s.tickets)}</div>
+                <div className="text-xs text-slate-500">{s.deals}</div>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-3 text-sm text-slate-600">
+            {t('kpi.whatif.b2b.contribution', {
+              paid: formatInt(summary.paidTickets),
+              target: formatInt(target),
+              pct: target > 0 ? ((summary.paidTickets / target) * 100).toFixed(1) : '0',
+            })}
+          </p>
+
+          {/* Money summary — amount_rub does not convert to tickets, reported separately */}
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-left text-slate-500">
+                  <th className="px-3 py-2">{t('kpi.whatif.b2b.dealsCount')}</th>
+                  <th className="px-3 py-2">{t('kpi.whatif.b2b.amount')}</th>
+                  <th className="px-3 py-2">{t('kpi.whatif.b2b.avgTicket')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-t border-slate-100">
+                  <td className="px-3 py-2 font-bold">{formatInt(deals.length)}</td>
+                  <td className="px-3 py-2 font-bold">
+                    {amounts.length > 0 ? `${formatInt(amountSum)} ₽` : '—'}
+                  </td>
+                  <td className="px-3 py-2 font-bold">
+                    {amounts.length > 0
+                      ? `${formatInt(amountSum / amounts.length)} ₽`
+                      : t('kpi.whatif.b2b.noAmounts')}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
-        <div className="rounded bg-slate-50 px-3 py-2">
-          <div className="text-xs text-slate-500">Оценка оплат</div>
-          <div className="text-xl font-bold">{formatInt(sim.projectedPayments)}</div>
-        </div>
-        <div className="rounded bg-slate-50 px-3 py-2">
-          <div className="text-xs text-slate-500">Gap до цели</div>
-          <div
-            className={`text-xl font-bold ${sim.gapAfter === 0 ? 'text-green-700' : 'text-red-700'}`}
-          >
-            {formatInt(sim.gapAfter)}
-          </div>
-        </div>
-      </div>
-    </div>
+      )}
+    </Card>
   );
 }
 
@@ -168,6 +306,8 @@ export function GoalsView({
   overallCR,
   deals,
   goalLabel,
+  points,
+  to,
 }: {
   status: QueryStatus;
   target: number;
@@ -178,6 +318,10 @@ export function GoalsView({
   overallCR: number;
   deals: B2bDeal[];
   goalLabel?: GoalLabel;
+  /** Daily fact (visits + goal reaches) — feeds the «Что если» pace forecast. */
+  points: DailyPoint[];
+  /** Selected period end (ISO date) — the forecast anchor. */
+  to: string;
 }): JSX.Element {
   if (status === 'pending') return <p className="text-slate-500">Загрузка…</p>;
   if (status === 'error')
@@ -345,13 +489,8 @@ export function GoalsView({
         </div>
       </div>
 
-      {/* What-if simulator */}
-      <WhatIfCard
-        visits={totalVisits}
-        applications={b2cApplications}
-        b2bPaid={b2bPaid}
-        target={target}
-      />
+      {/* «Что если» (ANA-50): pace forecast + scenario sliders + chart, B2B pipeline tab */}
+      <WhatIfForecast points={points} to={to} target={target} deals={deals} />
 
       {/* Recommendations */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -429,8 +568,9 @@ export function Goals(): JSX.Element {
   const data: ChannelStat[] = channelsQ.data ?? [];
   const deals: B2bDeal[] = b2bQ.data ?? [];
   // Headline Визиты/Заявки B2C/CR come from the single factsource so this page agrees with
-  // Overview and Funnel.
+  // Overview and Funnel. The same rows collapse into the daily series for the pace forecast.
   const totals = periodTotals(data);
+  const points = useMemo(() => dailySeries(data), [data]);
   const b2bPaid = calcB2bPaid(deals);
   const b2bPipeline = calcB2bPipeline(deals);
 
@@ -445,6 +585,8 @@ export function Goals(): JSX.Element {
       overallCR={totals.conversionRate}
       deals={deals}
       goalLabel={formatGoalLabel(goalQ.data)}
+      points={points}
+      to={to}
     />
   );
 }

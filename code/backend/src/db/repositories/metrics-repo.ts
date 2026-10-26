@@ -193,8 +193,7 @@ export class MetricsRepo {
 
   getRawResponse(id: number): RawResponse | undefined {
     const r = this.db.prepare('SELECT * FROM raw_responses WHERE id = ?').get(id) as
-      | RawRow
-      | undefined;
+      RawRow | undefined;
     if (!r) return undefined;
     return {
       id: r.id,

@@ -65,10 +65,18 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'content-type': 'application/json' },
     ...init,
   });
-  if (!res.ok) throw new ApiError(res.status, await res.text());
+  if (!res.ok) {
+    // Session expired in the cabinet → let AuthProvider redirect to /login.
+    if (res.status === 401 && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pca:unauthorized'));
+    }
+    throw new ApiError(res.status, await res.text());
+  }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
+
+export { http };
 
 export const api = {
   health: () => http<HealthInfo>('/health'),

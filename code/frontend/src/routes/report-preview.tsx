@@ -6,7 +6,17 @@ import { formatInt, formatPercent } from '../lib/format';
 import { errorMessage } from '../lib/error-message';
 import { downloadFile, reportDownloadUrl } from '../lib/download';
 import { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { mdToHtml } from '../lib/md-to-html';
+import {
+  hasSeed,
+  loadHypothesisSeed,
+  storeHypothesisSeed,
+  clearHypothesisSeed,
+  dropHypothesisSeedParams,
+  parseHypothesisSeed,
+  type HypothesisSeed,
+} from '../lib/hypothesis-prefill';
 
 function Stat({
   label,
@@ -102,6 +112,10 @@ export interface ReportPreviewProps {
   narrative: string | undefined;
   insightsError: string | undefined;
   onInsights: (snapshotId: string) => void;
+  /** ANA-24: hypothesis draft prefilled from a «→ гипотеза» deep link (Overview/Traffic). */
+  prefillSeed?: HypothesisSeed;
+  onPrefillChange?: (next: HypothesisSeed) => void;
+  onDiscardPrefill?: () => void;
 }
 
 // 5 stages matching the backend ANALYSIS_CHUNKS
@@ -114,6 +128,75 @@ const AI_STAGES = [
   'Генерация: Гипотезы и Дорожная карта',
 ];
 
+/**
+ * ANA-24: editable hypothesis draft prefilled from the «→ гипотеза» deep link. Lives on the
+ * report page because that is where hypotheses work happens in v3; the draft persists in
+ * sessionStorage, so a refresh keeps it until the user discards it.
+ */
+export function HypothesisDraftCard({
+  seed,
+  onChange,
+  onDiscard,
+}: {
+  seed: HypothesisSeed;
+  onChange?: (next: HypothesisSeed) => void;
+  onDiscard?: () => void;
+}): JSX.Element | null {
+  if (!hasSeed(seed)) return null;
+
+  const update = (key: keyof HypothesisSeed, value: string): HypothesisSeed => {
+    const next: { -readonly [K in keyof HypothesisSeed]: HypothesisSeed[K] } = {
+      segment: seed.segment,
+      trouble: seed.trouble,
+      action: seed.action,
+      barrier: seed.barrier,
+      evidence: seed.evidence,
+    };
+    next[key] = value;
+    return next;
+  };
+
+  const field = (key: keyof HypothesisSeed, label: string): JSX.Element => (
+    <label key={key} className="block text-xs">
+      <span className="mb-0.5 block font-medium text-slate-600">{label}</span>
+      <input
+        value={seed[key] ?? ''}
+        onChange={(e) => onChange?.(update(key, e.target.value))}
+        className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+      />
+    </label>
+  );
+
+  return (
+    <div
+      data-testid="hypothesis-draft"
+      className="space-y-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-indigo-900">Черновик гипотезы</h3>
+        <button
+          type="button"
+          onClick={() => onDiscard?.()}
+          className="text-xs text-slate-500 hover:text-slate-800"
+        >
+          Убрать черновик
+        </button>
+      </div>
+      <p className="text-xs text-indigo-700">
+        Контекст перенесён с дашборда («→ гипотеза»). Дополните формулировку — черновик хранится до
+        конца сессии.
+      </p>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {field('segment', 'ЦА / сегмент')}
+        {field('trouble', 'Проблема (симптом)')}
+        {field('action', 'Действие пользователя')}
+        {field('barrier', 'Барьер')}
+        {field('evidence', 'Данные (обоснование)')}
+      </div>
+    </div>
+  );
+}
+
 /** Pure preview: the snapshot summary that DOCX/PDF render from, plus export. */
 export function ReportPreviewView({
   snapshot,
@@ -124,6 +207,9 @@ export function ReportPreviewView({
   narrative,
   insightsError,
   onInsights,
+  prefillSeed,
+  onPrefillChange,
+  onDiscardPrefill,
 }: ReportPreviewProps): JSX.Element {
   const [aiProgress, setAiProgress] = useState(0);
   const [aiStage, setAiStage] = useState('');
@@ -198,6 +284,13 @@ export function ReportPreviewView({
         </button>
       </div>
 
+      {/* ANA-24: prefill from the «→ гипотеза» deep link lands in this editable draft. */}
+      <HypothesisDraftCard
+        seed={prefillSeed ?? {}}
+        onChange={onPrefillChange}
+        onDiscard={onDiscardPrefill}
+      />
+
       {snapshot ? (
         <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs text-slate-500">
@@ -205,7 +298,8 @@ export function ReportPreviewView({
             сформирован {snapshot.generatedAt}
           </p>
 
-          {/* KPI strip — primary-goal label follows the snapshot (Оплат for a purchase goal). */}
+          {/* KPI strip — primary-goal label follows the snapshot («Заказов» for a purchase goal:
+              the Ecommerce goal fires on order creation, not on payment — ANA-19). */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Stat label="Цель" value={formatInt(snapshot.kpi.target)} />
             <Stat
@@ -215,7 +309,7 @@ export function ReportPreviewView({
                 snapshot.goalLabel?.showApplicationsCaveat === false ? undefined : 'заявка ≠ оплата'
               }
             />
-            <Stat label="Оплачено B2B" value={formatInt(snapshot.kpi.b2bPaidTickets)} />
+            <Stat label="Заказов создано (B2B)" value={formatInt(snapshot.kpi.b2bPaidTickets)} />
             <Stat label="Gap" value={formatInt(snapshot.kpi.gap)} />
           </div>
 
@@ -233,7 +327,10 @@ export function ReportPreviewView({
                 }
               />
               <Stat label="B2B в работе" value={formatInt(snapshot.funnel.b2bPipelineTickets)} />
-              <Stat label="B2B оплачено" value={formatInt(snapshot.funnel.b2bPaidTickets)} />
+              <Stat
+                label="Заказов создано (B2B)"
+                value={formatInt(snapshot.funnel.b2bPaidTickets)}
+              />
             </div>
           )}
 
@@ -244,7 +341,7 @@ export function ReportPreviewView({
               <p className="text-xs text-slate-600">
                 {snapshot.b2bSummary.dealsCount} сделок ·{' '}
                 {formatInt(snapshot.b2bSummary.totalTickets)} билетов всего ·{' '}
-                {formatInt(snapshot.b2bSummary.paidTickets)} оплачено
+                {formatInt(snapshot.b2bSummary.paidTickets)} заказов создано
               </p>
               <div className="flex gap-2 text-xs text-slate-500">
                 {snapshot.b2bSummary.byStage.map((s) => (
@@ -336,11 +433,13 @@ export function ReportPreviewView({
 /** Data wrapper: builds/rebuilds a snapshot and downloads DOCX/PDF to the user's computer. */
 export function ReportPreview(): JSX.Element {
   const { from, to } = useFilters();
+  const location = useLocation();
+  const navigate = useNavigate();
   const buildMut = useMutation({ mutationFn: api.buildSnapshot });
   const insightsMut = useMutation({ mutationFn: api.generateInsights });
 
   // Check for existing snapshot ID in URL (from History page)
-  const searchParams = new URLSearchParams(window.location.search);
+  const searchParams = new URLSearchParams(location.search);
   const snapshotId = searchParams.get('snapshot');
 
   const existingSnapshot = useQuery({
@@ -356,6 +455,22 @@ export function ReportPreview(): JSX.Element {
   const narrative = insightsMut.data?.narrative ?? savedNarrative;
   const insightsPending = insightsMut.isPending;
 
+  // ANA-24: the «→ гипотеза» deep link carries the prefill in the query string. Capture it once,
+  // persist to sessionStorage (survives reloads) and clean the seed params from the URL, keeping
+  // any other params (e.g. ?snapshot=…) intact.
+  const [prefill, setPrefill] = useState<HypothesisSeed>(() => loadHypothesisSeed());
+  const search = location.search;
+  useEffect(() => {
+    const fromUrl = parseHypothesisSeed(search);
+    if (!hasSeed(fromUrl)) return;
+    storeHypothesisSeed(fromUrl);
+    setPrefill(fromUrl);
+    navigate(
+      { pathname: '/app/report', search: dropHypothesisSeedParams(search) },
+      { replace: true },
+    );
+  }, [search, navigate]);
+
   return (
     <ReportPreviewView
       snapshot={snapshot}
@@ -366,6 +481,15 @@ export function ReportPreview(): JSX.Element {
       narrative={narrative}
       insightsError={errorMessage(insightsMut.error)}
       onInsights={(snapshotId) => insightsMut.mutate(snapshotId)}
+      prefillSeed={prefill}
+      onPrefillChange={(next) => {
+        storeHypothesisSeed(next);
+        setPrefill(next);
+      }}
+      onDiscardPrefill={() => {
+        clearHypothesisSeed();
+        setPrefill({});
+      }}
     />
   );
 }

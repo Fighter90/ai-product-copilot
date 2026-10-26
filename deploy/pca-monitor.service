@@ -1,0 +1,25 @@
+# systemd-юнит разовой проверки здоровья API (скрипт health-monitor.sh).
+# Запускается по расписанию из pca-monitor.timer (каждые 5 минут).
+# Ручной запуск: systemctl start pca-monitor.service
+# Логи: journalctl -u pca-monitor.service -n 50  и  /opt/pca/logs/monitor.log
+
+[Unit]
+Description=PCA health check (curl /api/health, restart pca-api after 3 failures)
+Documentation=file:/opt/pca/deploy/DEPLOY.md
+# Специально НЕ зависим от pca-api: наша задача — заметить, когда он мёртв.
+# Несколько проверок не должны идти параллельно — но oneshot-юнит с активным
+# таймером systemd и так не запускает повторно, пока предыдущий не закончился.
+
+[Service]
+Type=oneshot
+
+# root: скрипт должен уметь systemctl restart pca-api (пользователь pca не может).
+ExecStart=/opt/pca/deploy/health-monitor.sh
+TimeoutStartSec=60s
+
+# Фоновая задача: не мешаем основному API на 1-CPU машине.
+Nice=10
+IOSchedulingClass=idle
+
+NoNewPrivileges=true
+PrivateTmp=true

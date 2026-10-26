@@ -14,10 +14,28 @@ const goalsFixture = {
 const statFixture = {
   data: [{ dimensions: [{ name: 'podcast' }], metrics: [100, 90, 0.2, 65] }],
 };
+// bytime shape: data[0].metrics[i] = per-day values of metric i (one series per goal metric).
+const bytimeFixture = {
+  data: [
+    {
+      dimensions: [],
+      metrics: [
+        [1, 1, 1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 0, 0, 0],
+      ],
+    },
+  ],
+};
 
 function fakeClient(): MetrikaClient {
   return {
-    get: vi.fn(async (path: string) => (path.includes('/goals') ? goalsFixture : statFixture)),
+    get: vi.fn(async (path: string) =>
+      path.includes('/goals')
+        ? goalsFixture
+        : path.includes('bytime')
+          ? bytimeFixture
+          : statFixture,
+    ),
   } as unknown as MetrikaClient;
 }
 
@@ -44,6 +62,36 @@ describe('SyncService.syncGoals', () => {
     expect(goals.map((g) => g.id)).toEqual([80, 10]); // returned in API order, pre-archive-filter
     expect(metrics.listGoals().map((g) => g.id)).toEqual([80]); // 10 is archived (< 77)
     expect(metrics.listGoals(true).map((g) => g.id)).toEqual([10, 80]);
+  });
+
+  it('trusts Metrika’s own archived flag / status over the id-threshold fallback (ANA-23)', async () => {
+    // Real counter shape: all ids are huge (≥ 173M), so the id<77 fallback flags nothing —
+    // the archive state must come from the API fields. Only the third goal lacks both fields
+    // and falls back to the threshold (id 50 < 77 → archived).
+    const client = {
+      get: vi.fn(async (path: string) =>
+        path.includes('/goals')
+          ? {
+              goals: [
+                { id: 173370304, name: 'live', type: 'action', status: 'Active' },
+                { id: 266434954, name: 'old', type: 'action', archived: true },
+                { id: 324257087, name: 'off', type: 'action', status: 'Archived' },
+                { id: 50, name: 'legacy', type: 'action' },
+              ],
+            }
+          : statFixture,
+      ),
+    } as unknown as MetrikaClient;
+    const svc2 = new SyncService({
+      client,
+      metrics,
+      counterId: 1,
+      archivedThreshold: 77,
+      now: () => 'T',
+    });
+    await svc2.syncGoals();
+    expect(metrics.listGoals().map((g) => g.id)).toEqual([173370304]); // only the active goal
+    expect(metrics.listGoals(true).map((g) => g.id)).toEqual([50, 173370304, 266434954, 324257087]);
   });
 });
 
@@ -75,6 +123,49 @@ describe('SyncService.syncUtm', () => {
     // The single-dimension fixture leaves medium/campaign missing → normalised to (none).
     expect(utm[0]?.utmMedium).toBe('(none)');
     expect(utm[0]?.utmCampaign).toBe('(none)');
+  });
+
+  it('sends the shared test-traffic filter and folds duplicate API rows before the upsert (ANA-16, ANA-22)', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const client = {
+      get: vi.fn(async (_path: string, params?: Record<string, unknown>) => {
+        calls.push(params ?? {});
+        return {
+          data: [
+            // Same (source, medium, campaign) twice — the upsert must see ONE summed row.
+            {
+              dimensions: [{ name: 'vk' }, { name: 'cpc' }, { name: 'spring' }],
+              metrics: [10, 8, 1, 0.1],
+            },
+            {
+              dimensions: [{ name: 'vk' }, { name: 'cpc' }, { name: 'spring' }],
+              metrics: [30, 22, 5, 0.125],
+            },
+          ],
+        };
+      }),
+    } as unknown as MetrikaClient;
+    const svc2 = new SyncService({
+      client,
+      metrics,
+      counterId: 1,
+      archivedThreshold: 77,
+      now: () => 'T',
+    });
+    const { rows } = await svc2.syncUtm('2025-01-01', '2025-01-01', 80);
+    expect(rows).toBe(1);
+    expect(calls[0]?.['filters']).toBe("ym:s:isRobot!='yes' AND ym:s:startURL!~'^file:'");
+    const utm = metrics.listUtmStats();
+    expect(utm).toHaveLength(1);
+    expect(utm[0]).toMatchObject({
+      utmSource: 'vk',
+      utmMedium: 'cpc',
+      utmCampaign: 'spring',
+      visits: 40,
+      users: 30,
+      goalReaches: 6,
+      conversionRate: 0.15,
+    });
   });
 });
 
@@ -113,7 +204,7 @@ describe('SyncService.syncExitPages', () => {
 });
 
 describe('SyncService.syncAll', () => {
-  it('returns a combined summary including UTM + geo/device + page + exit-page rows', async () => {
+  it('returns a combined summary including UTM + geo/device + page + exit-page + new slices', async () => {
     const summary = await svc.syncAll('2025-01-01', '2025-01-07', 80);
     expect(summary).toEqual({
       goals: 2,
@@ -124,6 +215,10 @@ describe('SyncService.syncAll', () => {
       geoDeviceRows: 1,
       pageRows: 1,
       exitPageRows: 1,
+      // bytime: both goals' series × 7 days (fixture carries 2 series of 7 daily values).
+      goalReachesRows: 14,
+      browserOsRows: 1,
+      newReturningRows: 1,
     });
   });
 
@@ -137,8 +232,8 @@ describe('SyncService.syncAll', () => {
     const client = {
       get: vi.fn(async (path: string, params?: { dimensions?: string }) => {
         if (path.includes('/goals')) return goalsFixture;
-        if (params?.dimensions?.includes('exitURL')) {
-          throw new Error('Metrika 400: invalid attribute ym:s:exitURL');
+        if (params?.dimensions?.includes('UTMSource')) {
+          throw new Error('Metrika 400: invalid attribute ym:s:UTMSource');
         }
         return statFixture;
       }),
@@ -153,10 +248,10 @@ describe('SyncService.syncAll', () => {
     });
 
     const summary = await svc2.syncAll('2025-01-01', '2025-01-03', 80);
-    expect(summary.exitPageRows).toBe(0); // skipped
+    expect(summary.utmRows).toBe(0); // skipped
     expect(summary.channelRows).toBe(1); // rest still synced
-    expect(summary.utmRows).toBe(1);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('exit-pages skipped'));
+    expect(summary.exitPageRows).toBe(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('utm skipped'));
     warn.mockRestore();
   });
 

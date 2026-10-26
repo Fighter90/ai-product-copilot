@@ -1,28 +1,63 @@
-# ProductCamp Conversion Analytics Dashboard
+# ProductCamp Conversion Analytics
+
+[![CI](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/ci.yml)
 
 > [🇷🇺 Русский](README.md) · 🇬🇧 English
 
-A locally-run analytics tool for ProductCamp's **"Conversions & lead-gen"** track.
-It connects to Yandex Metrika (counter set in `.env`) over OAuth, caches data in SQLite,
-serves an interactive dashboard, and helps run product hypotheses using the hypothesis
-methodology (Double Diamond + ICE = I × C × E) with DOCX/PDF report generation.
+![CI](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/actions/workflows/ci.yml/badge.svg)
+![E2E](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/actions/workflows/e2e.yml/badge.svg)
+![Security](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/actions/workflows/security.yml/badge.svg)
+![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
+![pnpm](https://img.shields.io/badge/pnpm-9-orange)
+![Version](https://img.shields.io/badge/version-v3.0.0-blue)
+
+A multi-user analytics cabinet for ProductCamp's **"Conversions & lead-gen"** track:
+Yandex Metrika → SQLite (daily history) → a web cabinet with roles and an audit log, real-time
+monitoring, DOCX/PDF reports with AI analysis, Yandex DataLens export, and a RAG assistant over
+the built-in help. The hypothesis methodology (Double Diamond + ICE = I × C × E) is embedded in
+the report.
 
 > **Campaign KPI:** 300+ **paid** tickets. Throughout the tool: **an application ≠ a payment**.
 
-> ✅ **Status: working product v2.10.0.** A 9-page dashboard (Overview, Traffic, Behavior, Funnel,
-> Goals, Report, History, Settings, Help), mobile hamburger menu, AI analysis in 5 sections with
-> a progress bar (HTML rendering), sync with detailed progress (10 stages with descriptions),
-> analytical insights on every page (green/yellow/red badges), custom date picker (from/to, max
-> 365 days), presets 7d/14d/30d/90d/1y, GOAL_ID select from Metrika, History → "View" opens
-> saved snapshots, Settings with current COUNTER_ID display, PDF auto-detect Chrome,
-> GOST-formatted DOCX/PDF, full CI/CD.
-> **New in v2.7.0:** navigation reduced to 9 pages — Hypotheses, Decisions, and B2B are no longer
-> standalone pages; AI-generated hypotheses («Growth Hypotheses (AI)») and AI Decision Log are now
-> embedded in the Report (snapshot.generatedHypotheses / snapshot.generatedDecisions); manual B2B
-> deal entry moved to a collapsible «B2B Pipeline» section in Settings (/b2b redirects to
-> /settings); KPI label reads «Оплат» when the primary goal is a purchase/payment goal
-> (formatGoalLabel); centralised channel colour palette across all charts. Verified against live
-> data (`<COUNTER_ID>` from `.env`).
+> ✅ **Status: working product v3.1.0.** The cabinet ships session-based authentication,
+> **Administrator / Analyst** roles, and an action audit log. Real-time monitoring: Live, Goals
+> (+ goal detail), Live funnel. Analytics: Traffic, Behavior, Funnel, KPI, Explore (presets),
+> Report, History, B2B, DataLens. Administration: Users, AI providers (OpenRouter / Anthropic /
+> YandexGPT / GigaChat — keys encrypted with AES-256-GCM), Yandex Metrika, Integrations, Audit.
+> Help center + RAG assistant. RU/EN interface, dark/light theme, version in the footer.
+> Ubuntu deployment: nginx + systemd + certbot ([docs/deploy.md](docs/deploy.md)).
+
+## Screenshots
+
+> Real screenshots of the production build (1440×900); the full set of 24 screens lives in
+> [code/frontend/public/screenshots](code/frontend/public/screenshots).
+
+| Landing                                | Overview: on track for 300?              | Real time                        |
+| -------------------------------------- | ---------------------------------------- | -------------------------------- |
+| ![Landing](docs/images/01-landing.png) | ![Overview](docs/images/03-overview.png) | ![Live](docs/images/04-live.png) |
+
+| pc-goals funnel                                    | Report                               | RAG assistant                                  |
+| -------------------------------------------------- | ------------------------------------ | ---------------------------------------------- |
+| ![pc-goals funnel](docs/images/07-funnel-live.png) | ![Report](docs/images/13-report.png) | ![RAG assistant](docs/images/24-assistant.png) |
+
+## Features
+
+- **Web cabinet** — session login (HttpOnly cookie, only the token hash stored), Administrator /
+  Analyst roles (RBAC enforced on the backend and in the UI), action audit log.
+- **Real time** — Live feed, all counter goals with statuses, the ProductCamp event funnel
+  (saw tickets → CTA → registration → cart → order) — queried directly from the Reporting API.
+- **Daily analytics** — channels, UTM, geo+devices, entry/exit pages, the "visit → application →
+  payment" funnel, the 300 KPI with a "What if" simulator, 11 Explore presets.
+- **Reports** — an immutable snapshot → GOST-formatted DOCX/PDF with charts; AI analysis,
+  AI-generated hypotheses and an AI Decision Log.
+- **AI providers** — OpenRouter, Anthropic, YandexGPT, GigaChat; a priority chain with fallback;
+  keys encrypted with AES-256-GCM; per-call usage statistics.
+- **DataLens** — 5 ready-made CSV datasets (Files connection) + a token-protected webhook
+  receiver; in-app notifications.
+- **Help & assistant** — a Help center (`/help`, articles from `docs/help/ru|en`) and a RAG
+  assistant (bottom-right corner) that answers only from the help texts.
+- **RU/EN i18n and themes** — toggles in the top bar; the choice persists in the browser and in
+  the user profile; dark/light theme; product version in the footer.
 
 ## Quickstart
 
@@ -34,35 +69,23 @@ cd yandex-metrika-analyse-dashboard
 ./setup.sh          # install → init → start
 ```
 
-`./setup.sh` runs the three steps below in sequence. To control each step, run them separately:
-
 ### Step by step (install → init → start)
 
 ```bash
-pnpm install        # 1. dependencies
-./init.sh           # 2. init: Anthropic key + Metrika params (+ optional OAuth)
-./run.sh            # 3. start: migrations → sync (or demo seed without a token) → dashboard
+pnpm install        # 1. dependencies (pnpm workspace: backend / frontend / shared)
+./init.sh           # 2. interactive .env: Metrika, AI, first admin (+ optional OAuth)
+./run.sh            # 3. migrations → sync (or demo seed without a token) → cabinet
 ```
 
-**Step 2 — `./init.sh`** interactively creates `.env` (from `.env.example`) and asks for:
+Open `http://localhost:5173` — landing page → `/login`. The first administrator is created on
+startup from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (`.env`); `DEMO_USERS=1` adds demo admin/analyst
+accounts for local exploration. API on `http://localhost:4000` (Swagger at `/docs`).
 
-- `ANTHROPIC_API_KEY` — key for AI report analysis (optional — the dashboard works without it);
-- `COUNTER_ID` — your Yandex Metrika counter (required for a live sync; set in `.env`);
-- `GOAL_ID` — the KPI goal id; `0` (default) = **auto-detect** the primary payment/purchase goal from
-  the counter's goals, any value `> 0` pins the goal explicitly;
-- and offers to set up **Yandex Metrika OAuth** right away (`pnpm auth`).
+> Without a token and AI keys everything still runs in demo mode — handy for an instant demo.
 
-**Step 3 — `./run.sh`** installs `pnpm` if missing, runs migrations, then: with a
-`YANDEX_OAUTH_TOKEN` it pulls live data (`pnpm sync`; with `GOAL_ID=0` the goal is auto-detected,
-otherwise `--goalId=$GOAL_ID` is passed), otherwise it seeds the
-dashboard with **demo data** (`pnpm seed`), starts backend + frontend and opens
-`http://localhost:5173` (API on `http://localhost:4000`, proxied as `/api`).
-
-> Without a token and without an AI key it still runs in demo mode — handy for an instant demo.
-
-Detailed run/troubleshooting: [docs/en/runbook.md](docs/en/runbook.md).
-User guide (dashboard, reports): [docs/en/user-guide.md](docs/en/user-guide.md).
-Full dashboard help: on the **Help** page (`http://localhost:5173/help`).
+Detailed run instructions: [docs/quickstart.md](docs/quickstart.md) and
+[docs/en/runbook.md](docs/en/runbook.md); user guide — [docs/en/user-guide.md](docs/en/user-guide.md);
+server deployment — [docs/deploy.md](docs/deploy.md).
 
 ## Getting a `YANDEX_OAUTH_TOKEN`
 
@@ -70,252 +93,167 @@ You need a token with the `metrika:read` scope. Yandex ID docs: https://yandex.r
 
 ### Option 1 (recommended) — the built-in `pnpm auth` helper
 
-Implements the authorization-code flow (uses the Client ID + Client secret from `.env`):
-
 ```bash
 pnpm auth        # from the repo root
 ```
 
-1. The helper prints an authorize URL (`response_type=code`). Open it and approve access.
-2. Copy the **confirmation code** from Yandex and paste it back into the terminal.
-3. The helper exchanges the code for a token (`POST https://oauth.yandex.ru/token`) and **writes**
-   `YANDEX_OAUTH_TOKEN` into `.env` itself. Then run `pnpm sync`.
+1. The helper prints an authorize URL (`response_type=code`). Approve access in the browser.
+2. Copy the **confirmation code** and paste it back into the terminal.
+3. The helper exchanges the code for a token and **writes** `YANDEX_OAUTH_TOKEN` into `.env`.
+   Then run `pnpm sync`.
 
 ### Option 2 (manual) — implicit flow
 
-1. Open in a browser (substituting the Client ID):
-   `https://oauth.yandex.ru/authorize?response_type=token&client_id=<YANDEX_CLIENT_ID>`
-2. Approve access. The token returns in the URL fragment after `#access_token=...`.
-3. Paste it into `.env` → `YANDEX_OAUTH_TOKEN=...`.
+Open `https://oauth.yandex.ru/authorize?response_type=token&client_id=<YANDEX_CLIENT_ID>`, approve
+access and paste the token from the URL fragment (`#access_token=...`) into `.env`.
 
-The token and client secret live **only** in `.env` (gitignored). Never commit them.
+Tokens and secrets live **only** in `.env` (gitignored) or encrypted in the database (admin
+settings). Never commit them.
 
 ## Architecture
 
-```text
-Yandex Metrika API ──OAuth──▶ backend (Fastify) ──▶ SQLite (raw_responses → derived tables)
-                                     │
-                          frontend (React+Vite) ──▶ dashboard + hypothesis editor
-                                     │
-                          snapshot-builder ──▶ DOCX / PDF (deterministic) + optional AI analysis
+```
+Yandex Metrika ──sync (daily chunks)──▶ SQLite ──API (Fastify, sessions/RBAC)──▶ Cabinet (React)
+        │                                  │                                          │
+        └── live: Reporting API directly ──┘── DataLens (CSV) · DOCX/PDF + AI · RAG assistant ──┘
 ```
 
-Full diagram and layers: [docs/architecture.md](docs/architecture.md); data model:
-[docs/data-model.md](docs/data-model.md).
+Component, data-flow and authentication diagrams (Mermaid): [docs/architecture.md](docs/architecture.md);
+data model (migrations 001..010): [docs/data-model.md](docs/data-model.md).
 
 ## Tech stack
 
-Node 20 · TypeScript 5 strict · Fastify 4 · Zod · undici · better-sqlite3 ·
-React 18 + Vite 5 · TailwindCSS · Apache ECharts · TanStack Table/Query ·
-Zustand · `docx` · puppeteer-core · date-fns(-tz) · Vitest + Playwright · ESLint + Prettier · pnpm 9.
+Backend: Node 20 · TypeScript 5 strict · Fastify 4 (tsx) · Zod · better-sqlite3 · undici ·
+`docx` · puppeteer-core · pino.
+Frontend: React 18 · Vite · TailwindCSS · Apache ECharts · TanStack Table/Query · Zustand ·
+react-router · ru/en i18n.
+Tooling: pnpm 9 · Vitest · Playwright · ESLint + Prettier · GitHub Actions · nginx/systemd for
+deployment.
 
 Adding a dependency outside this list requires an ADR in `docs/decisions/`.
 
-## Methodology (Double Diamond)
+## Roles
 
-Double Diamond at the top level; the hypothesis methodology inside the Define/Develop phases:
+|                                           | Analyst | Administrator |
+| ----------------------------------------- | :-----: | :-----------: |
+| Overview, Live, Goals, Live funnel        |   ✅    |      ✅       |
+| Traffic, Behavior, Funnel, KPI, Explore   |   ✅    |      ✅       |
+| Report, History, B2B, DataLens            |   ✅    |      ✅       |
+| Help center, RAG assistant, RU/EN, themes |   ✅    |      ✅       |
+| Users (create, roles, password reset)     |    —    |      ✅       |
+| AI providers (keys, models, priorities)   |    —    |      ✅       |
+| Yandex Metrika settings, synchronization  |    —    |      ✅       |
+| Integrations (DataLens webhook) and audit |    —    |      ✅       |
 
-- **Hypothesis format:** "{subject} {action} {solution}, if {condition}".
-- **≥3 hidden assumptions** across behavior / market / tech.
-- **≥2 validation methods** (synthetic CustDev / live / quantitative / market).
-- **ICE = I × C × E (product, 1–1000)** — punishes one-sided hypotheses; see
-  `docs/decisions/005-ice-product-vs-mean.md`.
-- **Traffic light** (🟢/🟡/🔴) with concrete thresholds + a verification deadline.
-- **Decision Log** closes the loop: verification → DL-{N} entry → auto-updates hypothesis status.
+Permissions are enforced on the backend (`/api/admin/**`, settings mutations — admin only); all
+significant actions are written to `audit_log`.
 
-Full methodology description: `docs/methodology-hypotheses.md`.
+## AI providers
 
-## What the project does (by code logic)
+Administrators configure providers under "Administration → AI providers":
 
-The end-to-end data flow as implemented:
+| Provider   | Secret            | Extras     | Example model                 |
+| ---------- | ----------------- | ---------- | ----------------------------- |
+| OpenRouter | API key           | —          | `anthropic/claude-sonnet-4.5` |
+| Anthropic  | API key           | —          | `claude-sonnet-4-6`           |
+| YandexGPT  | AI Studio API key | `folderId` | `yandexgpt/latest`            |
+| GigaChat   | Authorization Key | `scope`    | `GigaChat-2-Pro`              |
 
-1. **Auth (OAuth).** `code/backend/src/metrika/oauth.ts` + the `cli-auth.ts` CLI (`pnpm auth`)
-   implement the Yandex ID authorization-code flow: build the authorize URL, exchange the
-   confirmation code for a token (`POST https://oauth.yandex.ru/token`), write `YANDEX_OAUTH_TOKEN`.
-2. **Parser / ETL.** `SyncService` (`metrika/sync-service.ts`), via `MetrikaClient` (token-bucket
-   limiter, backoff retry, Zod validation), pulls Stat API reports in **daily chunks** and runs a
-   query module from `metrika/queries/` for each cut:
-   - `traffic-by-source` → `channel_stats`; `utm-breakdown` → `utm_stats`;
-   - `geo-device-breakdown` → `geo_device_stats`;
-   - `page-behavior` (startURL) → `page_stats`; `exit-page-behavior` (exitURL) → `exit_page_stats`.
-     Every **raw** response is stored in `raw_responses` (traceability), then normalised into derived
-     tables. Metrika percentages (`bounceRate`, `conversionRate`) are normalised to 0–1 ratios
-     (`queries/ratio.ts`). Optional breakdowns sync **best-effort**: an unavailable attribute doesn't
-     abort the pipeline. Without a token, `pnpm seed` loads deterministic demo data.
-3. **Storage.** SQLite (`better-sqlite3`, WAL + FK), migrations `db/migrations/001..009`, access only
-   via repositories (`db/repositories/`). History accumulates **per day** (a repeated sync appends,
-   never overwrites) — enabling WoW comparisons and reproducibility.
-4. **API.** Fastify (`app.ts`) serves `/api/metrics/*`, `/api/hypotheses`, `/api/decisions`,
-   `/api/b2b`, `/api/report/*`, `/api/sync`, `/api/settings`; Swagger at `/docs`.
-5. **Dashboard.** React + TanStack Query reads the API; each page is a pure `View(status, …)` + a thin
-   data wrapper; charts use ECharts. KPIs keep **application ≠ payment** everywhere.
-   - **Segment filter** (B2C / B2C+B2B / B2B): filters channels and UTM on all pages.
-   - **📅 Pick dates**: custom date picker (from/to).
-   - **🔄 Rebuild report**: button on the Report page — rebuilds the snapshot with current filters.
-   - **Archived goals**: checkbox toggles archived Metrika goals.
-   - **Mobile menu**: hamburger on screens < 1024px.
-   - **Analytical insights**: on every page — colored badges (🟢 good, 🔴 problem).
-6. **Report.** `SnapshotBuilder` assembles an **immutable** `ReportSnapshot` from the DB
-   (deterministic: `id` and `generatedAt` are inputs, no `Date.now()`/LLM in the render path).
-   `reportSections` feeds both DOCX (`docx/builder.ts`) and PDF (`pdf/html.ts` →
-   `pdf/renderer.ts` via puppeteer-core). The **AI analysis** is generated in 5 chunks (with a
-   per-section timeout), rendered as HTML (tables, headers, formatting).
+Enabled providers form a **priority chain**: a failure or timeout falls over to the next one.
+Keys are encrypted with AES-256-GCM (master key `APP_SECRET`) and stored only as ciphertext.
+AI consumers: the report (analysis / hypotheses / Decision Log) and the help assistant. Keys in
+`.env` are an optional first-time seed only.
 
-## Dashboard Pages
+## Language and themes
 
-| Page         | URL         | Description                                                                                                                                                                             |
-| ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Overview** | `/`         | KPI strip («Оплат» label for purchase goals); weekly digest card (visits + applications WoW delta, top channel, top weak spot); daily charts; channel mix; UTM breakdown; weak spots    |
-| **Traffic**  | `/traffic`  | Channel bar chart; visits vs applications; channel table with CR; UTM-Sankey (source → campaign → applications); insights; chart captions                                               |
-| **Behavior** | `/behavior` | Entry page CR; entry/exit bounce rates; color-highlighted tables; recommendations; chart captions                                                                                       |
-| **Funnel**   | `/funnel`   | 4 stages (Visits → B2C Applications → B2B Pipeline → B2B Paid); loss analysis; funnel by channel; CR by channel; B2B by stage; chart captions                                           |
-| **Goals**    | `/goals`    | Progress ring to 300 tickets; metrics; B2B deals; data-driven recommendations                                                                                                           |
-| **Report**   | `/report`   | Snapshot generation; AI-generated hypotheses and AI Decision Log embedded in report; AI analysis (5 sections, HTML rendering); DOCX/PDF export; rebuild                                 |
-| **History**  | `/history`  | Snapshot list (horizontally scrollable); "View" button → opens saved report                                                                                                             |
-| **Settings** | `/settings` | OAuth token, Client ID/Secret, COUNTER_ID, GOAL_ID, ANTHROPIC_API_KEY; sync with progress bar (10 stages); current counter display; collapsible «B2B Pipeline» section for manual entry |
-| **Help**     | `/help`     | Full documentation: all pages described, filters, FAQ (10 questions), glossary                                                                                                          |
+- **RU/EN toggle** in the cabinet top bar; the language persists in the browser and in the user
+  profile (`PATCH /api/auth/me`); help articles and assistant answers follow the UI language.
+- **Dark/light theme** toggle; applied before first paint (no flashing).
+- **Version in the footer** — from the root `package.json` + the build's git SHA.
 
-> Stale URLs `/hypotheses`, `/decisions`, and `/b2b` redirect to `/report` or `/settings` respectively.
+## Project structure
 
-## Filters (dashboard header)
-
-- **7d / 14d / 30d / 90d / 1y** — quick period presets
-- **📅 Dates** — custom period (start date → end date → Apply, max 365 days)
-- **Segment**: B2C / B2C+B2B / B2B (filters channels and UTM)
-- **Archived goals** — show/hide archived Metrika goals
-
-## Report types and how to build them (end-to-end)
-
-A report is built from an **immutable snapshot** — so the same `snapshotId` always yields the same
-content (anti-hallucination + reproducibility).
-
-**What the report contains** (`reportSections`):
-
-- Cover (period, snapshot ID, target), Executive Summary (B2C applications, B2B paid, gap —
-  "application ≠ payment"), Methodology (Double Diamond + hypothesis methodology);
-- **Define — Problem Hypotheses** and **Develop — Solution Hypotheses** (with ICE and deadlines);
-- **Deliver — Decision Log** (DL-{N} with outcomes);
-- **Top breakdowns**: UTM, geo+device, entry pages, exit pages (top 5 by visits);
-- **AI analysis** (5 sections: Summary, Channels/UTM/Audience, Pages/Funnel, Risks/Recommendations,
-  Hypotheses/Roadmap) — rendered as HTML with formatting;
-- **Data Appendix** (channels for the period).
-
-**Formats:** **DOCX** (works out of the box) and **PDF** (needs a local Chrome via
-`PUPPETEER_EXECUTABLE_PATH`). Files are written to `data/reports/{snapshotId}.{docx|pdf}`.
-
-**Via the dashboard (Report page):**
-
-1. Pick the period in the header. Click **"Build snapshot"** → `POST /api/report/snapshot` builds and
-   stores the snapshot and shows the KPI summary.
-2. (Optional) **"Generate AI analysis"** → `POST /api/report/insights` calls Anthropic from the
-   snapshot numbers (5 sections, ~30–60s). Without `ANTHROPIC_API_KEY` it shows a clear message and
-   the report is built without the AI section.
-3. **"Rebuild report"** — refresh the snapshot with current filters.
-4. **Export DOCX** / **Export PDF** → `POST /api/report/generate` renders the file from the snapshot.
-
-**Via the API directly:**
-
-```bash
-# 1) build a snapshot for a period
-SID=$(curl -s -X POST localhost:4000/api/report/snapshot -H 'content-type: application/json' \
-  -d '{"from":"2026-05-09","to":"2026-05-22"}' | jq -r .id)
-# 2) (optional) AI analysis
-curl -s -X POST localhost:4000/api/report/insights -H 'content-type: application/json' \
-  -d "{\"snapshotId\":\"$SID\"}"
-# 3) render a file (docx | pdf)
-curl -s -X POST localhost:4000/api/report/generate -H 'content-type: application/json' \
-  -d "{\"snapshotId\":\"$SID\",\"format\":\"docx\"}"
+```
+.
+├── code/
+│   ├── backend/    # Fastify API: auth/RBAC, settings, AI providers, live, help, DataLens,
+│   │               #   Metrika client, SQLite (migrations 001..010), DOCX/PDF reports
+│   ├── frontend/   # React+Vite cabinet: public/app/admin pages, i18n, themes, assistant
+│   └── shared/     # shared types and constants (@pca/shared)
+├── deploy/         # server configs (nginx, systemd) — see docs/deploy.md
+├── docs/           # architecture, data-model, deploy, user-guide (ru/en), runbook, help/ru|en,
+│                   #   decisions/ (ADRs), specs/
+├── e2e/            # Playwright
+├── QA/             # testing prompts
+├── data/           # SQLite + reports (gitignored)
+└── setup.sh / init.sh / run.sh   # one-command local run
 ```
 
-Every number in the report traces back to `raw_responses` in SQLite (traceability invariant).
+Full guide: [docs/project-structure.md](docs/project-structure.md).
 
 ## CLI commands
 
-| Command                                         | Description                                             |
-| ----------------------------------------------- | ------------------------------------------------------- |
-| `./setup.sh`                                    | everything in one command: install → init → start       |
-| `./init.sh`                                     | init `.env` (Anthropic key, COUNTER_ID, GOAL_ID, OAuth) |
-| `./run.sh`                                      | start: migrations → sync/seed → dashboard               |
-| `pnpm install`                                  | install dependencies                                    |
-| `pnpm auth`                                     | Yandex Metrika OAuth → `YANDEX_OAUTH_TOKEN` in `.env`   |
-| `pnpm seed`                                     | seed the DB with demo data (no token)                   |
-| `pnpm --filter @pca/backend sync --goalId=<id>` | live pull from Metrika for a period                     |
-| `pnpm dev`                                      | backend (tsx watch) + frontend (vite)                   |
-| `pnpm build` / `pnpm typecheck`                 | build / type checking                                   |
-| `pnpm lint` / `pnpm format`                     | lint / format                                           |
-| `pnpm test` / `pnpm coverage`                   | vitest (397 tests passing)                              |
+| Command                                            | Description                                            |
+| -------------------------------------------------- | ------------------------------------------------------ |
+| `./setup.sh`                                       | everything in one command: install → init → start      |
+| `./init.sh`                                        | init `.env` (Metrika, AI, first admin, optional OAuth) |
+| `./run.sh`                                         | start: migrations → sync/seed → cabinet                |
+| `pnpm auth`                                        | Yandex Metrika OAuth → `YANDEX_OAUTH_TOKEN` in `.env`  |
+| `pnpm seed`                                        | seed the DB with demo data (no token)                  |
+| `npm run sync` (`pnpm --filter @pca/backend sync`) | live pull from Metrika for a period                    |
+| `pnpm dev`                                         | backend (tsx watch) + frontend (vite)                  |
+| `pnpm build` / `pnpm typecheck`                    | build / type checking                                  |
+| `pnpm lint` / `pnpm format:check`                  | lint / format check                                    |
+| `pnpm test` / `pnpm coverage`                      | vitest / coverage                                      |
+| `pnpm e2e`                                         | Playwright                                             |
 
-## Spec-Driven Development
+## Methodology (Double Diamond)
 
-Non-trivial features (touching > 1 file or > ~30 min; changing data, API, methodology or KPI math) go
-through a **spec** before code: `docs/specs/NNN-*.md` from the [`docs/specs/TEMPLATE.md`](docs/specs/TEMPLATE.md)
-template. The cycle is **spec → review → plan → tests → impl**: first capture _what_ and _why_ with
-measurable acceptance criteria, then write failing tests (TDD red→green→refactor), then implement; every
-PR references its spec. Process and registry: [`docs/specs/README.md`](docs/specs/README.md). Small
-changes (typos, cleanup, docs) need no spec.
+- **Hypothesis format:** "{subject} {action} {solution}, if {condition}".
+- **≥3 hidden assumptions** across behavior / market / tech; **≥2 validation methods**.
+- **ICE = I × C × E (product, 1–1000)** — `docs/decisions/005-ice-product-vs-mean.md`.
+- **Traffic light** (🟢/🟡/🔴) + a verification deadline; the **Decision Log** closes the loop.
+
+Methodology: `docs/methodology-hypotheses.md`; AI hypotheses and the AI Decision Log are generated
+inside the report.
+
+## Server deployment
+
+Ubuntu + nginx + systemd + certbot: step-by-step instructions, the systemd unit and the nginx
+config — in [docs/deploy.md](docs/deploy.md); configs live in `deploy/`. Production requirements:
+`APP_SECRET` (master key encrypting DB secrets) and `COOKIE_SECURE=1` behind HTTPS.
 
 ## CI/CD
 
-A full set of pipelines on every push/PR:
-
-- **ci.yml** — `lint → format:check → typecheck → coverage (Node 20 + 22) → build` + actionlint + gate;
-- **e2e.yml** — Playwright (dashboard smoke);
+- **ci.yml** — `lint → format:check → typecheck → coverage → build` + actionlint + gate;
+- **e2e.yml** — Playwright (cabinet smoke);
 - **security.yml** — gitleaks + `pnpm audit` (high+);
-- **review.yml** — AI code review (when `ANTHROPIC_API_KEY` repo secret is set);
+- **review.yml** — AI code review (when `ANTHROPIC_API_KEY` is set in repo secrets);
 - **pr-lint.yml** — Conventional PR title;
-- **release.yml** — on a `v*.*.*` tag: verify → package (app tar.gz + frontend zip + checksums) → GitHub Release.
+- **release.yml** — on a `v*.*.*` tag: verify → package → GitHub Release.
 
-Versioning: SemVer + Conventional Commits + `CHANGELOG.md`.
+## Spec-Driven Development
 
-## Done (status by iteration)
+Non-trivial features go through a spec before code: `docs/specs/NNN-*.md` (cycle: spec → review →
+plan → tests → impl). Registry: `docs/specs/README.md`.
 
-- [x] Skeleton, SQLite + migrations, repository pattern, tests, CI/CD, versioning.
-- [x] Metrika client (OAuth, Zod, rate limiter, retry) + `POST /api/sync`, CLIs `pnpm auth`/`sync`/`seed`.
-- [x] Backend API (metrics/hypotheses/decisions/b2b/report/settings) + Swagger `/docs`.
-- [x] Dashboard: 9 pages (Overview, Traffic, Behavior, Funnel, Goals, Report, History, Settings, Help).
-- [x] AI-generated hypotheses and Decision Log embedded in the report (snapshot.generatedHypotheses / snapshot.generatedDecisions); manual B2B pipeline in Settings.
-- [x] Snapshot + Report Preview + deterministic DOCX/PDF + AI analysis (5 sections, HTML rendering).
-- [x] Mobile menu (hamburger), custom date picker, segment filter (B2C/B2C+B2B/B2B).
-- [x] Analytical insights on every page (color badges), History → "View".
-- [x] Settings: sync progress bar (10 stages), current COUNTER_ID display.
-- [x] Help page: full documentation (9 sections, 10 FAQ, glossary).
-- [x] 397 tests passing (shared: 54, backend: 222, frontend: 121).
-- [x] Verified against live Metrika data (counter `<COUNTER_ID>` from `.env`); security audit + `.gitignore`.
-
-### Known limitations
+## Known limitations
 
 - B2B is manual entry (`b2b_manual`); Metrika does not cover the B2B pipeline.
 - UTM tagging is uneven: segments with < 70% coverage are flagged `low_utm_coverage`.
-- Goals with `id < ARCHIVED_GOAL_ID_THRESHOLD` (default 77) are treated as archived.
 - `ym:s:exitURL` is not supported by the Stat API → the "Exit pages" table is empty on live data.
-- PDF needs a local Chrome (`PUPPETEER_EXECUTABLE_PATH`); DOCX needs nothing extra.
+- PDF needs Chrome (`PUPPETEER_EXECUTABLE_PATH`); DOCX needs nothing extra.
+- Live pages depend on Reporting API availability and are not cached.
 
 ## Releases
 
-| Version                                                                                     | Date       | Description                                                                                                                                                                              |
-| ------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **v2.9.5** (Latest)                                                                         | 2026-05-29 | AI analysis: ICE is computed as a product (Impact × Confidence × Ease, 1–1000), not a mean — aligned with the methodology project-wide                                                   |
-| [v2.9.4](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.9.4) | 2026-05-29 | PDF: bold/italic render as real tags (no literal `<strong>` in the PDF); removed the AI-section truncation note from DOCX/PDF                                                            |
-| [v2.9.3](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.9.3) | 2026-05-29 | Overview Gap reconciled with Goals/report (counts purchase payments), empty sections dropped from DOCX/PDF, AI narrative HTML-tags stripped; verified against Yandex Metrika             |
-| [v2.9.2](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.9.2) | 2026-05-29 | Dependency updates (docx 9.7.1, react-query, zustand, lucide-react, typescript-eslint) + full code re-check                                                                              |
-| [v2.9.1](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.9.1) | 2026-05-29 | AI-DOCX final polish: no emoji/double numbering in AI headings, AI-section length cap, title page without empty runs, KPI label from goalLabel, page-URL dedup, API-key mask in Settings |
-| [v2.9.0](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.9.0) | 2026-05-28 | DOCX/PDF report rework: de-duplicated channel sections, AI-narrative markdown sanitised, compact appendix, AI prompt without self-numbering, AI button locks after generation            |
-| [v2.8.5](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.8.5) | 2026-05-28 | QA regression prompt refreshed (M-004 closed) + doc version sync                                                                                                                         |
-| [v2.8.4](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.8.4) | 2026-05-28 | UTM-coverage fix (visit-weighted from utm_stats, was 0%); detailed docs (user-guide, quickstart, data-model)                                                                             |
-| [v2.8.3](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.8.3) | 2026-05-28 | Goals progress fix (counts purchase payments), Executive Summary in full HTML + «Final conclusion» section, full-screen UTM-Sankey, GOST DOCX/PDF title page without empty blocks        |
-| [v2.8.2](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.8.2) | 2026-05-28 | Browser E2E audit: fixed duplicate React keys (Overview/Funnel), favicon; refreshed docs + full regression prompt; scrubbed the live COUNTER_ID from the repo                            |
-| [v2.8.1](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.8.1) | 2026-05-28 | WCAG AA accessibility: text contrast ≥4.5:1, keyboard-accessible tables — 0 axe violations across 9 pages                                                                                |
-| [v2.8.0](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.8.0) | 2026-05-28 | Chart images in DOCX/PDF (bar/funnel/mix) + per-chart 🟢/🔴 block (spec 014); mobile filter bottom-sheet; B2B kanban+drawer; sync-versions + pre-commit hook                             |
-| [v2.7.1](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.7.1) | 2026-05-27 | Sync uses filter period, bar-chart axes, formatGoalLabel in report/Goals, visits invariant test, mobile e2e, report 🟢/🔴 block; full Metrika reconciliation (0 mismatches)              |
-| [v2.7.0](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.7.0) | 2026-05-27 | Navigation → 9 pages; AI hypotheses + AI Decision Log in report; B2B pipeline in Settings; formatGoalLabel; centralised channel palette                                                  |
-| [v2.6.0](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.6.0) | 2026-05-27 | Chart captions, weekly digest, UTM-Sankey, visit undercount fix (matches Metrika), safe re-sync, mobile-polish                                                                           |
-| [v2.5.7](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.5.7) | 2026-05-27 | Build/gate hotfix (TS in DOCX/frontend) + version sync, 100% coverage                                                                                                                    |
-| [v2.4.1](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.4.1) | 2026-05-27 | Docs and architecture pass, aligned to the 9-page dashboard                                                                                                                              |
-| [v2.3.0](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.3.0) | 2026-05-27 | AI narrative full rendering, md-to-html tables/lists, DOCX/PDF GOST                                                                                                                      |
-| [v2.2.1](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.2.1) | 2026-05-27 | Goals Page NaN Fix                                                                                                                                                                       |
-| [v2.2.0](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.2.0) | 2026-05-27 | Gap Fix, History AI Narrative, DOCX/PDF GOST Formatting                                                                                                                                  |
-| [v2.1.0](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.1.0) | 2026-05-27 | Extended filters (up to 1 year), GOAL_ID select, PDF auto-detect, user guide                                                                                                             |
-| [v2.0.0](https://github.com/Fighter90/yandex-metrika-analyse-dashboard/releases/tag/v2.0.0) | 2026-05-26 | Full Dashboard Overhaul (9 pages, AI HTML, mobile menu, Help page)                                                                                                                       |
+Full history: [CHANGELOG.md](CHANGELOG.md). Recent:
+
+| Version             | Date       | Description                                                                                                                                                                                                                                                         |
+| ------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **v3.0.0** (Latest) | 2026-10-25 | Web cabinet: sessions, roles (admin/analyst), audit; Live/Goals/Live funnel; administration (Users, 4 AI providers, Metrika, Integrations, Audit); DataLens (CSV + webhook); RAG assistant and Help center; RU/EN i18n and themes; nginx/systemd/certbot deployment |
+| v2.10.0             | 2026-05-29 | `./init.sh` collects Yandex OAuth ClientID/secret                                                                                                                                                                                                                   |
+| v2.9.5              | 2026-05-29 | ICE in AI analysis is a product (I×C×E), not a mean                                                                                                                                                                                                                 |
 
 ## License · Authors · Credits
 

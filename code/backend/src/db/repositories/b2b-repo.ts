@@ -58,8 +58,7 @@ export class B2bRepo {
 
   getById(id: number): B2bDeal | undefined {
     const r = this.db.prepare('SELECT * FROM b2b_manual WHERE id = ?').get(id) as
-      | B2bRow
-      | undefined;
+      B2bRow | undefined;
     return r ? toDeal(r) : undefined;
   }
 

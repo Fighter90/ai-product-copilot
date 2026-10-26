@@ -3,8 +3,9 @@ import { DIMENSION_NONE } from '@pca/shared';
 import type { MetrikaClient } from '../client';
 import { ENDPOINTS } from '../endpoints';
 import { StatDataResponseSchema, type StatDataResponse } from '../schemas';
+import { statFilters } from '../traffic-filter';
+import { aggregatePages, mergePageStats } from './normalize-page';
 import { ratio } from './ratio';
-import { aggregatePages } from './normalize-page';
 
 export interface PageQueryOptions {
   readonly counterId: number;
@@ -12,6 +13,11 @@ export interface PageQueryOptions {
   readonly to: string;
   /** When set, goal reaches + conversion rate metrics are requested. */
   readonly goalId?: number;
+  /**
+   * Override the Reporting API `filters` value (tests). Default: {@link statFilters} —
+   * test/robot traffic excluded unless INCLUDE_TEST_TRAFFIC=1 (ANA-22).
+   */
+  readonly filters?: string;
 }
 
 type Row = StatDataResponse['data'][number];
@@ -44,6 +50,7 @@ export async function pageBehavior(
   client: MetrikaClient,
   opts: PageQueryOptions,
 ): Promise<{ raw: StatDataResponse; stats: PageStat[] }> {
+  const filters = opts.filters ?? statFilters();
   const raw = await client.get(
     ENDPOINTS.statData,
     {
@@ -53,8 +60,12 @@ export async function pageBehavior(
       date1: opts.from,
       date2: opts.to,
       attribution: 'lastsign',
+      ...(filters ? { filters } : {}),
     },
     StatDataResponseSchema,
   );
-  return { raw, stats: aggregatePages(raw.data.map((row) => mapRow(row, opts))) };
+  return {
+    raw,
+    stats: mergePageStats(aggregatePages(raw.data.map((row) => mapRow(row, opts)))),
+  };
 }

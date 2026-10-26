@@ -32,6 +32,8 @@ export interface NewDecision {
   readonly spawnedHypothesisIds?: readonly number[];
   readonly decidedBy: string;
   readonly participants?: string;
+  /** True for seeded demo content (ANA-18) — the report renders a «ДЕМО» badge for it. */
+  readonly isDemo?: boolean;
 }
 
 export interface Decision extends NewDecision {

@@ -4,8 +4,13 @@
  * blockquotes, paragraphs and horizontal rules. Any stray markdown markers are stripped so no raw
  * «##»/«**»/«1.» leak into the rendered Executive Summary.
  */
+/** Escape HTML special characters BEFORE any tag building — the input (LLM output,
+ *  Metrika-sourced utm/URL strings) is untrusted and rendered via dangerouslySetInnerHTML. */
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
 export function mdToHtml(md: string): string {
-  const lines = md.split('\n');
+  const lines = escapeHtml(md).split('\n');
   const html: string[] = [];
   let inTable = false;
   let tableRows: string[] = [];
@@ -93,10 +98,10 @@ export function mdToHtml(md: string): string {
       continue;
     }
 
-    // Blockquote
-    if (trimmed.startsWith('> ')) {
+    // Blockquote — '>' was HTML-escaped at entry, so match the escaped form.
+    if (trimmed.startsWith('&gt; ')) {
       flushList();
-      html.push(`<blockquote>${inlineFormat(trimmed.slice(2))}</blockquote>`);
+      html.push(`<blockquote>${inlineFormat(trimmed.slice('&gt; '.length))}</blockquote>`);
       continue;
     }
 
@@ -116,6 +121,21 @@ export function mdToHtml(md: string): string {
     }
 
     flushList();
+    // Images: ONLY site-relative paths (/screenshots/…), so docs can embed product screenshots.
+    // Everything else (http://, data:, javascript:) is intentionally not rendered.
+    const img = /^!\[([^\]]*)\]\((\/[^)\s]+)\)$/.exec(trimmed);
+    if (img) {
+      flushList();
+      const caption = img[1]!.trim();
+      html.push(
+        `<figure><img src="${img[2]}" alt="${caption}" loading="lazy"/>${
+          caption ? `<figcaption>${caption}</figcaption>` : ''
+        }</figure>`,
+      );
+      continue;
+    }
+
+    flushList();
     html.push(`<p>${inlineFormat(trimmed)}</p>`);
   }
 
@@ -126,6 +146,7 @@ export function mdToHtml(md: string): string {
 }
 
 function inlineFormat(text: string): string {
+  // Text is already HTML-escaped (see escapeHtml at the entry) — only safe tags are added here.
   // Bold+italic: ***text***
   text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
   // Bold: **text**

@@ -99,10 +99,15 @@ export function channelTotals(channels: ReportSnapshot['channels']): ChannelTota
   );
 }
 
+/** «[ДЕМО] » badge for seeded demo rows (ANA-18) — empty for real data. */
+export function demoTag(x: { isDemo?: boolean }): string {
+  return x.isDemo ? '[ДЕМО] ' : '';
+}
+
 /** One-line ICE summary used in the prioritization table. */
 export function priorityLine(h: Hypothesis, rank: number): string {
   const bucket = BUCKET_LABEL[iceBucket(h.iceScore)];
-  return `${rank}. [ICE ${h.iceScore} · ${bucket}] ${KIND_LABEL[h.kind]}: ${hypothesisStatement(h)} — статус: ${STATUS_LABEL[h.status]}, дедлайн ${h.deadlineAt}`;
+  return `${rank}. [ICE ${h.iceScore} · ${bucket}]${h.isDemo ? ' [ДЕМО]' : ''} ${KIND_LABEL[h.kind]}: ${hypothesisStatement(h)} — статус: ${STATUS_LABEL[h.status]}, дедлайн ${h.deadlineAt}`;
 }
 
 // ---------------------------------------------------------------------------
