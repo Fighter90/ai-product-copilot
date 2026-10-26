@@ -70,6 +70,14 @@ export function buildServer(
   });
   const cab = deps.cabinet;
 
+  // Fastify 5 rejects DELETE with `content-type: application/json` and an empty body (v4 allowed
+  // it). Keep the v4 behaviour so body-less DELETEs (e.g. /api/b2b/:id) from any client still work.
+  const defaultJsonParser = app.getDefaultJsonParser('error', 'error');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    if (req.method === 'DELETE' && body === '') return done(null, undefined);
+    defaultJsonParser(req, body as string, done);
+  });
+
   app.register(swagger, {
     openapi: { info: { title: 'ProductCamp Analytics Copilot API', version: APP_VERSION } },
   });
