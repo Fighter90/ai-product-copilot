@@ -77,8 +77,7 @@ export class UsersRepo {
 
   getByEmail(email: string): User | undefined {
     const row = this.db.prepare('SELECT * FROM users WHERE email = ?').get(email.trim()) as
-      | UserRow
-      | undefined;
+      UserRow | undefined;
     return row ? toUser(row) : undefined;
   }
 
@@ -136,8 +135,7 @@ export class UsersRepo {
   /** Verify credentials; returns the user only when active and the password matches. */
   authenticate(email: string, password: string): User | undefined {
     const row = this.db.prepare('SELECT * FROM users WHERE email = ?').get(email.trim()) as
-      | UserRow
-      | undefined;
+      UserRow | undefined;
     // Always run the expensive check — even for missing/inactive users — so response
     // timing does not reveal which e-mails exist.
     const stored = row && row.is_active === 1 ? row.password_hash : this.dummyHash;

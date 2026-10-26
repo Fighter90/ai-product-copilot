@@ -14,7 +14,8 @@
   --c-ink: 26 26 26;
   --c-muted: 87 87 79;
   --c-accent: 255 77 20;
-  --c-onaccent: 255 255 255;
+  --c-accent-text: 214 58 0;
+  --c-onaccent: 26 26 26;
   color-scheme: light;
 }
 
@@ -26,7 +27,8 @@
   --c-ink: 255 255 255;
   --c-muted: 200 200 200;
   --c-accent: 255 77 20;
-  --c-onaccent: 255 255 255;
+  --c-accent-text: 214 58 0;
+  --c-onaccent: 26 26 26;
   color-scheme: dark;
 }
 

@@ -28,6 +28,7 @@ export default {
         ink: 'rgb(var(--c-ink) / <alpha-value>)',
         muted: 'rgb(var(--c-muted) / <alpha-value>)',
         accent: 'rgb(var(--c-accent) / <alpha-value>)',
+        'accent-text': 'rgb(var(--c-accent-text) / <alpha-value>)',
         onaccent: 'rgb(var(--c-onaccent) / <alpha-value>)',
         // Legacy palettes remapped to the brand
         white: 'rgb(var(--c-surface) / <alpha-value>)',

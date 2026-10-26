@@ -202,7 +202,7 @@ function SideNav({
                   className={({ isActive }) =>
                     `group relative flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-all duration-200 ${
                       isActive
-                        ? 'bg-accent/10 font-semibold text-accent'
+                        ? 'bg-accent/10 font-semibold text-accent-text'
                         : 'text-muted hover:bg-raised hover:text-ink'
                     }`
                   }

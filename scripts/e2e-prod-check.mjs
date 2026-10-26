@@ -116,14 +116,22 @@ current = 'assistant';
 try {
   await page.goto(BASE + '/app', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
-  await page.locator('button[aria-label*="ссистент"], button[aria-label*="ssistant"]').first().click({ timeout: 8000 });
+  await page
+    .locator('button[aria-label*="ссистент"], button[aria-label*="ssistant"]')
+    .first()
+    .click({ timeout: 8000 });
   const box = page.locator('textarea, input[placeholder]').last();
   await box.click();
   await box.fill('Как подключить DataLens?');
   await page.keyboard.press('Enter');
   await page.waitForTimeout(10000);
   const len = (await page.content()).length;
-  results.push(['assistant', len > 30000 ? 'ok' : 'thin', len, consoleErrors.get('assistant') ?? []]);
+  results.push([
+    'assistant',
+    len > 30000 ? 'ok' : 'thin',
+    len,
+    consoleErrors.get('assistant') ?? [],
+  ]);
   await shot('assistant');
 } catch (e) {
   results.push(['assistant', 'FAIL', 0, [String(e).slice(0, 120)]]);
@@ -133,15 +141,20 @@ try {
 current = 'i18n-theme';
 try {
   await page.evaluate(() => {
+    // eslint-disable-next-line no-undef
     localStorage.setItem('pca.locale', 'en');
+    // eslint-disable-next-line no-undef
     localStorage.setItem('pca.theme', 'light');
   });
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
-  const en = (await page.content()).includes('OVERVIEW') || (await page.content()).includes('Overview');
+  const en =
+    (await page.content()).includes('OVERVIEW') || (await page.content()).includes('Overview');
   results.push(['i18n-theme', en ? 'ok' : 'check', 0, []]);
   await page.evaluate(() => {
+    // eslint-disable-next-line no-undef
     localStorage.setItem('pca.locale', 'ru');
+    // eslint-disable-next-line no-undef
     localStorage.setItem('pca.theme', 'dark');
   });
 } catch (e) {
@@ -156,7 +169,9 @@ console.log('\n=== E2E ПРОДА:', BASE, '===');
 for (const [name, status, len, errs] of results) {
   const bad = status === 'FAIL' || (errs?.length ?? 0) > 0;
   if (bad) fails++;
-  console.log(`${bad ? '✗' : '✓'} ${name.padEnd(18)} ${status.padEnd(6)} len=${len}${errs?.length ? ' | ' + errs.join(' ; ') : ''}`);
+  console.log(
+    `${bad ? '✗' : '✓'} ${name.padEnd(18)} ${status.padEnd(6)} len=${len}${errs?.length ? ' | ' + errs.join(' ; ') : ''}`,
+  );
 }
 console.log(`\nИтого: ${results.length - fails}/${results.length} ok, ошибок: ${fails}`);
 console.log(fails === 0 ? 'VERDICT: PASS' : 'VERDICT: FAIL');
