@@ -54,4 +54,32 @@ describe('b2b API', () => {
     const missing = await ctx.app.inject({ method: 'DELETE', url: `/api/b2b/${id}` });
     expect(missing.statusCode).toBe(404);
   });
+
+  it('accepts a body-less DELETE sent with content-type: application/json (frontend http())', async () => {
+    const id = (await ctx.app.inject({ method: 'POST', url: '/api/b2b', payload: deal })).json()
+      .id as number;
+    const ok = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/b2b/${id}`,
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(ok.statusCode).toBe(204);
+  });
+
+  it('still rejects an empty JSON body on POST and keeps proto-poisoning protection', async () => {
+    const empty = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/b2b',
+      headers: { 'content-type': 'application/json' },
+      payload: '',
+    });
+    expect(empty.statusCode).toBe(400);
+    const poisoned = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/b2b',
+      headers: { 'content-type': 'application/json' },
+      payload: '{"__proto__":{"x":1},"company":"X"}',
+    });
+    expect(poisoned.statusCode).toBe(400);
+  });
 });

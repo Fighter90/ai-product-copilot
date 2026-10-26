@@ -173,7 +173,7 @@ pnpm seed   # или: pnpm --filter @pca/backend sync --goalId=<id> --from=YYYY-
 
 | Симптом                                   | Решение                                                                                    |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `Node.js 20+ required`                    | установите Node ≥ 20 (`node --version`)                                                    |
+| `Node.js 22.12+ required`                 | установите Node ≥ 22.12 (`node --version`)                                                 |
 | `pnpm: command not found`                 | `npm i -g pnpm` (или `corepack enable`)                                                    |
 | Порт 5173/4000 занят                      | остановите старые процессы (`pkill -f vite`, `pkill -f "tsx watch src/server.ts"`)         |
 | PDF: `executablePath … must be specified` | задайте `PUPPETEER_EXECUTABLE_PATH` в `.env` или установите Chrome                         |

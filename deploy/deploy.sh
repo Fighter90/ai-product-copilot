@@ -144,7 +144,8 @@ log "Готово: build ${BUILD_SHA_SHORT} задеплоен, /api/health от
 log "Проверьте сайт: curl -sI https://dashboardcamp.ru"
 
 # --- echarts UMD для серверного рендера графиков отчёта (chart-renderer) ---------------------
-ECHARTS_SRC="$(find "$REPO_ROOT/node_modules/.pnpm" -path "*echarts/dist/echarts.min.js" 2>/dev/null | head -1)"
+# Берём ту версию, что резолвит фронтенд (в .pnpm могут лежать старые echarts@5 — find|head их цеплял).
+ECHARTS_SRC="$(cd "$REPO_ROOT/code/frontend" && node -p "require.resolve('echarts/dist/echarts.min.js')" 2>/dev/null || true)"
 if [[ -n "$ECHARTS_SRC" ]]; then
   run_remote "mkdir -p /opt/pca/assets"
   push_rsync "$ECHARTS_SRC" /opt/pca/assets/echarts.min.js

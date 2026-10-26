@@ -191,7 +191,9 @@ describe('AuthProvider / useAuth', () => {
     await waitFor(() => expect(screen.getByTestId('secret')).toBeInTheDocument());
 
     // 401 от API → событие → редирект на /login?next=…&expired=1
-    window.dispatchEvent(new CustomEvent('pca:unauthorized'));
+    act(() => {
+      window.dispatchEvent(new CustomEvent('pca:unauthorized'));
+    });
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
     expect(screen.getByTestId('path').textContent).toBe(
       '/login?next=%2Fapp%2Fcurrent%3Fx%3D1&expired=1',

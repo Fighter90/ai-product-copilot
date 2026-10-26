@@ -227,7 +227,7 @@ Russian originals: [README.md](README.md), [docs/](docs/user-guide.md),
 
 ## Tech stack
 
-Backend: Node 20 · TypeScript 5 strict · Fastify 4 (tsx) · Zod · better-sqlite3 · undici ·
+Backend: Node 22 · TypeScript 5 strict · Fastify 5 (tsx) · Zod · better-sqlite3 · undici ·
 `docx` · puppeteer-core · pino.
 Frontend: React 18 · Vite · TailwindCSS · Apache ECharts · TanStack Table/Query · Zustand ·
 react-router · ru/en i18n.

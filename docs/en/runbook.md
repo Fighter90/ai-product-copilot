@@ -6,7 +6,7 @@ A detailed "how to run the project" guide, including for a volunteer with no bac
 
 ## 1. Requirements
 
-- **Node.js 20 LTS** (`node -v` → v20.x). Install via https://nodejs.org or `nvm install 20`.
+- **Node.js 22 LTS** (`node -v` → v22.12+). Install via https://nodejs.org or `nvm install 22`.
 - **pnpm 9** — installed automatically by `run.sh`, or manually: `npm i -g pnpm`.
 - macOS / Linux. On Windows use WSL2.
 
@@ -74,7 +74,7 @@ pnpm build       # build (frontend artifact → code/frontend/dist)
 
 | Symptom                                  | Cause / fix                                                              |
 | ---------------------------------------- | ------------------------------------------------------------------------ |
-| `Node.js 20+ required`                   | install Node 20 (`nvm install 20 && nvm use 20`).                        |
+| `Node.js 22.12+ required`                | install Node 22 (`nvm install 22 && nvm use 22`).                        |
 | Browser opened but "Backend unavailable" | backend still starting — refresh in 2–3s; check `API_PORT=4000` is free. |
 | `metrikaTokenPresent: false`             | add `YANDEX_OAUTH_TOKEN` to `.env` and restart.                          |
 | `EADDRINUSE :4000` / `:5173`             | port busy — change `API_PORT` / `PORT` in `.env`.                        |

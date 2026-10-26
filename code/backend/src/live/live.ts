@@ -6,7 +6,7 @@ import { MetrikaClient } from '../metrika/client';
 const StatSchema = z.object({
   data: z.array(
     z.object({
-      dimensions: z.array(z.record(z.unknown())),
+      dimensions: z.array(z.record(z.string(), z.unknown())),
       metrics: z.array(z.number().nullable()),
     }),
   ),

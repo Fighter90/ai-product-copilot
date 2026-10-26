@@ -45,7 +45,7 @@ export interface MetrikaGoalsDeps {
 
 export const ARCHIVE_CONFIRM_WORD = 'АРХИВ';
 
-const SpecBody = z.record(z.unknown());
+const SpecBody = z.record(z.string(), z.unknown());
 const GoalIdParam = z.coerce.number().int().positive();
 const ArchiveBody = z
   .object({ confirm: z.unknown().optional(), folderId: z.number().int().min(0).optional() })
