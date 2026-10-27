@@ -40,6 +40,24 @@ apt-get install -y --no-install-recommends \
   curl git ca-certificates gnupg rsync \
   build-essential python3 make g++
 
+# --- 1a. Google Chrome — движок PDF-рендера отчётов (puppeteer-core) ------------------------
+# Идемпотентно: пропускаем, если какой-нибудь Chrome/Chromium уже есть.
+# Ставим chrome-stable из репозитория Google (а не snap-хром): на сервере без
+# десктопа snapd может быть не настроен, а путь /usr/bin/google-chrome —
+# стабильный и одинаково работает под systemd.
+if command -v google-chrome >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
+  log "  браузер для PDF уже есть ($(command -v google-chrome || command -v chromium)), пропускаем"
+else
+  log "  ставим google-chrome-stable (нужен для PDF-экспорта отчётов)..."
+  curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google.gpg
+  echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
+    > /etc/apt/sources.list.d/google-chrome.list
+  apt-get update -y
+  apt-get install -y --no-install-recommends google-chrome-stable
+fi
+PDF_BROWSER="$(command -v google-chrome || command -v chromium || true)"
+log "  браузер для PDF: ${PDF_BROWSER:-НЕ НАЙДЕН — PDF-экспорт работать не будет}"
+
 # ---------------------------------------------------------------------------
 # 2. Node 22 (nodesource), corepack -> pnpm, глобальный tsx.
 #    pnpm обязателен: @pca/backend зависит от workspace-пакета @pca/shared,
@@ -115,6 +133,12 @@ fi
 # 5. nginx: сайт из nginx-pca.conf + certbot webroot.
 # ---------------------------------------------------------------------------
 log "Шаг 5/6: nginx..."
+# Сниппет security-заголовков (ANA-52) — на него ссылается nginx-pca.conf
+# (include /etc/nginx/snippets/pca-security-headers.conf); без него nginx -t упадёт.
+if [[ -f "$SCRIPT_DIR/nginx-security-headers.conf" ]]; then
+  mkdir -p /etc/nginx/snippets
+  install -m 644 "$SCRIPT_DIR/nginx-security-headers.conf" /etc/nginx/snippets/pca-security-headers.conf
+fi
 if [[ -f "$SCRIPT_DIR/nginx-pca.conf" ]]; then
   install -m 644 "$SCRIPT_DIR/nginx-pca.conf" /etc/nginx/sites-available/pca.conf
   ln -sfn /etc/nginx/sites-available/pca.conf /etc/nginx/sites-enabled/pca.conf
@@ -145,12 +169,24 @@ systemctl daemon-reload
 systemctl enable --now pca-api.service 2>/dev/null || warn "pca-api.service не включён (нет юнит-файла?)"
 systemctl enable --now pca-sync.timer 2>/dev/null || warn "pca-sync.timer не включён (нет юнит-файла?)"
 
+# PUPPETEER_EXECUTABLE_PATH в существующий .env (идемпотентно): путь к браузеру PDF-рендера.
+# Для свежего сервера переменная попадает в шаблон .env в инструкции ниже.
+if [[ -n "$PDF_BROWSER" && -f "$PCA_ROOT/.env" ]] && ! grep -q '^PUPPETEER_EXECUTABLE_PATH=' "$PCA_ROOT/.env"; then
+  printf 'PUPPETEER_EXECUTABLE_PATH=%s\n' "$PDF_BROWSER" >> "$PCA_ROOT/.env"
+  chown pca:pca "$PCA_ROOT/.env"
+  log "PUPPETEER_EXECUTABLE_PATH=$PDF_BROWSER дописан в $PCA_ROOT/.env (systemctl restart pca-api, чтобы применить)"
+fi
+
 cat <<'EOF'
 
 Готово. Дальше вручную (см. deploy/DEPLOY.md):
   1. Создайте /opt/pca/.env со секретами (шаблон — раздел «Первый деплой» в DEPLOY.md):
        install -m 600 -o pca -g pca /dev/null /opt/pca/.env   # затем заполните
+       # не забудьте путь к браузеру для PDF (значение с шага 1a):
+       #   PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
   2. С локальной машины запустите ./deploy/deploy.sh — зальёт код и собранный фронт.
   3. Выпустите SSL: certbot --nginx -d dashboardcamp.ru -d www.dashboardcamp.ru
-  4. Проверка: systemctl status pca-api && curl -s http://127.0.0.1:4000/api/health
+  4. Харденинг SSH (ANA-51): bash /tmp/pca-setup/harden-ssh.sh
+     (сначала проверьте вход по ключу в НОВОЙ сессии, не закрывая текущую!)
+  5. Проверка: systemctl status pca-api && curl -s http://127.0.0.1:4000/api/health
 EOF

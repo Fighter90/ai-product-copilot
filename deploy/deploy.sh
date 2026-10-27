@@ -45,6 +45,7 @@ run_remote() {
 
 push_rsync() { # push_rsync <локальный путь> <удалённый путь> [доп. аргументы rsync...]
   local src="$1" dst="$2"; shift 2
+  local IFS=' ' # строка для rsync -e собирается через [*] — с глобальным IFS=$'\n\t' она бы склеилась переводами строк
   local -a sshcmd=(ssh -p "$SSH_PORT")
   [[ -n "$SSH_KEY" ]] && sshcmd+=(-i "$SSH_KEY")
   if [[ -n "$SSH_PASS" ]]; then

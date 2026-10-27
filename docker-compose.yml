@@ -1,0 +1,33 @@
+services:
+  app:
+    build: .
+    image: pca/app
+    container_name: pca-app
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      # Внутри контейнера пути от /app (REPO_ROOT = code/backend/src/../../..).
+      DB_PATH: /app/data/productcamp.sqlite
+      # Статьи помощи (<lang>/*.md) копируются в образ, см. Dockerfile.
+      HELP_DIR: /app/docs/help
+      COOKIE_SECURE: '1'
+    ports:
+      - '4000:4000'
+    volumes:
+      - pca-data:/app/data
+    restart: unless-stopped
+    # SIGTERM: fastify close в server.ts (~до 10 c на докончить LLM-отчёт) + -t 30 запас.
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  pca-data:

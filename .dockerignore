@@ -1,0 +1,36 @@
+# .dockerignore — образу не нужны secrets, git-история и локальные артефакты (ANA-14).
+.git
+.github
+.gitignore
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Секреты ни в каком виде не попадают в образ/контекст.
+.env
+.env.*
+**/.env
+*.pem
+*.key
+
+# Зависимости и сборочные артефакты монтируются/строятся внутри образа.
+node_modules
+**/node_modules
+**/dist
+**/coverage
+**/.vite
+
+# Данные приложения (SQLite) и резервные копии — вне контейнера (volume).
+data
+*.sqlite
+*.sqlite-journal
+*.db
+*.db.gz
+
+# Локальная разработка, IDE, документация к ИИ-ассистентам.
+.claude
+CLAUDE.md
+AGENTS.md
+screenshots
+*.log
+.DS_Store
