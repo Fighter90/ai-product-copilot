@@ -14,13 +14,13 @@
 2. **Пять спек писаны под v2-приложение** (публичные маршруты без авторизации), тогда как v3 —
    кабинет с входом (`/login` → `/app/*`, `RequireAuth`):
 
-   | Спека | v2-ожидание | Реальность v3 |
-   | ---- | ---- | ---- |
-   | `smoke.spec.ts` | `/` — дашборд; ссылка «Настройки»; кнопка «Сформировать срез данных» | `/` — публичный лендинг; настройки — `/app/admin/metrika` («Метрика и данные»); кнопка — «Собрать отчёт» (`rep.build`) |
-   | `filters.spec.ts` | фильтр на `/`, `header span.font-mono` | кабинет за логином; FilterBar на `/app`; пресеты `flt.presetDays` |
-   | `report.spec.ts` | `/report`, «Сформировать срез данных» | `/app/report`, «Собрать отчёт» (ANA-39: одна главная кнопка) |
-   | `b2b.spec.ts` | «B2B lives in Settings», `/b2b → /settings` | `/b2b` → `/app/b2b` (страница «B2B-сделки») |
-   | `mobile.spec.ts` | пути `/`, `/traffic`, … `/settings` | `/app`, `/app/traffic`, … `/app/admin/metrika` |
+   | Спека             | v2-ожидание                                                          | Реальность v3                                                                                                          |
+   | ----------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+   | `smoke.spec.ts`   | `/` — дашборд; ссылка «Настройки»; кнопка «Сформировать срез данных» | `/` — публичный лендинг; настройки — `/app/admin/metrika` («Метрика и данные»); кнопка — «Собрать отчёт» (`rep.build`) |
+   | `filters.spec.ts` | фильтр на `/`, `header span.font-mono`                               | кабинет за логином; FilterBar на `/app`; пресеты `flt.presetDays`                                                      |
+   | `report.spec.ts`  | `/report`, «Сформировать срез данных»                                | `/app/report`, «Собрать отчёт» (ANA-39: одна главная кнопка)                                                           |
+   | `b2b.spec.ts`     | «B2B lives in Settings», `/b2b → /settings`                          | `/b2b` → `/app/b2b` (страница «B2B-сделки»)                                                                            |
+   | `mobile.spec.ts`  | пути `/`, `/traffic`, … `/settings`                                  | `/app`, `/app/traffic`, … `/app/admin/metrika`                                                                         |
 
    Уже переведены на v3 и зелёные: `dashboard-pages`, `roles`, `overview-fold`, `a11y`,
    `contrast` (мокают `/api/auth/me`, localStorage `pca.onboarded`).

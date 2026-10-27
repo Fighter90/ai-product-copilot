@@ -116,7 +116,25 @@ export interface MockOptions {
   decisions?: MockState['decisions'];
   /** Endpoint keys to fail with 500 (e.g. 'channels', 'utm', 'geo-device', 'pages', 'exit-pages'). */
   errors?: string[];
+  /**
+   * Cabinet session (v3): `/api/auth/me` answers with this user so `RequireAuth` lets the page
+   * render. Default — analyst; `null` = guest (redirect to /login); pass an admin object for
+   * admin-only pages. Registered AFTER the data mocks, so a spec may override it again.
+   */
+  user?: Record<string, unknown> | null;
 }
+
+/** Default signed-in cabinet user (analyst) for specs that don't care about roles. */
+export const CABINET_USER: Record<string, unknown> = {
+  id: 1,
+  email: 'analyst@example.com',
+  name: 'Analyst',
+  role: 'analyst',
+  locale: 'ru',
+  isActive: true,
+  createdAt: '2025-01-01T00:00:00.000Z',
+  lastLoginAt: null,
+};
 
 function future(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString();
@@ -370,6 +388,63 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
       },
       body: 'FILE-BYTES',
     });
+  });
+
+  // --- Cabinet v3 endpoints (ANA-66/72/73): pages fetch these on mount; without mocks the
+  // catch-all of some specs ([]) answers where an object is expected and the render crashes.
+  await page.route('**/api/notifications', (r) => json(r, []));
+  await page.route('**/api/demo/status', (r) => json(r, { demo: false, counts: {} }));
+  await page.route('**/api/sync/status', (r) =>
+    json(r, {
+      id: 1,
+      startedAt: '2025-01-02T00:00:00.000Z',
+      finishedAt: '2025-01-02T00:01:00.000Z',
+      from: '2025-01-01',
+      to: '2025-01-02',
+      status: 'ok',
+      errors: [],
+    }),
+  );
+  await page.route('**/api/payments/summary', (r) =>
+    json(r, { b2cPaid: 12, b2bPaid: 20, paid: 32, days: 14 }),
+  );
+  await page.route('**/api/payments/b2c', (r) => json(r, []));
+  await page.route('**/api/marketing/weekly', (r) =>
+    json(r, {
+      months: [{ key: '2025-01', ru: 'Январь', en: 'January' }],
+      weeks: [
+        {
+          key: '2025-01-01',
+          start: '2025-01-01',
+          end: '2025-01-07',
+          month: '2025-01',
+          labelRu: '1 неделя (1-7)',
+          labelEn: 'Week 1 (Jan 1-7)',
+        },
+      ],
+      sections: [{ key: 'content', ru: 'Контент-маркетинг', en: 'Content marketing' }],
+      metrics: [
+        {
+          key: 'tg_clicks',
+          ru: 'переходы по ссылкам тг',
+          en: 'Telegram link clicks',
+          section: 'content',
+          sync: false,
+        },
+      ],
+      cells: [],
+    }),
+  );
+
+  // Cabinet session: LAST registered route wins, so a spec can still override /api/auth/me.
+  const user = opts.user === undefined ? CABINET_USER : opts.user;
+  await page.route('**/api/auth/me', (r) => json(r, { user }));
+
+  // Deterministic RU interface + skip the first-visit onboarding. Specs may override the locale
+  // with their own addInitScript AFTER installMocks (init scripts run in registration order).
+  await page.addInitScript(() => {
+    localStorage.setItem('pca.onboarded', '1');
+    localStorage.setItem('pca.locale', 'ru');
   });
 
   return state;

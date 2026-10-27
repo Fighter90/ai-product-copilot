@@ -39,9 +39,9 @@
 
 ## Затрагиваемые файлы
 
-| Файл | Роль |
-| ---- | ---- |
-| `e2e/fixtures.ts` | общие моки API + авторизация |
-| `e2e/{smoke,filters,report,b2b,mobile,hypotheses,dashboard-pages}.spec.ts` | спеки сьюта |
-| `.github/workflows/e2e.yml` | установка браузеров в CI |
-| `openspec/specs/e2e/spec.md` | вечная спека возможности «E2E-сьют» |
+| Файл                                                                       | Роль                                |
+| -------------------------------------------------------------------------- | ----------------------------------- |
+| `e2e/fixtures.ts`                                                          | общие моки API + авторизация        |
+| `e2e/{smoke,filters,report,b2b,mobile,hypotheses,dashboard-pages}.spec.ts` | спеки сьюта                         |
+| `.github/workflows/e2e.yml`                                                | установка браузеров в CI            |
+| `openspec/specs/e2e/spec.md`                                               | вечная спека возможности «E2E-сьют» |

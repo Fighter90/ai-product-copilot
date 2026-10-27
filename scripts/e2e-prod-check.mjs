@@ -196,9 +196,7 @@ if (!API_ONLY) {
   current = 'i18n-theme';
   try {
     await page.evaluate(() => {
-      // eslint-disable-next-line no-undef
       globalThis.localStorage.setItem('pca.locale', 'en');
-      // eslint-disable-next-line no-undef
       globalThis.localStorage.setItem('pca.theme', 'light');
     });
     await page.reload({ waitUntil: 'networkidle' });
@@ -208,9 +206,7 @@ if (!API_ONLY) {
     results.push(['i18n-theme', en ? 'ok' : 'check', 0, []]);
     await shot('i18n-theme');
     await page.evaluate(() => {
-      // eslint-disable-next-line no-undef
       globalThis.localStorage.setItem('pca.locale', 'ru');
-      // eslint-disable-next-line no-undef
       globalThis.localStorage.setItem('pca.theme', 'dark');
     });
   } catch (e) {
