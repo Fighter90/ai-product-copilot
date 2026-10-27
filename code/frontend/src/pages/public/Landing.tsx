@@ -131,19 +131,27 @@ const CONTENT = {
     how: [
       [
         'Подключить',
-        'Администратор подключает счётчик Метрики по OAuth и выдаёт доступ аналитикам.',
+        'Администратор подключает счётчик Метрики по OAuth, создаёт аккаунты и выдаёт доступ аналитикам — пара минут, без регистрации и паролей в чатах.',
       ],
       [
         'Синхронизировать',
-        'Сырые ответы Метрики сохраняются в SQLite — каждая цифра прослеживается до источника.',
+        'Каждые 3 часа кабинет забирает данные Метрики: сырые ответы API сохраняются в базу, поэтому любая цифра отчёта прослеживается до исходного ответа.',
+      ],
+      [
+        'Навести порядок в целях',
+        'Аудит всех 163 целей счётчика: мёртвые без достижений 90 дней, дубли, роль каждой цели в воронке — архивировать лишние можно прямо из кабинета.',
       ],
       [
         'Смотреть вживую',
-        'Цели, воронка pc-goals, источники и страницы — с автообновлением и data grids.',
+        'Цели, воронка pc-goals, источники, UTM, страницы и устройства — с автообновлением, фильтрами периодов и выгрузкой CSV.',
+      ],
+      [
+        'Разобрать срез',
+        'Отчёт собирается из неизменяемого среза данных в DOCX/PDF; AI-разбор по шести разделам опирается только на факты этого среза.',
       ],
       [
         'Решать',
-        'AI предлагает гипотезы по ICE, отчёт собирается в DOCX/PDF из неизменяемого среза.',
+        'AI предлагает гипотезы с ICE-оценкой, допущениями и методами проверки — решение фиксируется рядом с теми данными, на которых оно принято.',
       ],
     ],
     featTitle: 'Возможности',
@@ -213,28 +221,61 @@ const CONTENT = {
         'Командная работа',
         'Каждый аналитик в своём аккаунте, администратор управляет доступом в один клик.',
       ],
+      [
+        Database,
+        'История и срезы',
+        'Год истории данных и неизменяемые снапшоты отчётов: цифра прошлого не перепишется задним числом.',
+      ],
     ],
     faqTitle: 'Вопросы',
     faq: [
       [
         'Чем заказ отличается от оплаты?',
-        'Заказ — это цель Метрики (контакты оставлены, переход к оплате). Оплата приходит из платёжной системы или B2B-сделок. Инструмент никогда не складывает их в одну цифру.',
+        'Заказ — это цель в Метрике: заявка оставлена, переход к оплате начат. Оплата — фактически купленный билет: B2B-сделка в кабинете или подтверждённая оплата B2C. KPI «300 оплат» считается только по оплаченным, заказы показываются отдельной строкой — цифры никогда не складываются в одну.',
       ],
       [
         'Нужен ли AI, чтобы пользоваться?',
-        'Нет. Дашборд, цели, воронка и отчёт работают без провайдера. AI добавляет гипотезы, разбор и ассистента по справке.',
+        'Нет. Дашборд, цели, воронка, отчёты и выгрузки работают без провайдера. AI добавляет гипотезы, разбор отчёта и ассистента по справке. Провайдера и порядок фолбэка настраивает администратор — можно вообще без AI.',
       ],
       [
-        'Откуда данные в режиме «Сейчас»?',
-        'Прямо из Reporting API Метрики с кэшем 60 секунд, тестовый трафик (песочницы, метки env=test) отфильтрован.',
+        'Откуда данные в разделе «Сейчас»?',
+        'Напрямую из Reporting API Метрики с кэшем 60 секунд. Тестовый трафик отфильтрован: песочницы pc-goals (URL вида file:…), пометки env=test, а роботы отсекаются на уровне настроек счётчика — в цифрах только живые посетители.',
+      ],
+      [
+        'За какой период доступны данные?',
+        'Синк проходит каждые 3 часа (окно 14 дней), история догружается до года. Все сырые ответы Метрики сохраняются в базу: любая цифра кабинета и отчёта прослеживается до исходного ответа API — ничего «из воздуха».',
+      ],
+      [
+        'Что происходит, если Метрика недоступна?',
+        'Синк падает безопасно: окно данных сначала сохраняется в памяти и восстанавливается при сбое, поэтому неудачная загрузка не оставляет кабинет с пустыми таблицами. Попытки повторяются с задержкой (например, при исчерпании квоты API), «Сейчас» продолжает работать с кэшем.',
+      ],
+      [
+        'Что такое гипотеза и как считается ICE?',
+        'Гипотеза — это формат работы с идеей: что делаем, 3 допущения, 2 метода проверки, ICE = Impact × Confidence × Ease, статус и дедлайн. Идеи можно вносить вручную («→ гипотеза» из любого инсайта) или импортировать сгенерированные AI.',
+      ],
+      [
+        'Как ИИ не выдумывает цифры?',
+        'В промпт уходят только факты среза данных. После генерации каждое число в тексте гипотезы сверяется со срезом: чего нет в данных — помечается предупреждением «непроверенное число». В отчёте указано, какой провайдер и модель делали разбор.',
+      ],
+      [
+        'Что ИИ видит о наших данных?',
+        'Только агрегаты среза: числа по дням, каналам и целям. Личных данных и сырых логов ИИ не получает. Ключи провайдеров хранятся зашифрованными (AES-256-GCM); если данные не должны покидать РФ-контур — включается GigaChat.',
       ],
       [
         'Можно ли анализировать в DataLens?',
-        'Да: выгрузка CSV для подключения «Файлы» и встроенный коннектор Метрики. Вебхуки DataLens приходят в кабинет.',
+        'Да. Дашборд «Трафик и цели» в DataLens собирается автоматически (визиты, источники, заказы), типизированные CSV выгружаются для подключения «Файлы», а вебхуки DataLens приходят обратно в кабинет.',
       ],
       [
-        'Как получить доступ?',
-        'Аккаунт создаёт администратор и передаёт временный пароль. Самостоятельной регистрации нет.',
+        'Кто и как управляет доступом?',
+        'Самостоятельной регистрации нет: администратор создаёт аккаунты и выдаёт временный пароль, аналитик меняет его при первом входе. Роли проверяются на сервере: админ настраивает интеграции и ключи, аналитик работает с данными, отчётами и гипотезами.',
+      ],
+      [
+        'А если данные Метрики и кабинета расходятся?',
+        'Все запросы синка воспроизводимы: те же фильтры, атрибуция по последнему значимому источнику, запросы по-дневные. Есть скрипт сверки «Метрика ↔ база ↔ API ↔ CSV ↔ отчёт ↔ DataLens» — расхождение считается багом, а не особенностью.',
+      ],
+      [
+        'Что нужно для старта?',
+        'OAuth-доступ к счётчику Метрики и аккаунт от администратора — остальное кабинет подтянет сам. AI-провайдер (10 минут в настройках) и DataLens подключаются опционально; деплой — скриптом на любой VPS с HTTPS.',
       ],
     ],
     finalTitle: 'Начните с живых целей',
@@ -273,19 +314,27 @@ const CONTENT = {
     how: [
       [
         'Connect',
-        'An administrator connects the Metrika counter via OAuth and grants analysts access.',
+        'The administrator connects the Metrika counter via OAuth, creates accounts and grants analyst access — a couple of minutes, no sign-ups or passwords in chats.',
       ],
       [
         'Sync',
-        'Raw Metrika responses are stored in SQLite — every number traces back to its source.',
+        'Every 3 hours the cabinet pulls Metrika data: raw API responses are stored, so any report number traces back to the original response.',
+      ],
+      [
+        'Clean up goals',
+        'An audit of all 163 counter goals: dead goals with no reaches for 90 days, duplicates, each goal’s role in the funnel — archive the extra ones right from the cabinet.',
       ],
       [
         'Watch live',
-        'Goals, the pc-goals funnel, sources and pages — auto-refreshed, with data grids.',
+        'Goals, the pc-goals funnel, sources, UTM, pages and devices — auto-refreshed, with period filters and CSV export.',
+      ],
+      [
+        'Analyse a snapshot',
+        'The report is built from an immutable data snapshot into DOCX/PDF; the six-section AI analysis relies only on the facts of that snapshot.',
       ],
       [
         'Decide',
-        'AI proposes ICE-scored hypotheses; the report is built as DOCX/PDF from an immutable snapshot.',
+        'AI proposes ICE-scored hypotheses with assumptions and test methods — the decision is recorded next to the data it was based on.',
       ],
     ],
     featTitle: 'Features',
@@ -355,28 +404,61 @@ const CONTENT = {
         'Teamwork',
         'Every analyst has their own account; the administrator manages access in one click.',
       ],
+      [
+        Database,
+        'History and snapshots',
+        'A year of data history and immutable report snapshots: past numbers are never rewritten after the fact.',
+      ],
     ],
     faqTitle: 'FAQ',
     faq: [
       [
         'How is an order different from a payment?',
-        'An order is a Metrika goal (contacts left, moved to payment). A payment comes from the payment system or B2B deals. The tool never adds them up.',
+        'An order is a Metrika goal: a lead was left, checkout was started. A payment is a ticket actually bought — a B2B deal in the cabinet or a confirmed B2C payment. The “300 payments” KPI counts paid only; orders are shown as a separate line — the two numbers are never added together.',
       ],
       [
         'Do I need AI to use it?',
-        'No. Dashboard, goals, funnel and report work without a provider. AI adds hypotheses, analysis and the help assistant.',
+        'No. Dashboard, goals, funnel, reports and exports work without any provider. AI adds hypotheses, report analysis and the help assistant. The administrator configures providers and the fallback order — running without AI entirely is fine.',
       ],
       [
-        'Where does “Live” data come from?',
-        'Directly from the Metrika Reporting API with a 60 s cache; test traffic (sandboxes, env=test) is filtered out.',
+        'Where does the “Live” data come from?',
+        'Directly from the Metrika Reporting API with a 60-second cache. Test traffic is filtered out: pc-goals sandboxes (file: URLs), env=test marks, and robots are excluded by the counter settings — only real visitors are counted.',
+      ],
+      [
+        'What period does the data cover?',
+        'The sync runs every 3 hours (a 14-day window), and history is backfilled up to a year. All raw Metrika responses are stored in the database: every number in the cabinet and reports traces back to the original API response.',
+      ],
+      [
+        'What happens if Metrika goes down?',
+        'The sync fails safely: the data window is snapshotted in memory and restored on failure, so a failed load never leaves the cabinet with empty tables. Retries back off (for example, when the API quota is exhausted) and the Live view keeps working from cache.',
+      ],
+      [
+        'What is a hypothesis and how is ICE calculated?',
+        'A hypothesis is a format for working with ideas: what we do, 3 assumptions, 2 test methods, ICE = Impact × Confidence × Ease, status and deadline. Ideas can be entered manually (“→ hypothesis” from any insight) or imported from AI-generated ones.',
+      ],
+      [
+        'How does the AI avoid inventing numbers?',
+        'Only snapshot facts go into the prompt. After generation, every number in the hypothesis text is checked against the snapshot: anything not present in the data is flagged as an “unverified number”. The report states which provider and model produced the analysis.',
+      ],
+      [
+        'What does the AI see about our data?',
+        'Only snapshot aggregates: numbers by day, channel and goal. No personal data or raw logs are sent. Provider keys are stored encrypted (AES-256-GCM); if data must not leave the Russian cloud, GigaChat can be enabled.',
       ],
       [
         'Can I analyse in DataLens?',
-        'Yes: CSV export for the “Files” connection plus the built-in Metrika connector. DataLens webhooks arrive in the cabinet.',
+        'Yes. The “Traffic and goals” dashboard in DataLens is assembled automatically (visits, sources, orders), typed CSVs are exported for the “Files” connection, and DataLens webhooks arrive back in the cabinet.',
       ],
       [
-        'How do I get access?',
-        'An administrator creates the account and hands over a temporary password. There is no self sign-up.',
+        'Who manages access?',
+        'There is no self sign-up: the administrator creates accounts with temporary passwords, and analysts change them on first sign-in. Roles are enforced server-side: the admin configures integrations and keys, analysts work with data, reports and hypotheses.',
+      ],
+      [
+        'What if Metrika and the cabinet disagree?',
+        'Every sync request is reproducible: the same filters, last-significant-source attribution, per-day requests. There is a reconciliation script covering “Metrika ↔ database ↔ API ↔ CSV ↔ report ↔ DataLens” — a mismatch is treated as a bug, not a feature.',
+      ],
+      [
+        'What does it take to get started?',
+        'OAuth access to the Metrika counter and an account from the administrator — the cabinet pulls in the rest. An AI provider (10 minutes in settings) and DataLens are optional; deployment is a script away on any VPS with HTTPS.',
       ],
     ],
     finalTitle: 'Start with live goals',
@@ -388,7 +470,8 @@ const PROVIDERS = [
   { name: 'OpenRouter', note: 'Claude · GPT · Gemini · DeepSeek' },
   { name: 'Anthropic', note: 'Claude Sonnet / Opus' },
   { name: 'YandexGPT', note: 'AI Studio · Yandex Cloud' },
-  { name: 'GigaChat', note: 'Сбер · GigaChat-2' },
+  // ru/en notes: GigaChat's vendor name is Cyrillic — latinise for the EN landing (ANA-70).
+  { name: 'GigaChat', note: 'Сбер · GigaChat-2', noteEn: 'Sber · GigaChat-2' },
 ];
 
 function IntegrationMark({ kind }: { kind: 'metrika' | 'datalens' }): JSX.Element {
@@ -658,7 +741,9 @@ export function Landing(): JSX.Element {
                     <span className="text-xl font-bold">{p.name}</span>
                     <span className="text-xs text-muted">#{i + 1}</span>
                   </div>
-                  <div className="mt-2 text-sm text-muted">{p.note}</div>
+                  <div className="mt-2 text-sm text-muted">
+                    {locale === 'en' && p.noteEn ? p.noteEn : p.note}
+                  </div>
                   <div className="mt-4 h-1 overflow-hidden rounded-full bg-raised">
                     <div
                       className="h-full rounded-full bg-accent"
