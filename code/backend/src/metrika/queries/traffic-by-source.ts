@@ -136,11 +136,14 @@ export async function trafficBySource(
     ENDPOINTS.statData,
     {
       ids: opts.counterId,
-      // Group by traffic source only. Querying lastSourceEngine too would split one channel into
-      // several rows (Search = Google + Yandex …) — visits are additive but users are NOT (the same
-      // person across engines counts once per source), so a single-dimension query gives Metrika's
+      // Group by the LAST SIGNIFICANT source (`lastsign`), not `lastTrafficSource`: the latter is
+      // last CLICK — Metrika ignores attribution=lastsign for an explicitly-"last" dimension, and
+      // the numbers disagreed with the live screens / DataLens (ANA-65 finding 2, verified live
+      // 2026-10-27). Querying lastSourceEngine too would split one channel into several rows
+      // (Search = Google + Yandex …) — visits are additive but users are NOT (the same person
+      // across engines counts once per source), so a single-dimension query gives Metrika's
       // native, deduplicated visits AND users per channel.
-      dimensions: 'ym:s:lastTrafficSource',
+      dimensions: 'ym:s:lastsignTrafficSource',
       metrics: trafficMetrics(opts.goalId),
       date1: opts.from,
       date2: opts.to,

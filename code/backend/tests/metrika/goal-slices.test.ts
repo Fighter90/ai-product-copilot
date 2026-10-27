@@ -188,17 +188,17 @@ describe('SyncService new slices', () => {
     expect(summary).toEqual({
       goals: 1,
       resolvedGoalId: 80,
-      days: 1,
-      channelRows: 1,
-      utmRows: 1,
-      geoDeviceRows: 1,
-      pageRows: 1,
-      exitPageRows: 1,
+      days: 3, // one request per day (ANA-65 №7)
+      channelRows: 3,
+      utmRows: 3,
+      geoDeviceRows: 3,
+      pageRows: 3,
+      exitPageRows: 3,
       // goals fixture has 1 goal → one bytime batch; the fixture's first series carries 3 daily
       // values → 3 (date, goal) pairs (extra fixture series beyond the batch are ignored).
       goalReachesRows: 3,
-      browserOsRows: 1,
-      newReturningRows: 1,
+      browserOsRows: 3,
+      newReturningRows: 3,
     });
   });
 
@@ -220,7 +220,7 @@ describe('SyncService new slices', () => {
     });
     const summary = await svc2.syncAll('2025-01-01', '2025-01-03', 80);
     expect(summary.goalReachesRows).toBe(0);
-    expect(summary.channelRows).toBe(1);
+    expect(summary.channelRows).toBe(3);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('goal-reaches-by-day skipped'));
     warn.mockRestore();
   });

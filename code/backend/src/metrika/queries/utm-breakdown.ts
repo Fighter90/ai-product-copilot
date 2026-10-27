@@ -83,7 +83,9 @@ export async function utmBreakdown(
     ENDPOINTS.statData,
     {
       ids: opts.counterId,
-      dimensions: 'ym:s:UTMSource,ym:s:UTMMedium,ym:s:UTMCampaign',
+      // lastsign UTM dims (ANA-65 finding 2): plain UTMSource/… are last CLICK and disagreed with
+      // the live screens; verified against the live API 2026-10-27.
+      dimensions: 'ym:s:lastsignUTMSource,ym:s:lastsignUTMMedium,ym:s:lastsignUTMCampaign',
       metrics: utmMetrics(opts.goalId),
       date1: opts.from,
       date2: opts.to,

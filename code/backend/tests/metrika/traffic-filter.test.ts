@@ -20,7 +20,10 @@ describe('traffic-filter (ANA-22)', () => {
     else process.env[INCLUDE_TEST_TRAFFIC_ENV] = env;
   });
 
-  it('excludes robots with the live-verified expression', () => {
+  it('excludes robots with the live-verified expression (kept for reference, NOT sent in sync queries)', () => {
+    // ANA-65 reconciliation: isRobot + breakdown ⇒ contains_sensitive_data ⇒ Metrika silently
+    // drops small rows (8% of visits lost while totals stayed exact). Robots are excluded
+    // server-side by the counter setting filter_robots=1 instead — the sync must not send this.
     expect(ROBOT_FILTER).toBe("ym:s:isRobot!='yes'");
   });
 
@@ -28,8 +31,10 @@ describe('traffic-filter (ANA-22)', () => {
     expect(TEST_URL_FILTER).toBe("ym:s:startURL!~'^file:'");
   });
 
-  it('AND-combines both exclusions into the default sync filter', () => {
-    expect(EXCLUDE_TEST_TRAFFIC).toBe(`${ROBOT_FILTER} AND ${TEST_URL_FILTER}`);
+  it('default sync filter excludes test sessions only — never the isRobot expression', () => {
+    expect(EXCLUDE_TEST_TRAFFIC).toBe(TEST_URL_FILTER);
+    expect(statFilters()).toBe(TEST_URL_FILTER);
+    expect(statFilters()).not.toContain('isRobot');
   });
 
   it('filters by default (env unset)', () => {

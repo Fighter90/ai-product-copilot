@@ -16,7 +16,7 @@ import {
   type CounterGoal,
 } from '../../src/metrika/goals-management';
 import { findRef, PC_GOALS_REFERENCE, refGoalSpec } from '../../src/metrika/pc-goals-reference';
-import { PC_FUNNEL, ROLE_EVENTS, TICKET_TYPES } from '../../src/live/live';
+import { PC_FUNNEL_GOAL_STEPS, ROLE_EVENTS, TICKET_TYPES } from '../../src/live/live';
 
 const g = (
   id: number,
@@ -29,7 +29,7 @@ const g = (
 describe('PC_GOALS_REFERENCE', () => {
   it('covers exactly the events the live funnel reads, coded G-01…G-18', () => {
     const live = [
-      ...PC_FUNNEL.map((s) => s.event),
+      ...PC_FUNNEL_GOAL_STEPS.map((s) => s.event),
       ...TICKET_TYPES.flatMap((t) => [
         `ticket_pick_${t}`,
         `ticket_buy_${t}`,

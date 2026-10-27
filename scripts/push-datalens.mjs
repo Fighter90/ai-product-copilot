@@ -11,7 +11,9 @@
 //      {workbook_id, name, dataset}). Схема собирается сервером: validateDataset c add_source
 //      (METRIKA_API, db_name=visits) + add_source_avatar → delete_field лишних полей →
 //      update_field new_id (стабильные guid) → updateDataset. Поля: date, traffic_source
-//      (измерения), visits, users, goal_reaches (показатели). Если схема уже совпадает — не трогает.
+//      (измерения), visits, users, goal_reaches (любые цели), goal_orders (KPI-цель «Заказы»,
+//      GOAL_ID, дефолт 328425726). Если схема уже совпадает — не трогает; после ИЗМЕНЕНИЯ набора
+//      полей нужен --rebuild-dataset (схема пересобирается, чарты перепривязываются гуидами).
 //   4. 5 wizard-чартов (createWizardChart / updateWizardChart, конфиг WizardV1: sources.datasetsIds
 //      + visualization{type, x/y/…: {items:[{guid, datasetId}]}}).
 //   5. Дашборд «ProductCamp — трафик и цели» с селектором периода (createDashboard / updateDashboard).
@@ -50,7 +52,11 @@ const FIELDS = {
   'ym:s:lastSignTrafficSourceName': 'traffic_source',
   'ym:s:visits': 'visits',
   'ym:s:users': 'users',
+  // Сумма достижений ЛЮБЫХ целей — «активность», не «Заказы».
   'ym:s:sumGoalReachesAny': 'goal_reaches',
+  // KPI-цель «Заказы» (GOAL_ID, по умолчанию 328425726) — та же метрика, что и в кабинете
+  // (reconciliation ANA-65 finding 6: раньше чарт «цели» показывал 9277 вместо 25 заказов).
+  [`ym:s:goal${String(process.env.GOAL_ID || '328425726')}reaches`]: 'goal_orders',
 };
 
 const IAM = resolveIamToken();
@@ -231,13 +237,13 @@ function chartSpecs(ds) {
       },
     },
     {
-      name: 'Достижения целей по дням',
+      name: 'Заказы (KPI-цель) по дням',
       data: {
         sources,
         visualization: {
           type: 'line',
           x: { items: [f('date')] },
-          y: { items: [f('goal_reaches')] },
+          y: { items: [f('goal_orders'), f('goal_reaches')] },
           sort: { items: [{ ...f('date'), direction: 'ASC' }] },
         },
       },
@@ -271,7 +277,15 @@ function chartSpecs(ds) {
         sources,
         visualization: {
           type: 'flatTable',
-          columns: { items: [f('traffic_source'), f('visits'), f('users'), f('goal_reaches')] },
+          columns: {
+            items: [
+              f('traffic_source'),
+              f('visits'),
+              f('users'),
+              f('goal_orders'),
+              f('goal_reaches'),
+            ],
+          },
           sort: { items: [{ ...f('visits'), direction: 'DESC' }] },
         },
       },

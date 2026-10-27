@@ -6,16 +6,15 @@ export interface DateChunk {
 const MS_PER_DAY = 86_400_000;
 
 /**
- * Split an inclusive [from, to] range (YYYY-MM-DD) into request chunks.
- * Ranges of ≤7 days stay whole; longer ranges become per-day chunks
- * (Metrika guidance: split >7-day periods into daily requests).
+ * Split an inclusive [from, to] range (YYYY-MM-DD) into per-day request chunks — for EVERY range
+ * length. Single-dimension breakdowns have no `ym:s:date` in the response and rows are stamped
+ * with the chunk's `from`, so a whole-window request would collapse N days onto day 1 (ANA-65
+ * finding 7). Per-day chunks keep every day's rows on their own date; it also matches Metrika's
+ * guidance to avoid >7-day windows in one request.
  */
 export function dayChunks(from: string, to: string): DateChunk[] {
   const start = new Date(`${from}T00:00:00Z`);
   const end = new Date(`${to}T00:00:00Z`);
-  const spanDays = Math.round((end.getTime() - start.getTime()) / MS_PER_DAY) + 1;
-
-  if (spanDays <= 7) return [{ from, to }];
 
   const chunks: DateChunk[] = [];
   for (let t = start.getTime(); t <= end.getTime(); t += MS_PER_DAY) {

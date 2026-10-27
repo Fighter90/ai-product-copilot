@@ -14,11 +14,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------------------------
 // Prod SQLite over SSH (sqlite3 -readonly, SQL via stdin → no shell quoting issues).
-export function makeDb({ host = 'root@5.129.219.145', key = `${homedir()}/.ssh/pca_deploy`, path = '/opt/pca/data/productcamp.sqlite' } = {}) {
+export function makeDb({
+  host = 'root@5.129.219.145',
+  key = `${homedir()}/.ssh/pca_deploy`,
+  path = '/opt/pca/data/productcamp.sqlite',
+} = {}) {
   return (sql) => {
-    const out = execFileSync('ssh', ['-i', key, '-o', 'BatchMode=yes', host, `sqlite3 -json -readonly ${path}`], {
-      input: sql, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
-    }).trim();
+    const out = execFileSync(
+      'ssh',
+      ['-i', key, '-o', 'BatchMode=yes', host, `sqlite3 -json -readonly ${path}`],
+      {
+        input: sql,
+        encoding: 'utf8',
+        maxBuffer: 256 * 1024 * 1024,
+      },
+    ).trim();
     return out ? JSON.parse(out) : [];
   };
 }
@@ -30,14 +40,25 @@ export function makeMetrika(token) {
   let calls = 0;
   async function get(path, params = {}) {
     const u = new URL(`https://api-metrika.yandex.net${path}`);
-    for (const [k, v] of Object.entries(params)) if (v !== undefined) u.searchParams.set(k, String(v));
+    for (const [k, v] of Object.entries(params))
+      if (v !== undefined) u.searchParams.set(k, String(v));
     for (let attempt = 0; ; attempt++) {
       await sleep(120);
       calls++;
       const r = await fetch(u, { headers: { Authorization: `OAuth ${token}` } });
-      if (r.status === 429 && attempt < 6) { await sleep(500 * 2 ** attempt); continue; }
-      const j = await r.json();
-      if (!r.ok) throw new Error(mask(`Metrika ${r.status} ${path}: ${JSON.stringify(j).slice(0, 300)}`));
+      const j = await r.json().catch(() => ({}));
+      // Per-user quota (quota_requests_by_uid) is shared with the prod sync — never hammer it.
+      if (r.status === 429 && JSON.stringify(j).includes('quota_requests_by_uid')) {
+        throw new Error(
+          `Metrika per-user quota exhausted (shared with the prod sync) after ${calls} calls — stop and retry later`,
+        );
+      }
+      if (r.status === 429 && attempt < 4) {
+        await sleep(1000 * 2 ** attempt);
+        continue;
+      }
+      if (!r.ok)
+        throw new Error(mask(`Metrika ${r.status} ${path}: ${JSON.stringify(j).slice(0, 300)}`));
       return j;
     }
   }
@@ -50,10 +71,15 @@ export async function makeApi({ base = 'https://dashboardcamp.ru', email, passwo
   addSecret(password);
   const origin = base;
   const res = await fetch(`${base}/api/auth/login`, {
-    method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ email, password }),
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin },
+    body: JSON.stringify({ email, password }),
   });
   if (!res.ok) throw new Error(`login failed: HTTP ${res.status}`);
-  const cookie = res.headers.getSetCookie().map((s) => s.split(';')[0]).join('; ');
+  const cookie = res.headers
+    .getSetCookie()
+    .map((s) => s.split(';')[0])
+    .join('; ');
   cookie.split('; ').forEach((c) => addSecret(c.split('=')[1]));
   async function raw(p) {
     const r = await fetch(`${base}/api${p}`, { headers: { cookie, origin } });
@@ -73,7 +99,8 @@ export const TEST_URL_FILTER = "ym:s:startURL!~'^file:'";
 export const SYNC_FILTERS = `${ROBOT_FILTER} AND ${TEST_URL_FILTER}`; // traffic-filter.ts EXCLUDE_TEST_TRAFFIC
 export const LIVE_FILTERS = TEST_URL_FILTER; // live.ts TEST_FILTER
 
-export function normalizePageUrl(url) { // normalize-page.ts
+export function normalizePageUrl(url) {
+  // normalize-page.ts
   try {
     const u = new URL(url);
     const path = u.pathname.replace(/\/+$/, '') || '/';
@@ -89,7 +116,13 @@ const goalMetrics = (g) => (g ? [`ym:s:goal${g}reaches`, `ym:s:goal${g}conversio
 export const SYNC_QUERIES = {
   channels: (g) => ({
     dimensions: 'ym:s:lastTrafficSource',
-    metrics: ['ym:s:visits', 'ym:s:users', 'ym:s:bounceRate', 'ym:s:avgVisitDurationSeconds', ...goalMetrics(g)].join(','),
+    metrics: [
+      'ym:s:visits',
+      'ym:s:users',
+      'ym:s:bounceRate',
+      'ym:s:avgVisitDurationSeconds',
+      ...goalMetrics(g),
+    ].join(','),
     reachIdx: 4,
     key: (r) => r.dimensions[0]?.name ?? 'unknown',
   }),
@@ -147,23 +180,37 @@ export function sumBy(rows, keyFn) {
   return out;
 }
 
-export const total = (map) => [...map.values()].reduce(
-  (a, v) => ({ visits: a.visits + v.visits, users: a.users + v.users, reaches: a.reaches + v.reaches }),
-  { visits: 0, users: 0, reaches: 0 },
-);
+export const total = (map) =>
+  [...map.values()].reduce(
+    (a, v) => ({
+      visits: a.visits + v.visits,
+      users: a.users + v.users,
+      reaches: a.reaches + v.reaches,
+    }),
+    { visits: 0, users: 0, reaches: 0 },
+  );
 
 export function mergeMaps(maps) {
   const out = new Map();
-  for (const m of maps) for (const [k, v] of m) {
-    const cur = out.get(k) ?? { visits: 0, users: 0, reaches: 0 };
-    out.set(k, { visits: cur.visits + v.visits, users: cur.users + v.users, reaches: cur.reaches + v.reaches });
-  }
+  for (const m of maps)
+    for (const [k, v] of m) {
+      const cur = out.get(k) ?? { visits: 0, users: 0, reaches: 0 };
+      out.set(k, {
+        visits: cur.visits + v.visits,
+        users: cur.users + v.users,
+        reaches: cur.reaches + v.reaches,
+      });
+    }
   return out;
 }
 
 export function daysBetween(from, to) {
   const days = [];
-  for (let t = Date.parse(`${from}T00:00:00Z`); t <= Date.parse(`${to}T00:00:00Z`); t += 86_400_000) {
+  for (
+    let t = Date.parse(`${from}T00:00:00Z`);
+    t <= Date.parse(`${to}T00:00:00Z`);
+    t += 86_400_000
+  ) {
     days.push(new Date(t).toISOString().slice(0, 10));
   }
   return days;
@@ -173,40 +220,83 @@ export function daysBetween(from, to) {
 export function parseCsv(text) {
   const s = text.replace(/^\uFEFF/, '');
   const rows = [];
-  let row = [], cell = '', q = false;
+  let row = [],
+    cell = '',
+    q = false;
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
     if (q) {
-      if (ch === '"' && s[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') q = false; else cell += ch;
+      if (ch === '"' && s[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') q = false;
+      else cell += ch;
     } else if (ch === '"') q = true;
-    else if (ch === ',') { row.push(cell); cell = ''; }
-    else if (ch === '\n') { row.push(cell.replace(/\r$/, '')); rows.push(row); row = []; cell = ''; }
-    else cell += ch;
+    else if (ch === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (ch === '\n') {
+      row.push(cell.replace(/\r$/, ''));
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else cell += ch;
   }
-  if (cell || row.length) { row.push(cell); rows.push(row); }
+  if (cell || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
   return rows;
 }
 
 // ---------------------------------------------------------------------------------------------
 // Reporting: tables of expected-vs-actual rows, then a verdict.
-const pad = (s, n) => { s = String(s); return s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length); };
-const fmt = (v) => (v === null || v === undefined ? '—' : typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toFixed(2)) : String(v));
+const pad = (s, n) => {
+  s = String(s);
+  return s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length);
+};
+const fmt = (v) =>
+  v === null || v === undefined
+    ? '—'
+    : typeof v === 'number'
+      ? Number.isInteger(v)
+        ? String(v)
+        : v.toFixed(2)
+      : String(v);
 
 export class Report {
-  constructor() { this.checks = []; this.findings = []; }
+  constructor() {
+    this.checks = [];
+    this.findings = [];
+  }
 
   /**
    * check(title, refLabel, otherLabels, {tol}) → table. tol: {abs, pct} allowed drift (default exact).
    * row(key, ref, ...vals, {explain}) — when `explain` is given a mismatch is EXPLAINED, not FAIL.
    */
   check(title, refLabel, labels, opts = {}) {
-    const c = { title, refLabel, labels, tol: opts.tol ?? { abs: 0, pct: 0 }, rows: [], notes: [], info: !!opts.info };
+    const c = {
+      title,
+      refLabel,
+      labels,
+      tol: opts.tol ?? { abs: 0, pct: 0 },
+      rows: [],
+      notes: [],
+      info: !!opts.info,
+    };
     this.checks.push(c);
     const api = {
       row: (key, ref, ...rest) => {
-        const o = rest.length && rest[rest.length - 1] && typeof rest[rest.length - 1] === 'object' && !Array.isArray(rest[rest.length - 1]) ? rest.pop() : {};
+        const o =
+          rest.length &&
+          rest[rest.length - 1] &&
+          typeof rest[rest.length - 1] === 'object' &&
+          !Array.isArray(rest[rest.length - 1])
+            ? rest.pop()
+            : {};
         const vals = rest;
-        let maxPct = 0, ok = true;
+        let maxPct = 0,
+          ok = true;
         for (const v of vals) {
           if (v === undefined) continue;
           if (typeof ref === 'number' && typeof v === 'number') {
@@ -214,33 +304,57 @@ export class Report {
             const pct = ref === 0 ? (d === 0 ? 0 : 100) : (d / Math.abs(ref)) * 100;
             maxPct = Math.max(maxPct, pct);
             if (d > (c.tol.abs ?? 0) && pct > (c.tol.pct ?? 0)) ok = false;
-          } else if (String(v) !== String(ref)) { ok = false; maxPct = 100; }
+          } else if (String(v) !== String(ref)) {
+            ok = false;
+            maxPct = 100;
+          }
         }
         const status = ok ? 'OK' : c.info ? 'INFO' : o.explain ? 'EXPLAINED' : 'MISMATCH';
         c.rows.push({ key, ref, vals, maxPct, status, explain: o.explain });
         return api;
       },
-      note: (n) => { c.notes.push(n); return api; },
+      note: (n) => {
+        c.notes.push(n);
+        return api;
+      },
     };
     return api;
   }
 
-  finding(severity, title, detail) { this.findings.push({ severity, title, detail }); }
+  finding(severity, title, detail) {
+    this.findings.push({ severity, title, detail });
+  }
 
   print() {
     for (const c of this.checks) {
       const kw = Math.min(58, Math.max(10, ...c.rows.map((r) => String(r.key).length)));
       console.log(`\n=== ${c.title} ===`);
-      const head = [pad('key', kw), pad(c.refLabel, 12), ...c.labels.map((l) => pad(l, 12)), pad('diff%', 7), 'status'];
+      const head = [
+        pad('key', kw),
+        pad(c.refLabel, 12),
+        ...c.labels.map((l) => pad(l, 12)),
+        pad('diff%', 7),
+        'status',
+      ];
       console.log(head.join(' '));
       console.log('-'.repeat(head.join(' ').length + 4));
       for (const r of c.rows) {
-        console.log([pad(r.key, kw), pad(fmt(r.ref), 12), ...c.labels.map((_, i) => pad(fmt(r.vals[i]), 12)), pad(r.maxPct.toFixed(2), 7), r.status].join(' '));
+        console.log(
+          [
+            pad(r.key, kw),
+            pad(fmt(r.ref), 12),
+            ...c.labels.map((_, i) => pad(fmt(r.vals[i]), 12)),
+            pad(r.maxPct.toFixed(2), 7),
+            r.status,
+          ].join(' '),
+        );
       }
       if (!c.rows.length) console.log('(no rows)');
       const bad = c.rows.filter((r) => r.status === 'MISMATCH').length;
       const exp = c.rows.filter((r) => r.status === 'EXPLAINED');
-      console.log(`→ ${c.rows.length} rows, ${bad} mismatch, ${exp.length} explained${c.info ? ' (informational)' : ''}`);
+      console.log(
+        `→ ${c.rows.length} rows, ${bad} mismatch, ${exp.length} explained${c.info ? ' (informational)' : ''}`,
+      );
       for (const why of new Set(exp.map((r) => r.explain))) console.log(`  explained: ${why}`);
       for (const n of c.notes) console.log(`  note: ${n}`);
     }
@@ -250,7 +364,9 @@ export class Report {
     const failing = this.checks.filter((c) => c.rows.some((r) => r.status === 'MISMATCH'));
     console.log('\n=== FINDINGS (root causes) ===');
     if (!this.findings.length) console.log('(none)');
-    this.findings.forEach((f, i) => console.log(`${i + 1}. [${f.severity}] ${f.title}\n   ${f.detail.split('\n').join('\n   ')}`));
+    this.findings.forEach((f, i) =>
+      console.log(`${i + 1}. [${f.severity}] ${f.title}\n   ${f.detail.split('\n').join('\n   ')}`),
+    );
     console.log('\n=== VERDICT ===');
     for (const c of this.checks) {
       const bad = c.rows.filter((r) => r.status === 'MISMATCH').length;
@@ -259,7 +375,9 @@ export class Report {
       console.log(`${pad(st, 22)} ${c.title}${bad ? ` — ${bad} unexplained mismatch(es)` : ''}`);
     }
     const high = this.findings.filter((f) => f.severity === 'HIGH').length;
-    console.log(`\nOVERALL: ${failing.length ? 'FAIL' : 'PASS'} — ${failing.length} failing check(s), ${this.findings.length} finding(s) (${high} HIGH)`);
+    console.log(
+      `\nOVERALL: ${failing.length ? 'FAIL' : 'PASS'} — ${failing.length} failing check(s), ${this.findings.length} finding(s) (${high} HIGH)`,
+    );
     return failing.length ? 1 : 0;
   }
 }

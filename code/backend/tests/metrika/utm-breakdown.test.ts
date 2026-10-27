@@ -19,6 +19,22 @@ describe('utmMetrics', () => {
 });
 
 describe('utmBreakdown', () => {
+  it('requests last-significant UTM dimensions and no isRobot filter (ANA-65 findings 1+2)', async () => {
+    // Same reasoning as trafficBySource: plain UTMSource dims are last-click and disagree with
+    // the live screens; isRobot + breakdown silently drops small rows (contains_sensitive_data).
+    const client = fakeClient({ data: [] });
+    await utmBreakdown(client, { counterId: 1, from: '2025-01-01', to: '2025-01-01' });
+    const [, params] = (client.get as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(params['dimensions']).toBe(
+      'ym:s:lastsignUTMSource,ym:s:lastsignUTMMedium,ym:s:lastsignUTMCampaign',
+    );
+    expect(params['filters']).toBe("ym:s:startURL!~'^file:'");
+    expect(JSON.stringify(params)).not.toContain('isRobot');
+  });
+
   it('maps source/medium/campaign rows without goal metrics', async () => {
     const client = fakeClient({
       data: [

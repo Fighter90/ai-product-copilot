@@ -96,12 +96,15 @@ describe('SyncService.syncGoals', () => {
 });
 
 describe('SyncService.syncTraffic', () => {
-  it('fetches a single chunk for a short range and caches raw + channel stats', async () => {
+  it('fetches one request per day even for short ranges — every day lands on its own date (ANA-65 №7)', async () => {
     const { days, rows } = await svc.syncTraffic('2025-01-01', '2025-01-03');
-    expect(days).toBe(1);
-    expect(rows).toBe(1);
-    expect(metrics.listChannelStats()).toHaveLength(1);
-    expect(metrics.listChannelStats()[0]?.date).toBe('2025-01-01');
+    expect(days).toBe(3);
+    expect(rows).toBe(3);
+    const dates = metrics
+      .listChannelStats()
+      .map((r) => r.date)
+      .sort();
+    expect(dates).toEqual(['2025-01-01', '2025-01-02', '2025-01-03']);
   });
 
   it('splits a long range into per-day chunks', async () => {
@@ -115,14 +118,15 @@ describe('SyncService.syncTraffic', () => {
 describe('SyncService.syncUtm', () => {
   it('caches raw + UTM stats per day chunk', async () => {
     const { rows } = await svc.syncUtm('2025-01-01', '2025-01-03', 80);
-    expect(rows).toBe(1);
+    expect(rows).toBe(3);
     const utm = metrics.listUtmStats();
-    expect(utm).toHaveLength(1);
-    expect(utm[0]?.date).toBe('2025-01-01');
+    expect(utm).toHaveLength(3);
+    expect(utm.map((r) => r.date).sort()).toEqual(['2025-01-01', '2025-01-02', '2025-01-03']);
     expect(utm[0]?.utmSource).toBe('podcast');
     // The single-dimension fixture leaves medium/campaign missing → normalised to (none).
     expect(utm[0]?.utmMedium).toBe('(none)');
     expect(utm[0]?.utmCampaign).toBe('(none)');
+    expect(utm.every((r) => r.utmSource === 'podcast')).toBe(true);
   });
 
   it('sends the shared test-traffic filter and folds duplicate API rows before the upsert (ANA-16, ANA-22)', async () => {
@@ -154,7 +158,7 @@ describe('SyncService.syncUtm', () => {
     });
     const { rows } = await svc2.syncUtm('2025-01-01', '2025-01-01', 80);
     expect(rows).toBe(1);
-    expect(calls[0]?.['filters']).toBe("ym:s:isRobot!='yes' AND ym:s:startURL!~'^file:'");
+    expect(calls[0]?.['filters']).toBe("ym:s:startURL!~'^file:'");
     const utm = metrics.listUtmStats();
     expect(utm).toHaveLength(1);
     expect(utm[0]).toMatchObject({
@@ -172,10 +176,10 @@ describe('SyncService.syncUtm', () => {
 describe('SyncService.syncGeoDevice', () => {
   it('caches raw + geo/device stats per day chunk', async () => {
     const { rows } = await svc.syncGeoDevice('2025-01-01', '2025-01-03', 80);
-    expect(rows).toBe(1);
+    expect(rows).toBe(3);
     const geo = metrics.listGeoDeviceStats();
-    expect(geo).toHaveLength(1);
-    expect(geo[0]?.date).toBe('2025-01-01');
+    expect(geo).toHaveLength(3);
+    expect(geo.map((r) => r.date).sort()).toEqual(['2025-01-01', '2025-01-02', '2025-01-03']);
     expect(geo[0]?.country).toBe('podcast'); // single-dimension fixture → country = first dim
     expect(geo[0]?.device).toBe('(none)'); // second dim missing → normalised
   });
@@ -184,10 +188,10 @@ describe('SyncService.syncGeoDevice', () => {
 describe('SyncService.syncPages', () => {
   it('caches raw + page stats per day chunk', async () => {
     const { rows } = await svc.syncPages('2025-01-01', '2025-01-03', 80);
-    expect(rows).toBe(1);
+    expect(rows).toBe(3);
     const pages = metrics.listPageStats();
-    expect(pages).toHaveLength(1);
-    expect(pages[0]?.date).toBe('2025-01-01');
+    expect(pages).toHaveLength(3);
+    expect(pages.map((r) => r.date).sort()).toEqual(['2025-01-01', '2025-01-02', '2025-01-03']);
     expect(pages[0]?.page).toBe('podcast'); // single-dimension fixture → page = first dim
   });
 });
@@ -195,10 +199,10 @@ describe('SyncService.syncPages', () => {
 describe('SyncService.syncExitPages', () => {
   it('caches raw + exit-page stats per day chunk', async () => {
     const { rows } = await svc.syncExitPages('2025-01-01', '2025-01-03', 80);
-    expect(rows).toBe(1);
+    expect(rows).toBe(3);
     const pages = metrics.listExitPageStats();
-    expect(pages).toHaveLength(1);
-    expect(pages[0]?.date).toBe('2025-01-01');
+    expect(pages).toHaveLength(3);
+    expect(pages.map((r) => r.date).sort()).toEqual(['2025-01-01', '2025-01-02', '2025-01-03']);
     expect(pages[0]?.page).toBe('podcast'); // single-dimension fixture → page = first dim
   });
 });
@@ -209,16 +213,16 @@ describe('SyncService.syncAll', () => {
     expect(summary).toEqual({
       goals: 2,
       resolvedGoalId: 80, // explicit goalId passed through
-      days: 1,
-      channelRows: 1,
-      utmRows: 1,
-      geoDeviceRows: 1,
-      pageRows: 1,
-      exitPageRows: 1,
-      // bytime: both goals' series × 7 days (fixture carries 2 series of 7 daily values).
+      days: 7, // one request per day (ANA-65 №7)
+      channelRows: 7,
+      utmRows: 7,
+      geoDeviceRows: 7,
+      pageRows: 7,
+      exitPageRows: 7,
+      // bytime group=day over the whole range: both goals' series × 7 days.
       goalReachesRows: 14,
-      browserOsRows: 1,
-      newReturningRows: 1,
+      browserOsRows: 7,
+      newReturningRows: 7,
     });
   });
 
@@ -249,8 +253,8 @@ describe('SyncService.syncAll', () => {
 
     const summary = await svc2.syncAll('2025-01-01', '2025-01-03', 80);
     expect(summary.utmRows).toBe(0); // skipped
-    expect(summary.channelRows).toBe(1); // rest still synced
-    expect(summary.exitPageRows).toBe(1);
+    expect(summary.channelRows).toBe(3); // rest still synced, one row per day
+    expect(summary.exitPageRows).toBe(3);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('utm skipped'));
     warn.mockRestore();
   });
@@ -263,7 +267,7 @@ describe('SyncService.syncAll', () => {
     await svc.syncAll('2025-01-01', '2025-01-07', 80);
     await svc.syncAll('2025-01-01', '2025-01-07', 80);
     // Two runs over the same range → no duplicate rows (reset+reload each time).
-    expect(metrics.listChannelStats()).toHaveLength(1);
+    expect(metrics.listChannelStats()).toHaveLength(7);
     expect(metrics.listGoals(true)).toHaveLength(2);
     // User-entered B2B data survives the reset.
     expect((db.prepare('SELECT COUNT(*) AS n FROM b2b_manual').get() as { n: number }).n).toBe(1);

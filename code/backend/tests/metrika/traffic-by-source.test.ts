@@ -19,6 +19,21 @@ describe('trafficMetrics', () => {
 });
 
 describe('trafficBySource', () => {
+  it('requests last-significant source and never the isRobot filter (ANA-65 findings 1+2)', async () => {
+    // lastsign dimension: `ym:s:lastTrafficSource` is last CLICK (attribution=lastsign ignored for
+    // an explicitly-"last" dim) and disagrees with live/DataLens screens. isRobot in a breakdown
+    // request triggers contains_sensitive_data → Metrika silently drops small rows.
+    const client = fakeClient({ data: [] });
+    await trafficBySource(client, { counterId: 1, from: '2025-01-01', to: '2025-01-01' });
+    const [, params] = (client.get as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(params['dimensions']).toBe('ym:s:lastsignTrafficSource');
+    expect(params['filters']).toBe("ym:s:startURL!~'^file:'");
+    expect(JSON.stringify(params)).not.toContain('isRobot');
+  });
+
   it('maps rows to ChannelStat without goal metrics', async () => {
     const client = fakeClient({
       data: [{ dimensions: [{ name: 'podcast' }, { name: 'rss' }], metrics: [100, 90, 0.2, 65] }],

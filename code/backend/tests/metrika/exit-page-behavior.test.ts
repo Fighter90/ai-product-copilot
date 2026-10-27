@@ -13,7 +13,7 @@ const REAL_EXIT_PAGE_RESPONSE = {
     ids: 54280963,
     dimensions: ['ym:s:endURL'],
     metrics: ['ym:s:visits', 'ym:s:users', 'ym:s:bounceRate'],
-    filters: "ym:s:isRobot!='yes' AND ym:s:startURL!~'^file:'",
+    filters: "ym:s:startURL!~'^file:'",
     date1: '2026-10-12',
     date2: '2026-10-19',
     attribution: 'CROSS_DEVICE_LAST_SIGNIFICANT',
@@ -78,7 +78,7 @@ describe('exitPageBehavior', () => {
       to: '2025-01-01',
     });
     const [, params] = get.mock.calls[0] as [string, Record<string, unknown>];
-    expect(params['filters']).toBe("ym:s:isRobot!='yes' AND ym:s:startURL!~'^file:'");
+    expect(params['filters']).toBe("ym:s:startURL!~'^file:'");
   });
 
   it('parses a real API response: maps rows and merges home-page URL variants', async () => {

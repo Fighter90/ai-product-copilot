@@ -1,11 +1,11 @@
-import { PC_FUNNEL, ROLE_EVENTS, TICKET_TYPES } from '../live/live';
+import { PC_FUNNEL_GOAL_STEPS, ROLE_EVENTS, TICKET_TYPES } from '../live/live';
 import type { GoalSpec } from './goals-management';
 
 /**
  * Reference list of the goals the pc-goals script on productcamp.ru expects in the counter.
  *
  * Single source of truth: built from the same event lists the live funnel reads
- * (live.ts PC_FUNNEL / TICKET_TYPES / ROLE_EVENTS), so the audit can never drift from what
+ * (live.ts PC_FUNNEL goal steps / TICKET_TYPES / ROLE_EVENTS), so the audit can never drift from what
  * /api/live/funnel looks for. Order and codes follow the DataLens naming «G-01…G-18»:
  * 5 funnel stages, 3 tariffs × (pick → checkout → buy), 4 role applications.
  *
@@ -31,7 +31,7 @@ const TICKET_STEPS: ReadonlyArray<{ step: string; ru: string; en: string }> = [
 ];
 
 const raw: Array<Omit<PcGoalRef, 'code' | 'type' | 'condition'>> = [
-  ...PC_FUNNEL.map((s) => ({ event: s.event, ru: s.ru, en: s.en, group: 'funnel' as const })),
+  ...PC_FUNNEL_GOAL_STEPS.map((s) => ({ event: s.event, ru: s.ru, en: s.en, group: 'funnel' as const })),
   ...TICKET_TYPES.flatMap((t) =>
     TICKET_STEPS.map((s) => ({
       event: `ticket_${s.step}_${t}`,
