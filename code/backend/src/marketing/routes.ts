@@ -106,7 +106,12 @@ export async function marketingRoutes(
 
   app.post(
     '/marketing/weekly/import-sheet',
-    { schema: { tags: ['marketing'], summary: 'Import the real «стата» sheet cells (admin; source=import, manual untouched)' } },
+    {
+      schema: {
+        tags: ['marketing'],
+        summary: 'Import the real «стата» sheet cells (admin; source=import, manual untouched)',
+      },
+    },
     async (req, reply) => {
       const cells = buildStataSheetCells();
       const written = opts.repo.upsertMany(cells, {
