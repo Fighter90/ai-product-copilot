@@ -50,21 +50,30 @@ SHALL совпадать с тегом (без `v`); маркеры версий
 - **WHEN** тег `v3.2.0` запушен
 - **THEN** `@fighter90/shared@3.2.0` опубликован в GitHub Packages (restricted)
 
-### Requirement: Деплой на прод
+### Requirement: Деплой на прод из CI
 
 Деплой SHALL выполняться только из CI (`deploy.yml`: пуш тега `v*.*.*` или ручной dispatch,
 environment `production` с секретами `DEPLOY_HOST`/`DEPLOY_SSH_KEY`) через
 `deploy/deploy.sh`: локальная сборка фронтенда → rsync кода/статики на сервер → зависимости
 `pnpm install --prod --frozen-lockfile` → nginx/systemd → ожидание зелёного `/api/health`
-(до 60 с, с ретраями). `/opt/pca/data` (SQLite) и `/opt/pca/.env` никогда не перезаписываются.
-rsync-обёртка SHALL собирать ssh-команду с `IFS=' '` — глобальный `IFS=$'\n\t'` склеивает
-аргументы переводами строк (инцидент: `rsync: Failed to exec ssh\n-p\n22`).
+(до 60 с, с ретраями).
 
 #### Scenario: Тег доставляет версию на прод
 
 - **WHEN** тег `v*.*.*` прошёл verify и деплой
 - **THEN** `https://dashboardcamp.ru` отдаёт собранный фронтенд, `/api/health` отвечает,
-  `BUILD_SHA` в `.env` обновлён, данные и .env на сервере не тронуты
+  `BUILD_SHA` в `.env` обновлён
+
+### Requirement: Неприкосновенность данных прода
+
+Деплой SHALL NOT перезаписывать `/opt/pca/data` (SQLite) и `/opt/pca/.env`; rsync-обёртка
+SHALL собирать ssh-команду с `IFS=' '` — глобальный `IFS=$'\n\t'` склеивает аргументы
+переводами строк (инцидент: `rsync: Failed to exec ssh\n-p\n22`).
+
+#### Scenario: Данные и секреты переживают деплой
+
+- **WHEN** деплой выполнен на работающий прод с историей заявок
+- **THEN** база SQLite и переменные окружения (токены, ключи) на сервере не изменились
 
 ### Requirement: E2E-гейт
 
