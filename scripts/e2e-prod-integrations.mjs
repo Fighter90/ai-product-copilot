@@ -138,10 +138,13 @@ export async function runIntegrationChecks({ base, email, password, analystPassw
       // (буллеты + хвост: «••••S6tM»; сырой секрет был бы длиннее).
       const bad = SENSITIVE.filter((k) => {
         const cell = r.json?.[k];
-        const v = String(typeof cell === 'object' && cell !== null ? cell.value ?? '' : cell ?? '');
+        const v = String(
+          typeof cell === 'object' && cell !== null ? (cell.value ?? '') : (cell ?? ''),
+        );
         return v !== '' && !/^[•*]{3,8}\S{0,6}$/.test(v);
       });
-      if (bad.length === 0) ok('settings:masked', 0, `counter=${r.json?.COUNTER_ID?.value ?? r.json?.COUNTER_ID ?? 0}`);
+      if (bad.length === 0)
+        ok('settings:masked', 0, `counter=${r.json?.COUNTER_ID?.value ?? r.json?.COUNTER_ID ?? 0}`);
       else fail('settings:masked', `unmasked values: ${bad.join(',')}`);
     }
   }
