@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import {
   LlmService,
   PURPOSE_TIMEOUT_MS,
@@ -108,10 +108,10 @@ const fallbackOf = (id: ProviderId): ProviderId =>
   id === 'openrouter' ? 'anthropic' : 'openrouter';
 
 let db: DB;
-let sleep: ReturnType<typeof vi.fn>;
+let sleep: Mock<(ms: number) => Promise<void>>;
 beforeEach(() => {
   db = freshDb();
-  sleep = vi.fn(async () => {});
+  sleep = vi.fn<(ms: number) => Promise<void>>(async () => {});
   clearGigaChatTokenCache();
 });
 

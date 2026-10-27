@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi, type Mock } from 'vitest';
 import { tmpdir } from 'node:os';
 import type { FastifyInstance } from 'fastify';
 import { buildServer } from '../../src/app';
@@ -9,6 +9,7 @@ import type { HttpFetch } from '../../src/llm/providers';
 import { buildTestApp } from '../api/helpers';
 import type { DB } from '../../src/db/connection';
 import type { MetricsRepo } from '../../src/db/repositories/metrics-repo';
+import type { SyncRunner } from '../../src/routes/sync';
 
 /**
  * Full cabinet-mode app (registerAuth + every route): the server-side role guard is what protects
@@ -18,7 +19,7 @@ let app: FastifyInstance;
 let db: DB;
 let settings: AppSettings;
 let metrics: MetricsRepo;
-let runSync: ReturnType<typeof vi.fn>;
+let runSync: Mock<SyncRunner>;
 let adminCookie: string;
 let analystCookie: string;
 
@@ -42,7 +43,7 @@ beforeAll(async () => {
     password: 'analyst-pass-12',
   });
   settings = new AppSettings(db, 'guard-test-secret', { COUNTER_ID: '100' });
-  runSync = vi.fn().mockResolvedValue({
+  runSync = vi.fn<SyncRunner>().mockResolvedValue({
     goals: 0,
     resolvedGoalId: undefined,
     days: 0,
