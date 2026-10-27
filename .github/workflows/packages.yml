@@ -34,14 +34,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build (tsc → dist)
-        working-directory: code/shared
-        run: npx tsc -p tsconfig.build.json
-
-      - name: Smoke-check the build output
-        working-directory: code/shared
-        run: node -e "import('./dist/index.js').then(m => { if (!Object.keys(m).length) throw new Error('empty exports'); console.log('exports:', Object.keys(m).length) })"
-
       - name: Stamp package metadata (name/version/exports → dist)
         working-directory: code/shared
         env:
@@ -55,7 +47,9 @@ jobs:
             p.name = "@fighter90/shared";
             p.version = version;
             p.private = false;
-            // dist is emitted as CommonJS (extensionless relative imports in sources).
+            // dist is emitted as CommonJS (extensionless relative imports in sources) — the type
+            // must be flipped BEFORE the smoke check, otherwise node treats dist/*.js as ESM and
+            // rejects the extensionless relative imports with ERR_MODULE_NOT_FOUND.
             p.type = "commonjs";
             p.description = "Shared types, terms and pure helpers for ProductCamp Analytics Copilot (dashboardcamp.ru)";
             p.license = "UNLICENSED";
@@ -71,6 +65,14 @@ jobs:
             delete p.scripts.typecheck;
             fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
           '
+
+      - name: Build (tsc → dist)
+        working-directory: code/shared
+        run: npx tsc -p tsconfig.build.json
+
+      - name: Smoke-check the build output
+        working-directory: code/shared
+        run: node -e "import('./dist/index.js').then(m => { if (!Object.keys(m).length) throw new Error('empty exports'); console.log('exports:', Object.keys(m).length) })"
 
       - name: Publish to GitHub Packages
         working-directory: code/shared
