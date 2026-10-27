@@ -24,6 +24,7 @@ import type {
 } from './types/generated-hypotheses';
 import type { GeneratedDecisions, GeneratedDecisionOutcome } from './types/generated-decisions';
 import { iceBucket, type IceBucket } from './validation';
+import type { ReportLocale } from './report-locale';
 
 export const CATEGORY_LABEL: Record<AssumptionCategory, string> = {
   behavior: 'Поведение',
@@ -56,8 +57,62 @@ export const BUCKET_LABEL: Record<IceBucket, string> = {
 
 export const KIND_LABEL = { problem: 'проблема', solution: 'решение' } as const;
 
+/** Label maps for one report locale (ANA-42). RU maps are the historical exports above. */
+export interface ReportLabels {
+  readonly category: Record<AssumptionCategory, string>;
+  readonly method: Record<ValidationMethodType, string>;
+  readonly status: Record<HypothesisStatus, string>;
+  readonly bucket: Record<IceBucket, string>;
+  readonly kind: Record<'problem' | 'solution', string>;
+  readonly riskKind: Record<SolutionRiskKind, string>;
+  readonly decisionOutcome: Record<GeneratedDecisionOutcome, string>;
+}
+
+const EN_LABELS: ReportLabels = {
+  category: { behavior: 'Behaviour', market: 'Market', tech: 'Technology' },
+  method: {
+    synthetic: 'Synthetic CustDev',
+    live: 'Live test',
+    quantitative: 'Quantitative analysis',
+    market: 'Market research',
+  },
+  status: {
+    draft: 'draft',
+    in_progress: 'in progress',
+    green: '🟢 confirmed',
+    yellow: '🟡 partially confirmed',
+    red: '🔴 rejected',
+    expired: '⏳ expired',
+  },
+  bucket: { low: 'low', medium: 'medium', high: 'high', top: 'top priority' },
+  kind: { problem: 'problem', solution: 'solution' },
+  riskKind: {
+    value: 'Value',
+    usability: 'Usability',
+    feasibility: 'Feasibility',
+    business: 'Business',
+    legal: 'Legal / reputational',
+  },
+  decisionOutcome: { green: '🟢 continue', yellow: '🟡 iterate', red: '🔴 drop' },
+};
+
+/** Label maps for the requested report locale. */
+export function reportLabels(locale: ReportLocale = 'ru'): ReportLabels {
+  if (locale === 'en') return EN_LABELS;
+  return {
+    category: CATEGORY_LABEL,
+    method: METHOD_LABEL,
+    status: STATUS_LABEL,
+    bucket: BUCKET_LABEL,
+    kind: KIND_LABEL,
+    riskKind: RISK_KIND_LABEL,
+    decisionOutcome: DECISION_OUTCOME_LABEL,
+  };
+}
+
 /** Full hypothesis statement: «{subject} {action} {solution}, если {condition}». */
-export function hypothesisStatement(h: Hypothesis): string {
+export function hypothesisStatement(h: Hypothesis, locale: ReportLocale = 'ru'): string {
+  if (locale === 'en') return `“${h.subject} ${h.action} ${h.solution}, if ${h.condition}”`;
   return `«${h.subject} ${h.action} ${h.solution}, если ${h.condition}»`;
 }
 
@@ -100,14 +155,20 @@ export function channelTotals(channels: ReportSnapshot['channels']): ChannelTota
 }
 
 /** «[ДЕМО] » badge for seeded demo rows (ANA-18) — empty for real data. */
-export function demoTag(x: { isDemo?: boolean }): string {
-  return x.isDemo ? '[ДЕМО] ' : '';
+export function demoTag(x: { isDemo?: boolean }, locale: ReportLocale = 'ru'): string {
+  if (!x.isDemo) return '';
+  return locale === 'en' ? '[DEMO] ' : '[ДЕМО] ';
 }
 
 /** One-line ICE summary used in the prioritization table. */
-export function priorityLine(h: Hypothesis, rank: number): string {
-  const bucket = BUCKET_LABEL[iceBucket(h.iceScore)];
-  return `${rank}. [ICE ${h.iceScore} · ${bucket}]${h.isDemo ? ' [ДЕМО]' : ''} ${KIND_LABEL[h.kind]}: ${hypothesisStatement(h)} — статус: ${STATUS_LABEL[h.status]}, дедлайн ${h.deadlineAt}`;
+export function priorityLine(h: Hypothesis, rank: number, locale: ReportLocale = 'ru'): string {
+  const L = reportLabels(locale);
+  const bucket = L.bucket[iceBucket(h.iceScore)];
+  const stmt = hypothesisStatement(h, locale);
+  if (locale === 'en') {
+    return `${rank}. [ICE ${h.iceScore} · ${bucket}]${h.isDemo ? ' [DEMO]' : ''} ${L.kind[h.kind]}: ${stmt} — status: ${L.status[h.status]}, deadline ${h.deadlineAt}`;
+  }
+  return `${rank}. [ICE ${h.iceScore} · ${bucket}]${h.isDemo ? ' [ДЕМО]' : ''} ${L.kind[h.kind]}: ${stmt} — статус: ${L.status[h.status]}, дедлайн ${h.deadlineAt}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,57 +190,143 @@ export const RISK_KIND_LABEL: Record<SolutionRiskKind, string> = {
   legal: 'Юридический-репутационный',
 };
 
+/** Template text of the AI-hypothesis / AI-decision blocks, per report locale. */
+const AI_TEXT = {
+  ru: {
+    ifThen: (s: SolutionHypothesis) =>
+      `Если ${s.action}, то ${s.userBenefit}, что приведёт к ${s.businessResult}`,
+    priorityHeading: 'Приоритизация AI-гипотез (по ICE)',
+    priorityEmpty: 'AI-гипотезы ещё не сгенерированы.',
+    priorityIntro: 'AI-решенческие гипотезы, отсортированы по убыванию ICE:',
+    problemLine: (p: ProblemHypothesis) =>
+      `${p.segment} испытывает ${p.trouble} при ${p.action}, потому что ${p.barrier}`,
+    evidence: 'Обоснование (данные)',
+    successCriteria: 'Критерий успеха',
+    linkedProblem: 'Связана с проблемой',
+    risks: 'Риски:',
+    plan: 'План проверки:',
+    whatToVerify: 'Что проверяем',
+    methods: 'Методы',
+    audience: 'Аудитория',
+    channel: 'Канал',
+    trafficLight: 'Светофор:',
+    deadline: 'Дедлайн проверки',
+    problemsHeading: 'Проблемные гипотезы (AI)',
+    problemsEmpty: 'Проблемные AI-гипотезы не сгенерированы.',
+    problemsIntro: (n: number) =>
+      `Сгенерировано ${n} проблемных гипотез. Полная карточка каждой — ниже.`,
+    solutionsHeading: 'Решенческие гипотезы (AI)',
+    solutionsEmpty: 'Решенческие AI-гипотезы не сгенерированы.',
+    solutionsIntro: (n: number) =>
+      `Сгенерировано ${n} решенческих гипотез. Полная карточка каждой — ниже.`,
+    solutionOverview: (s: SolutionHypothesis) => `Если ${s.action}, то ${s.userBenefit}`,
+    decisionsHeading: 'Decision Log (предполагаемые решения, AI)',
+    decisionsIntro: (n: number) => `AI предложил ${n} решений на основе данных среза и гипотез.`,
+    decisionsNote: 'Это черновики для обсуждения командой, а не зафиксированные решения.',
+    decisionHeading: (i: number, id: string, h: string) => `${i}. ${id} → гипотеза ${h}`,
+    outcome: 'Исход',
+    method: (m: string, days: number, scope: string) =>
+      `Метод: ${m} · период: ${days} дн. · объём: ${scope}`,
+    finding: (c: string, f: string) => `Вывод (уверенность: ${c}): ${f}`,
+    source: 'Источник',
+  },
+  en: {
+    ifThen: (s: SolutionHypothesis) =>
+      `If ${s.action}, then ${s.userBenefit}, which leads to ${s.businessResult}`,
+    priorityHeading: 'AI hypotheses prioritisation (by ICE)',
+    priorityEmpty: 'AI hypotheses have not been generated yet.',
+    priorityIntro: 'AI solution hypotheses, sorted by ICE descending:',
+    problemLine: (p: ProblemHypothesis) =>
+      `${p.segment} experiences ${p.trouble} when ${p.action}, because ${p.barrier}`,
+    evidence: 'Rationale (data)',
+    successCriteria: 'Success criterion',
+    linkedProblem: 'Linked problem',
+    risks: 'Risks:',
+    plan: 'Validation plan:',
+    whatToVerify: 'What we verify',
+    methods: 'Methods',
+    audience: 'Audience',
+    channel: 'Channel',
+    trafficLight: 'Traffic light:',
+    deadline: 'Validation deadline',
+    problemsHeading: 'Problem hypotheses (AI)',
+    problemsEmpty: 'No AI problem hypotheses generated.',
+    problemsIntro: (n: number) => `${n} problem hypotheses generated. Full card for each below.`,
+    solutionsHeading: 'Solution hypotheses (AI)',
+    solutionsEmpty: 'No AI solution hypotheses generated.',
+    solutionsIntro: (n: number) => `${n} solution hypotheses generated. Full card for each below.`,
+    solutionOverview: (s: SolutionHypothesis) => `If ${s.action}, then ${s.userBenefit}`,
+    decisionsHeading: 'Decision Log (proposed decisions, AI)',
+    decisionsIntro: (n: number) =>
+      `AI proposed ${n} decisions based on the data snapshot and hypotheses.`,
+    decisionsNote: 'These are drafts for team discussion, not recorded decisions.',
+    decisionHeading: (i: number, id: string, h: string) => `${i}. ${id} → hypothesis ${h}`,
+    outcome: 'Outcome',
+    method: (m: string, days: number, scope: string) =>
+      `Method: ${m} · period: ${days} d · scope: ${scope}`,
+    finding: (c: string, f: string) => `Finding (confidence: ${c}): ${f}`,
+    source: 'Source',
+  },
+} as const satisfies Record<ReportLocale, unknown>;
+
 /**
  * Prioritisation overview section for AI-generated solutions, sorted by ICE score descending.
  * One line per solution: «[ICE {score}] {id}: Если {action}, то {userBenefit}, что приведёт к {businessResult}».
  */
 export function aiSolutionPrioritySection(
   solutions: readonly SolutionHypothesis[],
+  locale: ReportLocale = 'ru',
 ): AiReportSection {
+  const T = AI_TEXT[locale];
   const sorted = [...solutions].sort((a, b) => b.ice.score - a.ice.score);
   return {
-    heading: 'Приоритизация AI-гипотез (по ICE)',
+    heading: T.priorityHeading,
     lines:
       sorted.length === 0
-        ? ['AI-гипотезы ещё не сгенерированы.']
+        ? [T.priorityEmpty]
         : [
-            'AI-решенческие гипотезы, отсортированы по убыванию ICE:',
+            T.priorityIntro,
             '',
-            ...sorted.map(
-              (s) =>
-                `[ICE ${s.ice.score}] ${s.id}: Если ${s.action}, то ${s.userBenefit}, что приведёт к ${s.businessResult}`,
-            ),
+            ...sorted.map((s) => `[ICE ${s.ice.score}] ${s.id}: ${T.ifThen(s)}`),
           ],
   };
 }
 
 /** Full per-problem section for an AI-generated problem hypothesis. */
-export function aiProblemSection(p: ProblemHypothesis, ordinal: number): AiReportSection {
+export function aiProblemSection(
+  p: ProblemHypothesis,
+  ordinal: number,
+  locale: ReportLocale = 'ru',
+): AiReportSection {
+  const T = AI_TEXT[locale];
   return {
     heading: `${ordinal}. ${p.id}`,
-    lines: [
-      `${p.segment} испытывает ${p.trouble} при ${p.action}, потому что ${p.barrier}`,
-      `Обоснование (данные): ${p.evidence}`,
-    ],
+    lines: [T.problemLine(p), `${T.evidence}: ${p.evidence}`],
   };
 }
 
 /** Full per-solution section for an AI-generated solution hypothesis. */
-export function aiSolutionSection(s: SolutionHypothesis, ordinal: number): AiReportSection {
+export function aiSolutionSection(
+  s: SolutionHypothesis,
+  ordinal: number,
+  locale: ReportLocale = 'ru',
+): AiReportSection {
+  const T = AI_TEXT[locale];
+  const risk = reportLabels(locale).riskKind;
   const lines: string[] = [
-    `Если ${s.action}, то ${s.userBenefit}, что приведёт к ${s.businessResult}`,
-    `Критерий успеха: ${s.successCriteria}`,
-    `Связана с проблемой: ${s.problemId}`,
+    T.ifThen(s),
+    `${T.successCriteria}: ${s.successCriteria}`,
+    `${T.linkedProblem}: ${s.problemId}`,
     '',
-    'Риски:',
-    ...s.risks.map((r) => `  • ${RISK_KIND_LABEL[r.kind]}: ${r.note}`),
+    T.risks,
+    ...s.risks.map((r) => `  • ${risk[r.kind]}: ${r.note}`),
     '',
-    'План проверки:',
-    `  Что проверяем: ${s.validation.whatToVerify}`,
-    `  Методы: ${s.validation.methods.join(', ')}`,
-    `  Аудитория: ${s.validation.audience}`,
-    `  Канал: ${s.validation.channel}`,
-    `  Критерий успеха: ${s.validation.successCriteria}`,
+    T.plan,
+    `  ${T.whatToVerify}: ${s.validation.whatToVerify}`,
+    `  ${T.methods}: ${s.validation.methods.join(', ')}`,
+    `  ${T.audience}: ${s.validation.audience}`,
+    `  ${T.channel}: ${s.validation.channel}`,
+    `  ${T.successCriteria}: ${s.validation.successCriteria}`,
     '',
     'ICE:',
     `  Impact ${s.ice.impact}/10 — ${s.ice.impactRationale}`,
@@ -187,11 +334,11 @@ export function aiSolutionSection(s: SolutionHypothesis, ordinal: number): AiRep
     `  Ease ${s.ice.ease}/10 — ${s.ice.easeRationale}`,
     `  Score: ${s.ice.impact} × ${s.ice.confidence} × ${s.ice.ease} = ${s.ice.score}`,
     '',
-    'Светофор:',
+    T.trafficLight,
     `  🟢 ${s.trafficLight.green}`,
     `  🟡 ${s.trafficLight.yellow}`,
     `  🔴 ${s.trafficLight.red}`,
-    `Дедлайн проверки: ${s.deadline}`,
+    `${T.deadline}: ${s.deadline}`,
   ];
   return { heading: `${ordinal}. ${s.id}`, lines };
 }
@@ -201,38 +348,41 @@ export function aiSolutionSection(s: SolutionHypothesis, ordinal: number): AiRep
  * Returns an empty array when the value is absent or has no entries.
  * Insertion order: priority overview → problem sections → solution sections (sorted by ICE desc).
  */
-export function aiHypothesisSections(gh: GeneratedHypotheses | undefined): AiReportSection[] {
+export function aiHypothesisSections(
+  gh: GeneratedHypotheses | undefined,
+  locale: ReportLocale = 'ru',
+): AiReportSection[] {
   if (!gh || (gh.problems.length === 0 && gh.solutions.length === 0)) return [];
+  const T = AI_TEXT[locale];
 
   const sortedSolutions = [...gh.solutions].sort((a, b) => b.ice.score - a.ice.score);
 
   return [
-    aiSolutionPrioritySection(gh.solutions),
+    aiSolutionPrioritySection(gh.solutions, locale),
     {
-      heading: 'Проблемные гипотезы (AI)',
+      heading: T.problemsHeading,
       lines:
         gh.problems.length === 0
-          ? ['Проблемные AI-гипотезы не сгенерированы.']
+          ? [T.problemsEmpty]
           : [
-              `Сгенерировано ${gh.problems.length} проблемных гипотез. Полная карточка каждой — ниже.`,
+              T.problemsIntro(gh.problems.length),
               ...gh.problems.map((p, i) => `  ${i + 1}) ${p.id}: ${p.segment} — ${p.trouble}`),
             ],
     },
-    ...gh.problems.map((p, i) => aiProblemSection(p, i + 1)),
+    ...gh.problems.map((p, i) => aiProblemSection(p, i + 1, locale)),
     {
-      heading: 'Решенческие гипотезы (AI)',
+      heading: T.solutionsHeading,
       lines:
         sortedSolutions.length === 0
-          ? ['Решенческие AI-гипотезы не сгенерированы.']
+          ? [T.solutionsEmpty]
           : [
-              `Сгенерировано ${sortedSolutions.length} решенческих гипотез. Полная карточка каждой — ниже.`,
+              T.solutionsIntro(sortedSolutions.length),
               ...sortedSolutions.map(
-                (s, i) =>
-                  `  ${i + 1}) ${s.id} [ICE ${s.ice.score}]: Если ${s.action}, то ${s.userBenefit}`,
+                (s, i) => `  ${i + 1}) ${s.id} [ICE ${s.ice.score}]: ${T.solutionOverview(s)}`,
               ),
             ],
     },
-    ...sortedSolutions.map((s, i) => aiSolutionSection(s, i + 1)),
+    ...sortedSolutions.map((s, i) => aiSolutionSection(s, i + 1, locale)),
   ];
 }
 
@@ -247,24 +397,26 @@ export const DECISION_OUTCOME_LABEL: Record<GeneratedDecisionOutcome, string> = 
  * AI-proposed Decision Log section (generatedDecisions). Empty array when none were generated, so
  * the report simply omits the block. Each decision spells out method, period, finding and outcome.
  */
-export function aiDecisionSections(gd: GeneratedDecisions | undefined): AiReportSection[] {
+export function aiDecisionSections(
+  gd: GeneratedDecisions | undefined,
+  locale: ReportLocale = 'ru',
+): AiReportSection[] {
   if (!gd || gd.decisions.length === 0) return [];
+  const T = AI_TEXT[locale];
+  const outcome = reportLabels(locale).decisionOutcome;
   return [
     {
-      heading: 'Decision Log (предполагаемые решения, AI)',
-      lines: [
-        `AI предложил ${gd.decisions.length} решений на основе данных среза и гипотез.`,
-        'Это черновики для обсуждения командой, а не зафиксированные решения.',
-      ],
+      heading: T.decisionsHeading,
+      lines: [T.decisionsIntro(gd.decisions.length), T.decisionsNote],
     },
     ...gd.decisions.map((d, i) => ({
-      heading: `${i + 1}. ${d.id} → гипотеза ${d.hypothesisId}`,
+      heading: T.decisionHeading(i + 1, d.id, d.hypothesisId),
       lines: [
-        `Исход: ${DECISION_OUTCOME_LABEL[d.outcome]} — ${d.outcomeRationale}`,
-        `Метод: ${d.method} · период: ${d.periodDays} дн. · объём: ${d.scope}`,
-        `Вывод (уверенность: ${d.confidence}): ${d.findings}`,
-        `Обоснование (данные): ${d.evidence}`,
-        `Источник: ${d.source}`,
+        `${T.outcome}: ${outcome[d.outcome]} — ${d.outcomeRationale}`,
+        T.method(d.method, d.periodDays, d.scope),
+        T.finding(d.confidence, d.findings),
+        `${T.evidence}: ${d.evidence}`,
+        `${T.source}: ${d.source}`,
       ],
     })),
   ];

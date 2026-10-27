@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { DB } from '../../src/db/connection';
 import {
   HypothesesRepo,
+  HypothesisInUseError,
   HypothesisValidationError,
 } from '../../src/db/repositories/hypotheses-repo';
 import { freshDb, validHypothesis } from './helpers';
@@ -95,5 +96,84 @@ describe('HypothesesRepo reads & status', () => {
     const updated = repo.updateStatus(h.id, 'in_progress');
     expect(updated?.status).toBe('in_progress');
     expect(repo.updateStatus(9999, 'green')).toBeUndefined();
+  });
+});
+
+describe('HypothesesRepo.update', () => {
+  it('replaces the content, keeps status and recomputes the deadline from creation time', () => {
+    const h = repo.create(validHypothesis());
+    repo.updateStatus(h.id, 'in_progress');
+
+    const updated = repo.update(h.id, validHypothesis({ title: 'Новое название', impact: 9 }));
+    expect(updated?.title).toBe('Новое название');
+    expect(updated?.impact).toBe(9);
+    expect(updated?.iceScore).toBe(validHypothesis({ impact: 9 }).impact * 6 * 9);
+    // Status and creation time survive the edit.
+    expect(updated?.status).toBe('in_progress');
+    expect(updated?.createdAt).toBe(h.createdAt);
+  });
+
+  it('rejects invalid content (422 shape) and a self-parent', () => {
+    const h = repo.create(validHypothesis());
+    expect(() => repo.update(h.id, validHypothesis({ hiddenAssumptions: [] }))).toThrowError(
+      HypothesisValidationError,
+    );
+    expect(() => repo.update(h.id, validHypothesis({ parentId: h.id }))).toThrowError(
+      HypothesisValidationError,
+    );
+  });
+
+  it('returns undefined for a missing id', () => {
+    expect(repo.update(9999, validHypothesis())).toBeUndefined();
+  });
+
+  it('ANA-38: AI provenance survives an analyst edit (source/aiProvider/aiModel kept)', () => {
+    const h = repo.create(
+      validHypothesis({
+        source: 'ai',
+        aiProvider: 'openrouter',
+        aiModel: 'claude-sonnet-4-6',
+        unverifiedNumbers: ['5123'],
+      }),
+    );
+    const edited = repo.update(h.id, validHypothesis({ title: 'Отредактировано' }));
+    expect(edited?.source).toBe('ai');
+    expect(edited?.aiProvider).toBe('openrouter');
+    expect(edited?.aiModel).toBe('claude-sonnet-4-6');
+    expect(edited?.unverifiedNumbers).toEqual(['5123']);
+  });
+});
+
+describe('HypothesesRepo.delete', () => {
+  it('deletes a hypothesis, detaches children and reports a missing id', () => {
+    const parent = repo.create(validHypothesis());
+    const child = repo.create(validHypothesis({ parentId: parent.id, kind: 'solution' }));
+
+    expect(repo.delete(parent.id)).toBe(true);
+    expect(repo.getById(parent.id)).toBeUndefined();
+    // The child stays in the backlog, just without a parent link.
+    expect(repo.getById(child.id)?.parentId).toBeUndefined();
+    expect(repo.delete(9999)).toBe(false);
+  });
+
+  it('refuses to delete a hypothesis referenced by the Decision Log', () => {
+    const h = repo.create(validHypothesis());
+    db.prepare(
+      `INSERT INTO decisions (number, hypothesis_id, date, method, scope, period_days,
+         findings, evidence, outcome, outcome_rationale, next_step, decided_by,
+         is_demo, created_at, updated_at)
+       VALUES ('DL-001', ?, '2026-01-01', 'quantitative', 'scope', 14, '[]',
+         '[{"quote":"q","source":"s"}]', 'green', 'ok', 'next', 'analyst', 0,
+         '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+    ).run(h.id);
+
+    try {
+      repo.delete(h.id);
+      expect.unreachable('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(HypothesisInUseError);
+      expect((e as HypothesisInUseError).decisions).toBe(1);
+    }
+    expect(repo.getById(h.id)).toBeDefined();
   });
 });

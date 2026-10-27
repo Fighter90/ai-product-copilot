@@ -223,6 +223,7 @@ describe('SyncService.syncAll', () => {
       goalReachesRows: 14,
       browserOsRows: 7,
       newReturningRows: 7,
+      errors: [], // ANA-15: every optional step passed
     });
   });
 
@@ -357,5 +358,79 @@ describe('SyncService.syncAll — failure safety (Metrika 429 quota)', () => {
     expect(summary.utmRows).toBe(0);
     expect(metrics.listUtmStats()).toHaveLength(utmBefore);
     warn.mockRestore();
+  });
+});
+
+// ANA-18/15 (appended): after a successful sync the demo dataset must be gone (live rows kept),
+// and per-step failures must surface in summary.errors for the sync-status UI.
+describe('SyncService.syncAll — demo wipe + error surface (ANA-18, ANA-15)', () => {
+  it('wipes demo seed rows after a successful sync; user-entered live rows survive', async () => {
+    // Seed-shaped demo rows (is_demo = 1), OUTSIDE the synced window so the wipe below is
+    // attributable to the demo cleanup, not the routine window reset.
+    metrics.upsertChannelStats([
+      {
+        date: '2024-12-01',
+        channel: 'podcast',
+        utmSource: null,
+        utmMedium: null,
+        utmCampaign: null,
+        visits: 420,
+        users: 378,
+        bounceRate: 0.2,
+        avgDuration: 60,
+        goalReaches: 12,
+        conversionRate: 12 / 420,
+        isDemo: true,
+      },
+    ]);
+    const { B2bRepo } = await import('../../src/db/repositories/b2b-repo');
+    const { B2cPaymentsRepo } = await import('../../src/db/repositories/b2c-payments-repo');
+    const b2b = new B2bRepo(db);
+    b2b.create({
+      company: 'BigCorp',
+      tickets: 20,
+      stage: 'paid',
+      dateAdded: '2024-12-01',
+      isDemo: true,
+    });
+    b2b.create({ company: 'RealCo', tickets: 5, stage: 'lead', dateAdded: '2024-12-02' });
+    const b2c = new B2cPaymentsRepo(db);
+    b2c.upsert(
+      { date: '2024-12-01', tickets: 6 },
+      { source: 'manual', isDemo: true, now: () => 'T' },
+    );
+    b2c.upsert({ date: '2024-12-02', tickets: 3 }, { source: 'manual', now: () => 'T' });
+
+    const summary = await svc.syncAll('2025-01-01', '2025-01-07', 80);
+
+    expect(summary.errors ?? []).toEqual([]); // ANA-15: no errors on the happy path
+    expect(metrics.listChannelStats().every((c) => !c.isDemo)).toBe(true);
+    expect(metrics.listChannelStats().length).toBeGreaterThan(0); // synced (live) rows present
+    expect(metrics.demoStatus().demo).toBe(false);
+    // b2b_manual is user-entered: only the demo deal is removed.
+    const deals = b2b.list();
+    expect(deals.map((d) => d.company)).toEqual(['RealCo']);
+    expect(b2c.list().map((p) => p.date)).toEqual(['2024-12-02']);
+  });
+
+  it('collects a failed optional step into summary.errors (not only console.warn)', async () => {
+    const client = {
+      get: vi.fn(async (path: string, params?: { dimensions?: string }) => {
+        if (path.includes('/goals')) return goalsFixture;
+        if (params?.dimensions?.includes('UTMSource')) throw new Error('Metrika 400: bad attr');
+        return path.includes('bytime') ? bytimeFixture : statFixture;
+      }),
+    } as unknown as MetrikaClient;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const partial = new SyncService({
+      client,
+      metrics,
+      counterId: 12345678,
+      archivedThreshold: 77,
+      now: () => 'T',
+    });
+    const summary = await partial.syncAll('2025-01-01', '2025-01-07', 80);
+    warn.mockRestore();
+    expect(summary.errors).toEqual([{ step: 'utm', message: 'Metrika 400: bad attr' }]);
   });
 });

@@ -1,6 +1,7 @@
-import type { ReportSnapshot } from '@pca/shared';
+import { reportPeriodLabel, type ReportLocale, type ReportSnapshot } from '@pca/shared';
 import { reportSections } from '../docx/sections';
 import { isFrontMatter } from '../docx/sections';
+import { REPORT_CHROME } from '../docx/chrome';
 
 /** Parse inline markdown to HTML: **bold**, *italic*, `code`. */
 function inlineToHtml(text: string): string {
@@ -69,8 +70,9 @@ function renderTable(lines: string[], startIdx: number): { html: string; consume
  *
  * Supports markdown tables, **bold**, *italic*, and `code` inline formatting.
  */
-export function reportHtml(snapshot: ReportSnapshot): string {
-  const all = reportSections(snapshot);
+export function reportHtml(snapshot: ReportSnapshot, locale: ReportLocale = 'ru'): string {
+  const C = REPORT_CHROME[locale];
+  const all = reportSections(snapshot, locale);
   const body = all.slice(1); // section 0 is replaced by a proper GOST title page
   const year = /^\d{4}/.test(snapshot.generatedAt)
     ? snapshot.generatedAt.slice(0, 4)
@@ -78,7 +80,8 @@ export function reportHtml(snapshot: ReportSnapshot): string {
 
   // ГОСТ Р 7.32-2017: applications («Приложение …») are neither numbered nor upper-cased.
   // Front matter (обозначения/введение/резюме) — тоже без сквозного номера (см. эталон).
-  const isAppendix = (heading: string): boolean => heading.startsWith('Приложение');
+  const isAppendix = (heading: string): boolean =>
+    heading.toLowerCase().startsWith(C.appendixPrefix.toLowerCase());
 
   // Heading labels: «N. ЗАГОЛОВОК» — caps via toUpperCase in JS (CSS text-transform stays `none`,
   // so the copied text keeps the caps); appendix and front-matter headings pass through literally.
@@ -89,15 +92,17 @@ export function reportHtml(snapshot: ReportSnapshot): string {
       : `${++sectionNo}. ${sec.heading.toUpperCase()}`,
   );
 
-  // Figure captions for sections with a chartId, keyed by section index. `n` counts every charted
-  // section sequentially; a section-level `caption` (ГОСТ-подпись from report-sections) only
-  // replaces the fallback text «Рисунок N — <заголовок>», numbering stays stable.
+  // Figure captions for sections whose chart PNG actually rendered into the snapshot (a figure
+  // exists ⇔ its PNG exists — same rule as the DOCX builder, so charts = {} yields no figures at
+  // all and the «ПЕРЕЧЕНЬ РИСУНКОВ» page is omitted). A section-level `caption` (ГОСТ-подпись
+  // from report-sections) only replaces the fallback text «Рисунок N — <заголовок>», numbering
+  // stays stable across PNG presence.
   let figureNo = 0;
   const figureCaptions = new Map<number, string>();
   body.forEach((sec, j) => {
-    if (!sec.chartId) return;
+    if (!sec.chartId || !snapshot.charts?.[sec.chartId]) return;
     const n = ++figureNo;
-    const caption = sec.caption ?? `Рисунок ${n} — ${sec.heading}`;
+    const caption = sec.caption ?? C.figure(n, sec.heading);
     figureCaptions.set(j, caption);
   });
 
@@ -110,22 +115,22 @@ export function reportHtml(snapshot: ReportSnapshot): string {
   // year at the bottom. The snapshot UUID deliberately stays off the cover (data appendix only).
   const cover =
     `<section class="cover">` +
-    `<div class="cover-org">ProductCamp<br><span class="cover-track">Трек «Конверсии и лидген»</span></div>` +
-    `<div class="cover-title">АНАЛИТИЧЕСКИЙ ОТЧЁТ</div>` +
-    `<div class="cover-sub">по данным веб-аналитики Яндекс.Метрики</div>` +
+    `<div class="cover-org">ProductCamp<br><span class="cover-track">${escapeHtml(C.track)}</span></div>` +
+    `<div class="cover-title">${escapeHtml(C.reportTitle)}</div>` +
+    `<div class="cover-sub">${escapeHtml(C.reportSubtitle)}</div>` +
     `<div class="cover-meta">` +
-    `Период данных: ${escapeHtml(snapshot.period.from)} — ${escapeHtml(snapshot.period.to)}<br>` +
-    `Источники: Reporting API Яндекс.Метрики; данные счётчика ProductCamp<br>` +
-    `Подготовлено: ProductCamp Analytics Copilot · версия отчёта ГОСТ-2` +
+    `${escapeHtml(C.periodLabel)} ${escapeHtml(reportPeriodLabel(snapshot.period, locale))}<br>` +
+    `${escapeHtml(C.sources)}<br>` +
+    `${escapeHtml(C.preparedBy)}` +
     `</div>` +
     `<div class="cover-year">${escapeHtml(year)}</div>` +
     `</section>` +
     // Static PDF: the TOC is plain anchor links + a small-print note (no updatable-field note).
-    `<section class="toc"><h2>СОДЕРЖАНИЕ</h2><ol>${toc}</ol>` +
-    `<p class="note">Примечание: содержание сформировано по заголовкам разделов отчёта.</p></section>` +
+    `<section class="toc"><h2>${escapeHtml(C.contents)}</h2><ol>${toc}</ol>` +
+    `<p class="note">${escapeHtml(C.tocNote)}</p></section>` +
     // «ПЕРЕЧЕНЬ РИСУНКОВ» on its own page (only when the document has figures).
     (figureCaptions.size > 0
-      ? `<section class="lof"><h2>ПЕРЕЧЕНЬ РИСУНКОВ</h2><ul>${[...figureCaptions.values()]
+      ? `<section class="lof"><h2>${escapeHtml(C.figures)}</h2><ul>${[...figureCaptions.values()]
           .map((c) => `<li>${escapeHtml(c)}</li>`)
           .join('')}</ul></section>`
       : '');
@@ -197,8 +202,8 @@ export function reportHtml(snapshot: ReportSnapshot): string {
 
   return [
     '<!doctype html>',
-    '<html lang="ru"><head><meta charset="utf-8">',
-    `<title>ProductCamp report ${escapeHtml(snapshot.id)}</title>`,
+    `<html lang="${locale}"><head><meta charset="utf-8">`,
+    `<title>ProductCamp report ${escapeHtml(reportPeriodLabel(snapshot.period))}</title>`,
     '<style>',
     '@page{size:A4;margin:20mm 15mm 20mm 30mm}',
     "body{font-family:'Times New Roman',Times,serif;font-size:14pt;line-height:1.5;color:#000;text-align:justify}",

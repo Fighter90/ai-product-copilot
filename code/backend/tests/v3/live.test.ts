@@ -7,7 +7,9 @@ import {
   isArchivedLiveGoal,
   liveRoutes,
   PC_FUNNEL,
+  PC_FUNNEL_GOAL_STEPS,
   previousPeriod,
+  ROLE_FUNNELS,
   TtlCache,
   type LiveDeps,
   type LiveGoal,
@@ -74,14 +76,38 @@ describe('pure helpers', () => {
     });
   });
 
-  it('PC_FUNNEL ordering is stable for the frontend funnel', () => {
-    expect(PC_FUNNEL.map((s) => s.event)).toEqual([
+  it('PC_FUNNEL ordering is stable for the frontend funnel: Визит → goals → Оплата', () => {
+    expect(PC_FUNNEL.map((s) => s.key)).toEqual([
+      'visits',
+      'price_view',
+      'cta_click',
+      'reg_open',
+      'cart_open',
+      'reg_step1',
+      'payment',
+    ]);
+    expect(PC_FUNNEL[0]).toMatchObject({ source: 'visits', ru: 'Визит' });
+    expect(PC_FUNNEL.at(-1)).toMatchObject({ source: 'payment', ru: 'Оплата' });
+    expect(PC_FUNNEL_GOAL_STEPS.map((s) => s.event)).toEqual([
       'price_view',
       'cta_click',
       'reg_open',
       'cart_open',
       'reg_step1',
     ]);
+  });
+
+  it('ROLE_FUNNELS: C-level has the two-part form, other roles view → start → apply', () => {
+    const clevel = ROLE_FUNNELS.find((f) => f.key === 'clevel')!;
+    expect(clevel.steps.map((s) => s.key)).toEqual(['view', 'start', 'part1', 'part2', 'apply']);
+    expect(clevel.steps[0]!.events).toEqual(['clevel_view', 'clevel_form_view']);
+    expect(clevel.steps.at(-1)!.events).toEqual(['clevel_apply']);
+    for (const key of ['speaker', 'volunteer', 'partner'])
+      expect(ROLE_FUNNELS.find((f) => f.key === key)!.steps.map((s) => s.key)).toEqual([
+        'view',
+        'start',
+        'apply',
+      ]);
   });
 });
 

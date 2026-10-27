@@ -86,13 +86,16 @@ const ADMIN_RULES: Array<{ method?: string; prefix: string }> = [
   { prefix: '/api/data', method: 'DELETE' },
   // Sync wipes and reloads every Metrika table and spends API quota — admin only.
   { prefix: '/api/sync' },
+  // ANA-73: the marketing sync may trigger a Metrika backfill window — admin only; analysts
+  // keep hand-edit rights on the grid itself (PUT /api/marketing/weekly).
+  { prefix: '/api/marketing/weekly/sync' },
 ];
 
 /**
  * Normalise a request URL for rule matching the way the router does: strip the query, decode
  * percent-escapes (`/api/%73ync` routes to `/api/sync`) and collapse duplicate slashes.
  */
-function normalizePath(url: string): string {
+export function normalizePath(url: string): string {
   const raw = url.split('?')[0] ?? '';
   let path = raw;
   try {
@@ -147,6 +150,8 @@ export interface AuthOptions {
   readonly cookieSecure: boolean;
   readonly sessionDays: number;
   readonly limiter?: LoginLimiter;
+  /** ANA-29: called after POST /api/users with the requested counter access (undefined = default). */
+  readonly onUserCreated?: (user: User, counterIds: number[] | undefined, by: User) => void;
 }
 
 const publicUser = (u: User) => ({
@@ -277,6 +282,7 @@ export function registerAuth(app: FastifyInstance, opts: AuthOptions): void {
     name: z.string().min(1).max(80),
     role: z.enum(['admin', 'analyst']),
     password: z.string().min(10).max(200).optional(),
+    counterIds: z.array(z.number().int().positive()).max(100).optional(),
   });
 
   app.post('/api/users', async (req, reply) => {
@@ -295,6 +301,7 @@ export function registerAuth(app: FastifyInstance, opts: AuthOptions): void {
       throw err;
     }
     opts.users.audit(req.user!, 'users.create', user.email, { role: user.role });
+    opts.onUserCreated?.(user, body.data.counterIds, req.user!);
     // The temporary password is returned exactly once so the admin can hand it over.
     return reply.code(201).send({
       user: publicUser(user),

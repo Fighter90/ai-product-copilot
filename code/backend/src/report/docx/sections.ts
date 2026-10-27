@@ -7,8 +7,8 @@
  * over time. The DOCX builder reads them defensively (absent → derived defaults), so sections
  * produced by older or newer @pca/shared builds remain renderable without backend changes.
  */
-import { reportSections as sharedReportSections } from '@pca/shared';
-import type { ReportChartId, ReportSnapshot } from '@pca/shared';
+import { reportSections as sharedReportSections, isReportLocale } from '@pca/shared';
+import type { ReportLocale, ReportChartId, ReportSnapshot } from '@pca/shared';
 
 export interface ReportSection {
   readonly heading: string;
@@ -20,8 +20,11 @@ export interface ReportSection {
 }
 
 /** Shared sections are structurally compatible with the backend superset (extra fields allowed). */
-export function reportSections(snapshot: ReportSnapshot): ReportSection[] {
-  return sharedReportSections(snapshot);
+export function reportSections(
+  snapshot: ReportSnapshot,
+  locale: ReportLocale = 'ru',
+): ReportSection[] {
+  return sharedReportSections(snapshot, locale);
 }
 
 /**
@@ -32,9 +35,18 @@ export const FRONT_HEADINGS: ReadonlySet<string> = new Set([
   'ОБОЗНАЧЕНИЯ, ТЕРМИНЫ И СОКРАЩЕНИЯ',
   'ВВЕДЕНИЕ',
   'УПРАВЛЕНЧЕСКОЕ РЕЗЮМЕ',
+  // EN equivalents (ANA-42) — headings produced by shared REPORT_TEXT.en.
+  'TERMS AND ABBREVIATIONS',
+  'INTRODUCTION',
+  'EXECUTIVE SUMMARY',
 ]);
 
 /** True, если раздел — фронт-материя (без номера в оглавлении и заголовке). */
 export function isFrontMatter(heading: string): boolean {
   return FRONT_HEADINGS.has(heading.trim().toUpperCase());
+}
+
+/** Guard a caller-supplied locale (query param) to a supported report locale (default ru). */
+export function reportLocale(value: unknown): ReportLocale {
+  return isReportLocale(value) ? value : 'ru';
 }

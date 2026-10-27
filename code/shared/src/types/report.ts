@@ -78,6 +78,19 @@ export type ReportChartId = 'channelBar' | 'funnel' | 'channelMix';
 /** Rendered chart images keyed by id: base64-encoded PNG bytes (without the data: prefix). */
 export type ReportCharts = Partial<Record<ReportChartId, string>>;
 
+/** Provider + model that produced an AI block of the report, and when (ISO). */
+export interface AiGenerationInfo {
+  readonly provider: string;
+  readonly providerName: string;
+  readonly model: string;
+  readonly at: string;
+}
+
+/** «Сгенерировано: YandexGPT · yandexgpt/latest» — the label UI and DOCX/PDF print. */
+export function aiGenerationLabel(info: AiGenerationInfo): string {
+  return `${info.providerName} · ${info.model}`;
+}
+
 /** Immutable report snapshot — DOCX/PDF render from this, never from live data. */
 export interface ReportSnapshot {
   readonly id: string;
@@ -111,6 +124,14 @@ export interface ReportSnapshot {
    * Absent until generated via POST /report/hypotheses (which also produces decisions).
    */
   readonly generatedDecisions?: GeneratedDecisions;
+  /**
+   * ANA-33: which AI provider/model actually answered (the first successful one in «Авто» mode),
+   * per generated block. Rendered as «Сгенерировано: YandexGPT · yandexgpt/latest».
+   */
+  readonly aiGeneratedBy?: {
+    readonly insights?: AiGenerationInfo;
+    readonly hypotheses?: AiGenerationInfo;
+  };
   /**
    * Label for the primary goal's reaches (formatGoalLabel): «Заказов» for purchase goals, else
    * «Заявок B2C». Lets the report/DOCX/PDF headline match the dashboard. Absent → treat as applications.

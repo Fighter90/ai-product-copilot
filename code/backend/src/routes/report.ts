@@ -1,16 +1,34 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { GeneratedHypotheses, ReportSnapshot } from '@pca/shared';
+import {
+  isReportLocale,
+  type AiGenerationInfo,
+  type GeneratedHypotheses,
+  type ReportLocale,
+  type ReportSnapshot,
+} from '@pca/shared';
 
 const SnapshotBody = z.object({ from: z.string(), to: z.string() });
 const GenerateBody = z.object({ snapshotId: z.string(), format: z.enum(['docx', 'pdf']) });
-const InsightsBody = z.object({ snapshotId: z.string() });
-const HypothesesBody = z.object({ snapshotId: z.string() });
+
+/** ANA-33: «Авто» (chain order) or a specific enabled provider for the AI report blocks. */
+export const AI_PROVIDER_CHOICES = [
+  'auto',
+  'openrouter',
+  'anthropic',
+  'yandexgpt',
+  'gigachat',
+] as const;
+export type AiProviderChoice = (typeof AI_PROVIDER_CHOICES)[number];
+const AiProvider = z.enum(AI_PROVIDER_CHOICES);
+
+const InsightsBody = z.object({ snapshotId: z.string(), providerId: AiProvider.optional() });
+const HypothesesBody = z.object({ snapshotId: z.string(), providerId: AiProvider.optional() });
 
 export type ReportFormat = z.infer<typeof GenerateBody>['format'];
 
 export type InsightsResult =
-  | { ok: true; narrative: string }
+  | { ok: true; narrative: string; generatedBy?: AiGenerationInfo }
   | { ok: false; reason: 'not_found' | 'unavailable'; message: string };
 
 export type HypothesesResult =
@@ -25,16 +43,28 @@ export interface ReportDownload {
 }
 
 export interface ReportRunner {
-  build: (opts: { from: string; to: string }) => Promise<ReportSnapshot>;
+  build: (opts: { from: string; to: string; by?: string | null }) => Promise<ReportSnapshot>;
   get: (id: string) => ReportSnapshot | undefined;
-  list: () => Array<{ id: string; generatedAt: string; dateFrom: string; dateTo: string }>;
+  list: () => Array<{
+    id: string;
+    generatedAt: string;
+    dateFrom: string;
+    dateTo: string;
+    /** ANA-39: who built the snapshot (user email in cabinet mode, null otherwise). */
+    author?: string | null;
+  }>;
   generate: (snapshotId: string, format: ReportFormat) => Promise<{ filePath: string } | undefined>;
-  /** Render a snapshot to DOCX/PDF bytes for download (undefined when the snapshot is missing). */
-  download: (snapshotId: string, format: ReportFormat) => Promise<ReportDownload | undefined>;
-  /** Generate + persist the AI narrative for a snapshot. */
-  insights: (snapshotId: string) => Promise<InsightsResult>;
+  /** Generate + persist the AI narrative for a snapshot (ANA-33: `providerId` pins a provider). */
+  insights: (snapshotId: string, providerId?: AiProviderChoice) => Promise<InsightsResult>;
   /** Generate + persist the AI hypotheses for a snapshot (returns existing if already generated). */
-  hypotheses: (snapshotId: string) => Promise<HypothesesResult>;
+  hypotheses: (snapshotId: string, providerId?: AiProviderChoice) => Promise<HypothesesResult>;
+  /** Render a snapshot to DOCX/PDF bytes for download (undefined when the snapshot is missing).
+   *  `locale` (ANA-42) selects the report language; Russian stays the default. */
+  download: (
+    snapshotId: string,
+    format: ReportFormat,
+    locale?: ReportLocale,
+  ) => Promise<ReportDownload | undefined>;
 }
 
 export interface ReportRouteOptions {
@@ -46,7 +76,9 @@ export async function reportRoutes(app: FastifyInstance, opts: ReportRouteOption
   app.post('/report/snapshot', async (req, reply) => {
     const parsed = SnapshotBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
-    const snapshot = await opts.runner.build(parsed.data);
+    // ANA-39: remember who built the snapshot so History can filter by author.
+    const author = (req.user as { email?: string } | undefined)?.email ?? null;
+    const snapshot = await opts.runner.build({ ...parsed.data, by: author });
     return reply.code(201).send(snapshot);
   });
 
@@ -70,7 +102,10 @@ export async function reportRoutes(app: FastifyInstance, opts: ReportRouteOption
       .object({ snapshotId: z.string(), format: z.enum(['docx', 'pdf']) })
       .safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: 'invalid format' });
-    const file = await opts.runner.download(params.data.snapshotId, params.data.format);
+    // ANA-42: report language at export time (?lang=en), Russian stays the default.
+    const rawLang = (req.query as { lang?: string } | undefined)?.lang;
+    const locale: ReportLocale = isReportLocale(rawLang) ? rawLang : 'ru';
+    const file = await opts.runner.download(params.data.snapshotId, params.data.format, locale);
     if (!file) return reply.code(404).send({ error: 'snapshot not found' });
     return reply
       .header('content-type', file.contentType)
@@ -81,15 +116,15 @@ export async function reportRoutes(app: FastifyInstance, opts: ReportRouteOption
   app.post('/report/insights', async (req, reply) => {
     const parsed = InsightsBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
-    const result = await opts.runner.insights(parsed.data.snapshotId);
-    if (result.ok) return { narrative: result.narrative };
+    const result = await opts.runner.insights(parsed.data.snapshotId, parsed.data.providerId);
+    if (result.ok) return { narrative: result.narrative, generatedBy: result.generatedBy };
     return reply.code(result.reason === 'not_found' ? 404 : 503).send({ error: result.message });
   });
 
   app.post('/report/hypotheses', async (req, reply) => {
     const parsed = HypothesesBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
-    const result = await opts.runner.hypotheses(parsed.data.snapshotId);
+    const result = await opts.runner.hypotheses(parsed.data.snapshotId, parsed.data.providerId);
     if (result.ok) return { hypotheses: result.hypotheses };
     return reply.code(result.reason === 'not_found' ? 404 : 503).send({ error: result.message });
   });

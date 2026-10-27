@@ -15,8 +15,9 @@ import {
   TextRun,
   WidthType,
 } from 'docx';
-import type { ReportSnapshot } from '@pca/shared';
+import { reportPeriodLabel, type ReportLocale, type ReportSnapshot } from '@pca/shared';
 import { reportSections, isFrontMatter, type ReportSection } from './sections';
+import { REPORT_CHROME } from './chrome';
 
 /**
  * ГОСТ-2 layout (эталон заказчика, поля в twips):
@@ -135,9 +136,9 @@ function parseTable(lines: string[], startIdx: number): { table: Table; consumed
   };
 }
 
-/** Appendix sections («Приложение …») are rendered verbatim: no through number, no caps. */
-function isAppendixHeading(heading: string): boolean {
-  return /^приложение/i.test(heading);
+/** Appendix sections («Приложение …» / «Appendix …») are rendered verbatim: no through number, no caps. */
+function isAppendixHeading(heading: string, appendixPrefix: string): boolean {
+  return heading.toLowerCase().startsWith(appendixPrefix.toLowerCase());
 }
 
 /**
@@ -145,8 +146,12 @@ function isAppendixHeading(heading: string): boolean {
  * field/typography spec). Title page → СОДЕРЖАНИЕ (TOC field) → ПЕРЕЧЕНЬ РИСУНКОВ → numbered
  * black-caps sections with bordered tables, embedded charts and italic captions.
  */
-export async function buildDocx(snapshot: ReportSnapshot): Promise<Buffer> {
-  const sections = reportSections(snapshot);
+export async function buildDocx(
+  snapshot: ReportSnapshot,
+  locale: ReportLocale = 'ru',
+): Promise<Buffer> {
+  const C = REPORT_CHROME[locale];
+  const sections = reportSections(snapshot, locale);
   const body = sections.slice(1); // section 0 is replaced by the ГОСТ title page
   const children: (Paragraph | Table | TableOfContents)[] = [];
 
@@ -164,13 +169,13 @@ export async function buildDocx(snapshot: ReportSnapshot): Promise<Buffer> {
 
   // ---- ГОСТ-2 title page: everything centered; no UUID (it lives in the data appendix) ----
   children.push(
-    centered('ProductCamp · Трек «Конверсии и лидген»', 26, false, 1440),
-    centered('АНАЛИТИЧЕСКИЙ ОТЧЁТ', 40, true, 3600),
-    centered('по данным веб-аналитики Яндекс.Метрики', 26, false, 120),
-    centered(`Период данных: ${snapshot.period.from} — ${snapshot.period.to}`, 22, false, 2400),
-    centered('Источники: Reporting API Яндекс.Метрики; данные счётчика ProductCamp', 22),
-    centered('Подготовлено: ProductCamp Analytics Copilot · версия отчёта ГОСТ-2', 22),
-    centered(`${year} г.`, 22, false, 3600),
+    centered(`ProductCamp · ${C.track}`, 26, false, 1440),
+    centered(C.reportTitle, 40, true, 3600),
+    centered(C.reportSubtitle, 26, false, 120),
+    centered(`${C.periodLabel} ${reportPeriodLabel(snapshot.period, locale)}`, 22, false, 2400),
+    centered(C.sources, 22),
+    centered(C.preparedBy, 22),
+    centered(locale === 'ru' ? `${year} г.` : year, 22, false, 3600),
   );
 
   // ---- СОДЕРЖАНИЕ: real Word TOC field (pages appear after field update — F9 or on open) ----
@@ -179,13 +184,13 @@ export async function buildDocx(snapshot: ReportSnapshot): Promise<Buffer> {
       heading: HeadingLevel.HEADING_1,
       alignment: AlignmentType.CENTER,
       pageBreakBefore: true,
-      children: [new TextRun('СОДЕРЖАНИЕ')],
+      children: [new TextRun(C.contents)],
     }),
     new TableOfContents('Содержание', { hyperlink: true, headingStyleRange: '1-2' }),
     new Paragraph({
       children: [
         new TextRun({
-          text: 'Обновите поле (F9), чтобы проставились страницы',
+          text: C.tocFieldHint,
           italics: true,
           size: 20,
         }),
@@ -199,26 +204,32 @@ export async function buildDocx(snapshot: ReportSnapshot): Promise<Buffer> {
   const figureCaptions: (string | undefined)[] = body.map((section) => {
     if (!section.chartId || !snapshot.charts?.[section.chartId]) return undefined;
     figureNo += 1;
-    const auto = `Рисунок ${figureNo} — ${section.heading}`;
+    const auto = C.figure(figureNo, section.heading);
     return section.caption ?? auto;
   });
   const figures = figureCaptions.filter((c): c is string => c !== undefined);
 
-  // ---- ПЕРЕЧЕНЬ РИСУНКОВ ----
-  children.push(
-    new Paragraph({
-      heading: HeadingLevel.HEADING_1,
-      alignment: AlignmentType.CENTER,
-      pageBreakBefore: true,
-      children: [new TextRun('ПЕРЕЧЕНЬ РИСУНКОВ')],
-    }),
-  );
-  figures.forEach((caption) => children.push(new Paragraph({ children: [new TextRun(caption)] })));
+  // ---- ПЕРЕЧЕНЬ РИСУНКОВ — only when at least one figure exists (a figure exists ⇔ its PNG
+  // exists); with charts = {} (Chrome unavailable) the whole page is omitted deterministically. ----
+  if (figures.length > 0) {
+    children.push(
+      new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        alignment: AlignmentType.CENTER,
+        pageBreakBefore: true,
+        children: [new TextRun(C.figures)],
+      }),
+    );
+    figures.forEach((caption) =>
+      children.push(new Paragraph({ children: [new TextRun(caption)] })),
+    );
+  }
 
   // ---- Body sections: H1 «N ЗАГОЛОВОК» caps black (front matter — без номера; appendix verbatim), each on a new page ----
   let sectionNo = 0;
   body.forEach((section: ReportSection, sectionIdx: number) => {
-    const numbered = !isAppendixHeading(section.heading) && !isFrontMatter(section.heading);
+    const numbered =
+      !isAppendixHeading(section.heading, C.appendixPrefix) && !isFrontMatter(section.heading);
     const title = numbered ? `${++sectionNo}. ${section.heading.toUpperCase()}` : section.heading;
     children.push(
       new Paragraph({
@@ -251,7 +262,7 @@ export async function buildDocx(snapshot: ReportSnapshot): Promise<Buffer> {
           spacing: { after: 160 },
           children: [
             new TextRun({
-              text: figureCaptions[sectionIdx] ?? `Рисунок — ${section.heading}`,
+              text: figureCaptions[sectionIdx] ?? C.figureNoNumber(section.heading),
               italics: true,
               size: 24,
             }),
@@ -314,7 +325,8 @@ export async function buildDocx(snapshot: ReportSnapshot): Promise<Buffer> {
 
   const doc = new Document({
     creator: 'ProductCamp Analytics',
-    title: `ProductCamp report ${snapshot.id}`,
+    // ANA-39: the human-readable period names the document; the snapshot UUID stays in the data appendix.
+    title: `ProductCamp report ${reportPeriodLabel(snapshot.period)}`,
     // Ask Word to refresh fields (TOC page numbers) when the document is opened.
     features: { updateFields: true },
     // ГОСТ defaults: Times New Roman 14pt (size is half-points → 28), 1.5 line spacing (240 × 1.5);

@@ -14,6 +14,13 @@ const dlRequests = new Map<number, number[]>();
  *    "Files" connection; one dataset = one table, with a field dictionary;
  *  - webhook receiver: DataLens sends a confirmation code and alert notifications to
  *    POST /api/integrations/datalens/webhook/:token — shown to admins in the cabinet.
+ *
+ * Users semantics (ANA-55, honest-total rule): the `users` column in Metrika daily stats is the
+ * number of unique visitors WITHIN one day and one breakdown slice. Summing it across days or
+ * slices double-counts people, so every dataset exposes it as `users_daily` and its field
+ * dictionary title explicitly says «в границах дня, не суммируется» / "per day; do not sum".
+ * An honest cross-period total would require visit-level Logs API data, which the export
+ * deliberately does not include.
  */
 
 export interface DatasetColumn {
@@ -50,7 +57,12 @@ export const DATASETS: Dataset[] = [
       c('date', 'date', 'Дата', 'Date'),
       c('channel', 'string', 'Канал', 'Channel'),
       c('visits', 'integer', 'Визиты', 'Visits'),
-      c('users', 'integer', 'Посетители', 'Users'),
+      c(
+        'users_daily',
+        'integer',
+        'Посетители (в границах дня, не суммируется)',
+        'Users (per day; do not sum)',
+      ),
       c('bounce_rate', 'float', 'Отказы, %', 'Bounce rate, %'),
       c('avg_duration_sec', 'float', 'Ср. длительность, с', 'Avg duration, s'),
       c('orders', 'integer', 'Заказы (цель KPI)', 'Orders (KPI goal)'),
@@ -64,6 +76,66 @@ export const DATASETS: Dataset[] = [
           FROM channel_stats WHERE date BETWEEN :from AND :to GROUP BY date, channel ORDER BY date, channel`,
   },
   {
+    id: 'goals_daily',
+    ru: 'Цели (заявки KPI) по дням',
+    en: 'Goals (KPI applications) by day',
+    ranged: true,
+    columns: [
+      c('date', 'date', 'Дата', 'Date'),
+      c('visits', 'integer', 'Визиты', 'Visits'),
+      c(
+        'users_daily',
+        'integer',
+        'Посетители (в границах дня, не суммируется)',
+        'Users (per day; do not sum)',
+      ),
+      c('orders', 'integer', 'Заказы (цель KPI)', 'Orders (KPI goal)'),
+      c('conversion_rate', 'float', 'Конверсия, %', 'Conversion, %'),
+    ],
+    sql: `SELECT date, SUM(visits), SUM(users), SUM(goal_reaches),
+            ROUND(SUM(goal_reaches) * 100.0 / MAX(SUM(visits), 1), 3)
+          FROM channel_stats WHERE date BETWEEN :from AND :to GROUP BY date ORDER BY date`,
+  },
+  {
+    id: 'funnel_daily',
+    ru: 'Воронка по дням',
+    en: 'Funnel by day',
+    ranged: true,
+    columns: [
+      c('date', 'date', 'Дата', 'Date'),
+      c('visits', 'integer', 'Визиты', 'Visits'),
+      c(
+        'users_daily',
+        'integer',
+        'Посетители (в границах дня, не суммируется)',
+        'Users (per day; do not sum)',
+      ),
+      c('b2c_applications', 'integer', 'Заявки B2C (цель KPI)', 'B2C applications (KPI goal)'),
+      c(
+        'b2b_pipeline',
+        'integer',
+        'B2B в работе (по дате добавления)',
+        'B2B pipeline (by added date)',
+      ),
+      c('b2b_paid', 'integer', 'B2B оплачено (по дате оплаты)', 'B2B paid (by payment date)'),
+    ],
+    sql: `SELECT d.date, COALESCE(cs.visits, 0), COALESCE(cs.users_daily, 0), COALESCE(cs.reaches, 0),
+            COALESCE(added.pipeline, 0), COALESCE(paid.tickets, 0)
+          FROM (SELECT date FROM channel_stats
+                UNION SELECT substr(date_added, 1, 10) FROM b2b_manual WHERE date_added IS NOT NULL
+                UNION SELECT substr(date_paid, 1, 10) FROM b2b_manual WHERE date_paid IS NOT NULL) d
+          LEFT JOIN (SELECT date, SUM(visits) AS visits, SUM(users) AS users_daily,
+                            SUM(goal_reaches) AS reaches
+                     FROM channel_stats GROUP BY date) cs ON cs.date = d.date
+          LEFT JOIN (SELECT substr(date_added, 1, 10) AS d2,
+                            SUM(CASE WHEN stage != 'paid' THEN tickets ELSE 0 END) AS pipeline
+                     FROM b2b_manual GROUP BY substr(date_added, 1, 10)) added ON added.d2 = d.date
+          LEFT JOIN (SELECT substr(date_paid, 1, 10) AS d3, SUM(tickets) AS tickets
+                     FROM b2b_manual WHERE date_paid IS NOT NULL GROUP BY substr(date_paid, 1, 10)) paid
+                 ON paid.d3 = d.date
+          WHERE d.date BETWEEN :from AND :to ORDER BY d.date`,
+  },
+  {
     id: 'utm_daily',
     ru: 'UTM по дням',
     en: 'UTM by day',
@@ -74,7 +146,12 @@ export const DATASETS: Dataset[] = [
       c('utm_medium', 'string', 'utm_medium', 'utm_medium'),
       c('utm_campaign', 'string', 'utm_campaign', 'utm_campaign'),
       c('visits', 'integer', 'Визиты', 'Visits'),
-      c('users', 'integer', 'Посетители', 'Users'),
+      c(
+        'users_daily',
+        'integer',
+        'Посетители (в границах дня, не суммируется)',
+        'Users (per day; do not sum)',
+      ),
       c('orders', 'integer', 'Заказы', 'Orders'),
     ],
     sql: `SELECT date, utm_source, utm_medium, utm_campaign, visits, users, goal_reaches
@@ -89,7 +166,12 @@ export const DATASETS: Dataset[] = [
       c('date', 'date', 'Дата', 'Date'),
       c('page', 'string', 'Страница', 'Page'),
       c('visits', 'integer', 'Визиты', 'Visits'),
-      c('users', 'integer', 'Посетители', 'Users'),
+      c(
+        'users_daily',
+        'integer',
+        'Посетители (в границах дня, не суммируется)',
+        'Users (per day; do not sum)',
+      ),
       c('bounce_rate', 'float', 'Отказы, %', 'Bounce rate, %'),
       c('orders', 'integer', 'Заказы', 'Orders'),
     ],
@@ -106,7 +188,12 @@ export const DATASETS: Dataset[] = [
       c('country', 'string', 'Страна', 'Country'),
       c('device', 'string', 'Устройство', 'Device'),
       c('visits', 'integer', 'Визиты', 'Visits'),
-      c('users', 'integer', 'Посетители', 'Users'),
+      c(
+        'users_daily',
+        'integer',
+        'Посетители (в границах дня, не суммируется)',
+        'Users (per day; do not sum)',
+      ),
       c('orders', 'integer', 'Заказы', 'Orders'),
     ],
     sql: `SELECT date, country, device, visits, users, goal_reaches
@@ -127,6 +214,32 @@ export const DATASETS: Dataset[] = [
     ],
     sql: `SELECT company, tickets, stage, amount_rub, substr(date_added, 1, 10), substr(date_paid, 1, 10)
           FROM b2b_manual ORDER BY date_added`,
+  },
+  {
+    id: 'hypotheses',
+    ru: 'Гипотезы (бэклог с ICE)',
+    en: 'Hypotheses (ICE backlog)',
+    ranged: false,
+    columns: [
+      c('id', 'integer', 'ID', 'ID'),
+      c('phase', 'string', 'Фаза (define/develop)', 'Phase (define/develop)'),
+      c('kind', 'string', 'Тип (problem/solution)', 'Kind (problem/solution)'),
+      c('title', 'string', 'Заголовок', 'Title'),
+      c('subject', 'string', 'Субъект', 'Subject'),
+      c('action', 'string', 'Действие', 'Action'),
+      c('solution', 'string', 'Решение', 'Solution'),
+      c('condition', 'string', 'Условие', 'Condition'),
+      c('impact', 'integer', 'Impact (1–10)', 'Impact (1–10)'),
+      c('confidence', 'integer', 'Confidence (1–10)', 'Confidence (1–10)'),
+      c('ease', 'integer', 'Ease (1–10)', 'Ease (1–10)'),
+      c('ice_score', 'integer', 'ICE', 'ICE'),
+      c('status', 'string', 'Статус', 'Status'),
+      c('source', 'string', 'Источник (manual/ai)', 'Source (manual/ai)'),
+      c('deadline', 'date', 'Дедлайн', 'Deadline'),
+    ],
+    sql: `SELECT id, diamond_phase, kind, title, subject, action, solution, condition,
+                 impact, confidence, ease, ice_score, status, source, substr(deadline_at, 1, 10)
+          FROM hypotheses ORDER BY ice_score DESC, id`,
   },
 ];
 
@@ -155,8 +268,13 @@ export function exportDataset(db: DB, ds: Dataset, from: string, to: string): un
       }>
     ).map((r) => r.name),
   );
-  const table = /FROM\s+(\w+)/i.exec(ds.sql)?.[1];
-  if (table && !tables.has(table)) return [];
+  // Complex datasets (funnel_daily) reference several tables via FROM/JOIN — every one of them
+  // must exist, otherwise the export degrades to an empty table instead of a SQL error.
+  // The lookbehind skips named bindings (:from / :to), which case-insensitively contain "FROM"/"TO".
+  const referenced = [
+    ...ds.sql.matchAll(/(?<![:\w])(?:FROM|JOIN)\s+(?!AND\b|OR\b)([a-zA-Z_]\w*)/gi),
+  ].map((m) => m[1]!);
+  if (referenced.some((t) => !tables.has(t))) return [];
   const stmt = db.prepare(ds.sql).raw(true);
   return (ds.ranged ? stmt.all({ from, to }) : stmt.all()) as unknown[][];
 }

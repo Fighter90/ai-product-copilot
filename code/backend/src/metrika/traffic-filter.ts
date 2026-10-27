@@ -43,5 +43,83 @@ export const INCLUDE_TEST_TRAFFIC_ENV = 'INCLUDE_TEST_TRAFFIC';
 export function statFilters(
   includeEnv: string | undefined = process.env[INCLUDE_TEST_TRAFFIC_ENV],
 ): string | undefined {
-  return includeEnv === '1' ? undefined : EXCLUDE_TEST_TRAFFIC;
+  if (includeEnv === '1') return undefined;
+  return composeTestTrafficFilter({
+    patterns: parseTestTrafficPatterns(process.env[TEST_TRAFFIC_PATTERNS_ENV] ?? ''),
+    excludeEnvTest: process.env[EXCLUDE_ENV_TEST_ENV] === '1',
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ANA-22 (layer 2): admin-configurable test/service-traffic patterns, layered
+// ON TOP of the base sync filter above. The base layer (test `file:` sessions)
+// and the counter-level robot filter are owned by the ANA-65 reconciliation —
+// never fold isRobot into anything built here (breakdown queries must not
+// receive it, see the file header).
+// ---------------------------------------------------------------------------
+
+/** Env/setting key holding the admin's test-page/UTM pattern list (TEST_TRAFFIC_PATTERNS). */
+export const TEST_TRAFFIC_PATTERNS_ENV = 'TEST_TRAFFIC_PATTERNS';
+
+/** Env switch (`1`) to also exclude visits whose pc-goals visit-param marks env=test. */
+export const EXCLUDE_ENV_TEST_ENV = 'EXCLUDE_ENV_TEST_TRAFFIC';
+
+/**
+ * Visits carrying the pc-goals marker visit-param `env=test` are dropped; everything else stays.
+ * In Metrika terms: param name on paramsLevel1, value on paramsLevel2 — a visit without the param
+ * has neither, so the OR keeps it; env=prod fails the second clause and stays; env=test fails both
+ * and is excluded. Parenthesised so it AND-composes safely with the other layers.
+ */
+export const EXCLUDE_ENV_TEST_FILTER = "(ym:s:paramsLevel1!='env' OR ym:s:paramsLevel2!='test')";
+
+/** Split the admin's TEST_TRAFFIC_PATTERNS value (comma / newline / semicolon separated). */
+export function parseTestTrafficPatterns(raw: string): string[] {
+  return raw
+    .split(/[;,\n]+/)
+    .map((s) => s.trim())
+    .map((s) => s.replace(/^['"]|['"]$/g, ''))
+    .filter((s) => s.length > 0);
+}
+
+/** Escape a literal pattern for use inside a Metrika `!~` PCRE expression. */
+export function escapeMetrikaRegex(token: string): string {
+  return token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * One admin pattern (a page fragment like `/test_1` or `page312425509.html`, or a UTM value like
+ * `metrika_test`) → the expression that keeps only visits NOT matching it on the start URL or any
+ * UTM field. Substring match on URLs, exact match on UTM values (a UTM `qa` must not exclude
+ * `qatar`). Parenthesised for safe AND-composition.
+ */
+export function testPatternFilter(token: string): string {
+  const re = escapeMetrikaRegex(token);
+  return (
+    `(ym:s:startURL!~'${re}'` +
+    ` AND ym:s:utmSource!~'^${re}$'` +
+    ` AND ym:s:utmCampaign!~'^${re}$'` +
+    ` AND ym:s:utmMedium!~'^${re}$')`
+  );
+}
+
+export interface TestTrafficLayers {
+  /** Parsed TEST_TRAFFIC_PATTERNS tokens (see parseTestTrafficPatterns). */
+  readonly patterns?: readonly string[];
+  /** Exclude visits with the pc-goals env=test marker ({@link EXCLUDE_ENV_TEST_FILTER}). */
+  readonly excludeEnvTest?: boolean;
+  /** `INCLUDE_TEST_TRAFFIC=1` disables every layer (no `filters` param at all). */
+  readonly includeEnv?: string;
+}
+
+/**
+ * Compose the full sync filter from the base test-session filter plus the optional ANA-22 layers.
+ * Returns undefined when filtering is disabled, so callers can omit the `filters` param entirely.
+ * Never contains the isRobot expression (see the file header).
+ */
+export function composeTestTrafficFilter(layers: TestTrafficLayers = {}): string | undefined {
+  if (layers.includeEnv === '1') return undefined;
+  const parts: string[] = [EXCLUDE_TEST_TRAFFIC];
+  if (layers.excludeEnvTest) parts.push(EXCLUDE_ENV_TEST_FILTER);
+  for (const p of layers.patterns ?? []) parts.push(testPatternFilter(p));
+  return parts.join(' AND ');
 }

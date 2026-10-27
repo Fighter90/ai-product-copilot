@@ -247,3 +247,30 @@ describe('GET /api/metrics', () => {
     expect(missing.statusCode).toBe(404);
   });
 });
+
+describe('GET /api/metrics/goal-roles', () => {
+  it('lists the pc-goals reference with the funnel role of each JS-event goal', async () => {
+    const ctx = buildTestApp();
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/metrics/goal-roles' });
+    expect(res.statusCode).toBe(200);
+    const { roles } = res.json() as {
+      roles: Array<{ code: string; event: string; ru: string; en: string; group: string }>;
+    };
+    // The whole reference is served (18 entries: 5 funnel stages, 3×3 tickets, 4 applications).
+    expect(roles.length).toBe(18);
+    expect(roles[0]).toMatchObject({ code: 'G-01', group: 'funnel' });
+    // The Goals page joins by JS-event name — codes and events are unique.
+    const events = roles.map((r) => r.event);
+    expect(new Set(events).size).toBe(events.length);
+    const codes = roles.map((r) => r.code);
+    expect(new Set(codes).size).toBe(codes.length);
+    // Both locales are provided for the «Роль в воронке» column.
+    for (const r of roles) {
+      expect(r.ru).toBeTruthy();
+      expect(r.en).toBeTruthy();
+      expect(['funnel', 'ticket', 'role']).toContain(r.group);
+    }
+    await ctx.app.close();
+    ctx.db.close();
+  });
+});

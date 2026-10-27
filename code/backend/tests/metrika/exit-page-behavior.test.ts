@@ -94,10 +94,11 @@ describe('exitPageBehavior', () => {
     expect(home).toMatchObject({ date: '2026-10-12', visits: 837, users: 642 });
     // API bounce is a percent; ratio() normalises it to a share.
     expect(home?.bounceRate).toBeCloseTo((24.32432432 * 814 + 21.73913043 * 23) / 837 / 100, 6);
+    // ANA-22: the Tilda virtual pageview is a widget event, grouped into the «/tilda/*» bucket.
     expect(stats.map((s) => s.page)).toEqual([
       'https://productcamp.ru/',
       'https://productcamp.ru/registration_popup_pcnext_volunteer_contribution',
-      'https://productcamp.ru/tilda/form2496617341/submitted',
+      '/tilda/*',
     ]);
   });
 

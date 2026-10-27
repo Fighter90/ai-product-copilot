@@ -1,6 +1,17 @@
 import { z } from 'zod';
-import { iceScore } from '@pca/shared';
-import type { ReportSnapshot, GeneratedHypotheses } from '@pca/shared';
+import { ASSUMPTION_CATEGORIES, iceScore } from '@pca/shared';
+import type {
+  AssumptionCategory,
+  GeneratedHypotheses,
+  HiddenAssumption,
+  NewHypothesis,
+  ProblemHypothesis,
+  ReportSnapshot,
+  SolutionHypothesis,
+  SolutionRiskKind,
+  ValidationMethod,
+  ValidationMethodType,
+} from '@pca/shared';
 import { snapshotFacts } from './ai-insights';
 import type { AnthropicFetch } from './ai-insights';
 import { ANTHROPIC_URL, ANTHROPIC_VERSION } from './ai-insights';
@@ -478,12 +489,23 @@ export function parseHypotheses(
 const ResponseSchema = z.object({
   content: z.array(z.object({ type: z.string(), text: z.string().optional() })),
   stop_reason: z.string().nullish(),
+  /** Model that answered (Anthropic / provider-chain adapter). */
+  model: z.string().nullish(),
+  /** Provider id — set by the provider-chain adapter (chainAsAnthropicFetch). */
+  provider: z.string().nullish(),
 });
+
+interface HypothesesReply {
+  readonly text: string;
+  readonly truncated: boolean;
+  readonly model?: string;
+  readonly provider?: string;
+}
 
 async function requestHypotheses(
   request: AnthropicHypothesesRequest,
   deps: { fetch: AnthropicFetch; apiKey: string },
-): Promise<{ text: string; truncated: boolean }> {
+): Promise<HypothesesReply> {
   const res = await deps.fetch(ANTHROPIC_URL, {
     method: 'POST',
     headers: {
@@ -515,7 +537,28 @@ async function requestHypotheses(
     .map((b) => b.text ?? '')
     .join('')
     .trim();
-  return { text, truncated: envelope.data.stop_reason === 'max_tokens' };
+  return {
+    text,
+    truncated: envelope.data.stop_reason === 'max_tokens',
+    model: envelope.data.model ?? undefined,
+    provider: envelope.data.provider ?? undefined,
+  };
+}
+
+/** Parse a reply, flag numbers absent from the snapshot (ANA-38) and record provider/model. */
+function finishHypotheses(
+  reply: HypothesesReply,
+  snapshot: ReportSnapshot,
+  fallbackModel: string,
+): GeneratedHypotheses {
+  const parsed = parseHypotheses(reply.text, { truncated: reply.truncated });
+  return {
+    ...flagUnverifiedNumbers(parsed, snapshot),
+    meta: {
+      ...(reply.provider ? { provider: reply.provider } : {}),
+      model: reply.model ?? fallbackModel,
+    },
+  };
 }
 
 /**
@@ -524,6 +567,8 @@ async function requestHypotheses(
  * or truncation at max_tokens), makes exactly ONE more call with a corrective note.
  * Throws when the Anthropic key is absent, the HTTP response is non-2xx,
  * or both attempts are rejected by parseHypotheses().
+ * Every hypothesis is then checked against the snapshot numbers (flagUnverifiedNumbers) and the
+ * result carries `meta.provider` / `meta.model` for the «AI» label on import.
  * Never logs the API key.
  */
 export async function generateHypotheses(
@@ -534,12 +579,316 @@ export async function generateHypotheses(
 
   const first = await requestHypotheses(request, deps);
   try {
-    return parseHypotheses(first.text, { truncated: first.truncated });
+    return finishHypotheses(first, snapshot, deps.model);
   } catch {
     // Fall through to the single retry below.
   }
 
   const retry = buildHypothesesRetryRequest(request, first.truncated ? 'truncated' : 'invalid');
   const second = await requestHypotheses(retry, deps);
-  return parseHypotheses(second.text, { truncated: second.truncated });
+  return finishHypotheses(second, snapshot, deps.model);
+}
+
+// ---------------------------------------------------------------------------
+// Anti-hallucination: every number cited by the AI must exist in the snapshot (ANA-38)
+// ---------------------------------------------------------------------------
+
+/** A number found in free text. `raw` is the text as written (used in the warning badge). */
+export interface NumberToken {
+  readonly raw: string;
+  readonly value: number;
+  readonly integer: boolean;
+  /** «1,3 тыс» / «2k» — compared with a wider tolerance. */
+  readonly scaled: boolean;
+}
+
+// Digits not glued to a letter/digit on the left (skips ids like P01/S01), optional thousands
+// groups («1 300»), optional decimal part («2,9» / «2.9»).
+const NUMBER_RE =
+  /(?<![\p{L}\d.,])(\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?![\d.,]\d)|\d+)(?:[.,](\d+))?/gu;
+const DATE_RE = /\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\.\d{1,2}\.\d{2,4}\b/g;
+const THOUSANDS_RE = /^\s*(?:тыс\.?|k\b|K\b)/u;
+const LAW_RE = /^\s*-?\s*ФЗ/u;
+const DURATION_RE =
+  /^\s*(?:дн|день|дня|дней|сут|недел|нед\b|мес|час|ч\b|мин|сек|day|week|month|hour|min|sec)/iu;
+
+/** Extract the numbers of a text. With `checkable`, numbers that are never facts are skipped. */
+export function extractNumbers(text: string, checkable = false): NumberToken[] {
+  const src = checkable ? text.replace(DATE_RE, ' ') : text;
+  const out: NumberToken[] = [];
+  for (const m of src.matchAll(NUMBER_RE)) {
+    const intPart = m[1]!.replace(/[ \u00a0\u202f]/g, '');
+    const frac = m[2];
+    const after = src.slice((m.index ?? 0) + m[0].length);
+    const scaled = THOUSANDS_RE.test(after);
+    let value = Number(frac ? `${intPart}.${frac}` : intPart);
+    if (scaled) value *= 1000;
+    const integer = !frac && !scaled;
+    if (checkable) {
+      // ICE scores, ordinal counts («в 2 клика», «3 шага») — never data claims.
+      if (integer && value <= 10) continue;
+      // Calendar years («в 2025 году»).
+      if (integer && value >= 1990 && value <= 2100 && m[1]!.length === 4) continue;
+      // Law references («152-ФЗ») and time frames («за 14 дней», «2 недели»).
+      if (LAW_RE.test(after)) continue;
+      if (value <= 365 && DURATION_RE.test(after)) continue;
+    }
+    out.push({ raw: m[0].trim() + (scaled ? ' тыс' : ''), value, integer, scaled });
+  }
+  return out;
+}
+
+const pct = (part: number, whole: number): number => (whole > 0 ? (part / whole) * 100 : 0);
+
+/**
+ * Every number a hypothesis may legitimately cite: the facts text the model was given plus the raw
+ * snapshot values and simple derived shares (segment visits / total visits, segment applications /
+ * total applications) — the model is allowed to say «68% мобильного трафика».
+ */
+export function snapshotNumberFacts(s: ReportSnapshot): number[] {
+  const facts: number[] = extractNumbers(snapshotFacts(s)).map((n) => n.value);
+  const add = (...xs: Array<number | undefined>) => {
+    for (const x of xs) if (typeof x === 'number' && Number.isFinite(x)) facts.push(x);
+  };
+
+  add(s.kpi.target, s.kpi.b2cApplications, s.kpi.b2bPaidTickets, s.kpi.gap);
+  add(
+    s.funnel.visits,
+    s.funnel.b2cApplications,
+    s.funnel.b2bPipelineTickets,
+    s.funnel.b2bPaidTickets,
+  );
+  add(s.b2bSummary.totalTickets, s.b2bSummary.paidTickets, s.b2bSummary.dealsCount);
+  for (const d of s.b2bSummary.deals) add(d.tickets);
+
+  const totalVisits = s.channels.reduce((a, c) => a + c.visits, 0) || s.funnel.visits;
+  const totalApps = s.kpi.b2cApplications;
+  add(totalVisits, pct(totalApps, totalVisits));
+
+  const segment = (visits: number, reaches: number, users?: number) => {
+    add(
+      visits,
+      reaches,
+      users,
+      pct(reaches, visits),
+      pct(visits, totalVisits),
+      pct(reaches, totalApps),
+    );
+  };
+  const byChannel = new Map<string, { v: number; r: number; u: number }>();
+  for (const c of s.channels) {
+    const cur = byChannel.get(c.channel) ?? { v: 0, r: 0, u: 0 };
+    byChannel.set(c.channel, { v: cur.v + c.visits, r: cur.r + c.goalReaches, u: cur.u + c.users });
+  }
+  for (const { v, r, u } of byChannel.values()) segment(v, r, u);
+  for (const u of s.breakdowns.utm) segment(u.visits, u.goalReaches);
+  for (const g of s.breakdowns.geoDevice) segment(g.visits, g.goalReaches);
+  for (const p of [...s.breakdowns.entryPages, ...s.breakdowns.exitPages]) {
+    segment(p.visits, p.goalReaches);
+    add(p.bounceRate * 100, 100 - p.bounceRate * 100);
+  }
+  return facts;
+}
+
+/** True when `n` matches a fact within rounding tolerance (integer → ±0.5, decimals → ±0.05, ≥1%). */
+function isKnownNumber(n: NumberToken, facts: readonly number[]): boolean {
+  const abs = n.scaled ? 0.05 : n.integer ? 0.5 : 0.05;
+  const rel = n.scaled ? 0.05 : 0.01;
+  return facts.some((f) => Math.abs(n.value - f) <= Math.max(abs, Math.abs(f) * rel));
+}
+
+/** Numbers in `texts` that are not backed by `facts` (unique, in order of appearance). */
+export function findUnverifiedNumbers(
+  texts: ReadonlyArray<string | undefined>,
+  facts: readonly number[],
+): string[] {
+  const out: string[] = [];
+  for (const text of texts) {
+    if (!text) continue;
+    for (const n of extractNumbers(text, true)) {
+      if (!isKnownNumber(n, facts) && !out.includes(n.raw)) out.push(n.raw);
+    }
+  }
+  return out;
+}
+
+/**
+ * Fields that state facts. Forward-looking fields (successCriteria, businessResult, traffic-light
+ * thresholds, validation methods/sample sizes, deadline) legitimately carry target numbers that are
+ * not in the snapshot, so they are not checked.
+ */
+function problemFactTexts(p: ProblemHypothesis): string[] {
+  return [p.segment, p.trouble, p.action, p.barrier, p.evidence];
+}
+function solutionFactTexts(s: SolutionHypothesis): string[] {
+  return [
+    s.action,
+    s.userBenefit,
+    ...s.risks.map((r) => r.note),
+    s.validation.whatToVerify,
+    s.validation.audience,
+    s.validation.channel,
+    s.ice.impactRationale,
+    s.ice.confidenceRationale,
+    s.ice.easeRationale,
+  ];
+}
+
+/**
+ * ANA-38: scan every fact-stating text field of the generated hypotheses; numbers that are not
+ * in the snapshot facts are recorded on the hypothesis as `unverifiedNumbers` (empty = verified).
+ * The hypothesis is flagged, not dropped — the analyst sees a warning badge and decides.
+ */
+export function flagUnverifiedNumbers(
+  h: GeneratedHypotheses,
+  snapshot: ReportSnapshot,
+): GeneratedHypotheses {
+  const facts = snapshotNumberFacts(snapshot);
+  return {
+    ...h,
+    problems: h.problems.map((p) => ({
+      ...p,
+      unverifiedNumbers: findUnverifiedNumbers(problemFactTexts(p), facts),
+    })),
+    solutions: h.solutions.map((s) => ({
+      ...s,
+      unverifiedNumbers: findUnverifiedNumbers(solutionFactTexts(s), facts),
+    })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Import into the hypotheses backlog (ANA-38: «AI» label + provider/model)
+// ---------------------------------------------------------------------------
+
+const Unverified = z.array(z.string().max(60)).max(50).optional();
+
+/** Body of POST /hypotheses/import-ai: one generated solution (+ its problem) and provenance. */
+export const ImportAiBody = z.object({
+  problem: ProblemHypothesisSchema.extend({ unverifiedNumbers: Unverified }).optional(),
+  solution: SolutionHypothesisSchema.extend({
+    risks: z.array(SolutionRiskSchema).max(10),
+    ice: IceInputSchema.extend({ score: z.number().optional() }),
+    trafficLight: TrafficLightSchema.optional(),
+    deadline: z.string().optional(),
+    unverifiedNumbers: Unverified,
+  }),
+  provider: z.string().max(100).optional(),
+  model: z.string().max(200).optional(),
+  snapshotId: z.string().max(100).optional(),
+});
+export type ImportAiInput = z.infer<typeof ImportAiBody>;
+
+const RISK_CATEGORY: Record<SolutionRiskKind, AssumptionCategory> = {
+  value: 'behavior',
+  usability: 'behavior',
+  feasibility: 'tech',
+  business: 'market',
+  legal: 'market',
+};
+
+const METHOD_RULES: ReadonlyArray<readonly [RegExp, ValidationMethodType]> = [
+  [/a\/b|аб[- ]?тест|сплит|метрик|аналитик|когорт|конверси|дашборд|воронк|данн/iu, 'quantitative'],
+  [/fake|фейк|лендинг|предзаказ|smoke|конкурент|рын|цен/iu, 'market'],
+  [/интервью|кастдев|custdev|опрос|юзабилити|usability|клик|прототип|коридор|фокус/iu, 'synthetic'],
+  [/пилот|запуск|live|прод|эксперимент|mvp/iu, 'live'],
+];
+const METHOD_FALLBACK: readonly ValidationMethodType[] = [
+  'quantitative',
+  'synthetic',
+  'live',
+  'market',
+];
+
+/** Classify free-text AI methods into typed methods; the first two get distinct types. */
+function typedMethods(methods: readonly string[], plan: string): ValidationMethod[] {
+  const used = new Set<ValidationMethodType>();
+  return methods.map((m, i) => {
+    let type = METHOD_RULES.find(([re]) => re.test(m))?.[1] ?? METHOD_FALLBACK[0]!;
+    if (i < 2 && used.has(type)) type = METHOD_FALLBACK.find((t) => !used.has(t)) ?? type;
+    used.add(type);
+    return { type, plan: `${m}: ${plan}` };
+  });
+}
+
+const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
+
+function deadlineDays(deadline: string | undefined, now: Date): number {
+  if (!deadline || !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) return 14;
+  const days = Math.ceil(
+    (new Date(`${deadline}T23:59:59Z`).getTime() - now.getTime()) / 86_400_000,
+  );
+  return Math.min(365, Math.max(1, days));
+}
+
+/**
+ * Map an AI solution hypothesis (+ its problem) to the structured backlog format. Risks become
+ * hidden assumptions (value/usability → behaviour, feasibility → tech, business/legal → market;
+ * gaps are filled from the problem), free-text methods become typed validation methods.
+ */
+export function generatedToNewHypothesis(input: ImportAiInput, now = new Date()): NewHypothesis {
+  const { problem, solution: s } = input;
+  const assumptions: HiddenAssumption[] = s.risks.map((r) => ({
+    category: RISK_CATEGORY[r.kind],
+    text: r.note,
+  }));
+  const fill: Record<AssumptionCategory, string> = {
+    behavior: problem ? `${problem.segment}: ${problem.trouble}` : s.userBenefit,
+    market: s.businessResult,
+    tech: `Реализуемо: ${s.action}`,
+  };
+  for (const category of ASSUMPTION_CATEGORIES) {
+    if (!assumptions.some((a) => a.category === category)) {
+      assumptions.push({ category, text: fill[category] });
+    }
+  }
+  const audience = `ЦА: ${s.validation.audience}; канал: ${s.validation.channel}`;
+  const unverified = [
+    ...new Set([...(problem?.unverifiedNumbers ?? []), ...(s.unverifiedNumbers ?? [])]),
+  ];
+  const description = [
+    `Если ${s.action}, то ${s.userBenefit}, что приведёт к ${s.businessResult}.`,
+    problem
+      ? `Проблема ${problem.id}: ${problem.segment} испытывает ${problem.trouble} при ${problem.action}, потому что ${problem.barrier}.`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return {
+    diamondPhase: 'develop',
+    kind: 'solution',
+    subject: problem?.segment ?? s.validation.audience,
+    action: s.userBenefit,
+    solution: s.action,
+    condition: s.successCriteria,
+    title: clip(s.action, 120),
+    description,
+    hiddenAssumptions: assumptions,
+    validationMethods: typedMethods(
+      s.validation.methods,
+      `${s.validation.whatToVerify} (${audience})`,
+    ),
+    impact: s.ice.impact,
+    confidence: s.ice.confidence,
+    ease: s.ice.ease,
+    impactRationale: s.ice.impactRationale,
+    confidenceRationale: s.ice.confidenceRationale,
+    easeRationale: s.ice.easeRationale,
+    greenCriteria: s.trafficLight?.green ?? s.successCriteria,
+    yellowCriteria: s.trafficLight?.yellow ?? `Частично: ${s.validation.successCriteria}`,
+    redCriteria: s.trafficLight?.red ?? `Не достигнуто: ${s.validation.successCriteria}`,
+    deadlineDays: deadlineDays(s.deadline, now),
+    evidence: [
+      {
+        type: 'ai',
+        note: problem?.evidence ?? s.successCriteria,
+        ...(input.snapshotId ? { slice: `snapshot:${input.snapshotId}` } : {}),
+      },
+    ],
+    source: 'ai',
+    ...(input.provider ? { aiProvider: input.provider } : {}),
+    ...(input.model ? { aiModel: input.model } : {}),
+    unverifiedNumbers: unverified,
+  };
 }

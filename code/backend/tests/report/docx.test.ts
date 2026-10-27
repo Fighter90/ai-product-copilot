@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Decision, Hypothesis, ReportSnapshot } from '@pca/shared';
 import { reportSections } from '../../src/report/docx/sections';
 import { buildDocx, parseInline } from '../../src/report/docx/builder';
+import { DOCX_PARTS, readDocxXml } from './docx-xml';
 
 const hyp = (over: Partial<Hypothesis>): Hypothesis => ({
   id: 1,
@@ -180,5 +181,57 @@ describe('buildDocx', () => {
     const buf = await buildDocx(emptyListItemSnapshot);
     expect(buf.length).toBeGreaterThan(0);
     expect(buf.subarray(0, 2).toString('latin1')).toBe('PK');
+  });
+
+  // ---- §5 degradation (report-gost-v2): charts = {} (Chrome unavailable) → valid document,
+  // figures and ПЕРЕЧЕНЬ РИСУНКОВ omitted deterministically (a figure exists ⇔ its PNG exists).
+  describe('degradation without rendered charts', () => {
+    it('omits ПЕРЕЧЕНЬ РИСУНКОВ and figure captions when charts = {}', async () => {
+      const buf = await buildDocx({ ...snapshot, charts: {} });
+      const document = await readDocxXml(buf, DOCX_PARTS.document);
+      expect(buf.subarray(0, 2).toString('latin1')).toBe('PK'); // still a valid .docx
+      expect(document).not.toContain('ПЕРЕЧЕНЬ РИСУНКОВ');
+      expect(document).not.toContain('Рисунок ');
+    });
+
+    it('lists every caption in ПЕРЕЧЕНЬ РИСУНКОВ when charts are rendered', async () => {
+      const png =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      const buf = await buildDocx({
+        ...snapshot,
+        charts: { channelBar: png, funnel: png, channelMix: png },
+      });
+      const document = await readDocxXml(buf, DOCX_PARTS.document);
+      expect(document).toContain('ПЕРЕЧЕНЬ РИСУНКОВ');
+      // Each figure caption appears at least twice: once in ПЕРЕЧЕНЬ РИСУНКОВ, once under the chart.
+      expect(document).toContain('Рисунок 1 — ');
+      expect(document).toContain('Рисунок 2 — ');
+    });
+  });
+
+  describe('ANA-39 human-readable period label', () => {
+    it('shows the human period label on the cover instead of raw ISO dates', async () => {
+      // 2025-01-01 … 2025-01-07 is not month-aligned → «01.01.2025 – 07.01.2025».
+      const buf = await buildDocx(snapshot);
+      const document = await readDocxXml(buf, DOCX_PARTS.document);
+      expect(document).toContain('Период данных: 01.01.2025 – 07.01.2025');
+      expect(document).not.toContain('Период данных: 2025-01-01');
+    });
+
+    it('labels a month-aligned period in words («Январь – июнь 2026»)', async () => {
+      const buf = await buildDocx({
+        ...snapshot,
+        period: { from: '2026-01-01', to: '2026-06-30' },
+      });
+      const document = await readDocxXml(buf, DOCX_PARTS.document);
+      expect(document).toContain('Период данных: Январь – июнь 2026');
+    });
+
+    it('drops the snapshot UUID from the document title (core properties)', async () => {
+      const buf = await buildDocx(snapshot);
+      const core = await readDocxXml(buf, DOCX_PARTS.coreProps);
+      expect(core).toContain('01.01.2025 – 07.01.2025');
+      expect(core).not.toContain('snap-1');
+    });
   });
 });

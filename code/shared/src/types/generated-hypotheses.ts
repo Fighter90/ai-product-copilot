@@ -22,6 +22,8 @@ export interface ProblemHypothesis {
   readonly barrier: string;
   /** Reference to the snapshot number that grounds this hypothesis (anti-hallucination). */
   readonly evidence: string;
+  /** ANA-38: numbers in the text that are absent from the snapshot facts (empty = verified). */
+  readonly unverifiedNumbers?: readonly string[];
 }
 
 /** Five mandatory risk dimensions for every solution hypothesis. */
@@ -102,10 +104,19 @@ export interface SolutionHypothesis {
   readonly trafficLight: HypothesisTrafficLight;
   /** Verification deadline (ISO date YYYY-MM-DD). */
   readonly deadline: string;
+  /** ANA-38: numbers in the text that are absent from the snapshot facts (empty = verified). */
+  readonly unverifiedNumbers?: readonly string[];
+}
+
+/** ANA-38: which provider/model produced the generation (for the «AI» label on import). */
+export interface GeneratedHypothesesMeta {
+  readonly provider?: string;
+  readonly model?: string;
 }
 
 /** Root output type returned by generateHypotheses() and stored in the snapshot. */
 export interface GeneratedHypotheses {
   readonly problems: readonly ProblemHypothesis[];
   readonly solutions: readonly SolutionHypothesis[];
+  readonly meta?: GeneratedHypothesesMeta;
 }

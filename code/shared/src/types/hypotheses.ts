@@ -50,7 +50,17 @@ export interface NewHypothesis {
   readonly evidence?: readonly HypothesisEvidence[];
   /** True for seeded demo content (ANA-18) — the report renders a «ДЕМО» badge for it. */
   readonly isDemo?: boolean;
+  /** ANA-38: where the hypothesis came from — typed by an analyst or imported from AI generation. */
+  readonly source?: HypothesisSource;
+  /** ANA-38: AI provider id that generated an imported hypothesis (e.g. «openrouter»). */
+  readonly aiProvider?: string;
+  /** ANA-38: model that generated an imported hypothesis. */
+  readonly aiModel?: string;
+  /** ANA-38: numbers cited by the AI that were not found in the snapshot facts. */
+  readonly unverifiedNumbers?: readonly string[];
 }
+
+export type HypothesisSource = 'manual' | 'ai';
 
 /** A persisted hypothesis as returned by the repository. */
 export interface Hypothesis extends NewHypothesis {

@@ -8,6 +8,11 @@ import {
   generateHypotheses,
   extractJsonObject,
   repairJson,
+  flagUnverifiedNumbers,
+  findUnverifiedNumbers,
+  snapshotNumberFacts,
+  generatedToNewHypothesis,
+  ImportAiBody,
   HYPOTHESES_MAX_TOKENS,
   ANTHROPIC_URL,
   type AnthropicFetch,
@@ -682,5 +687,71 @@ describe('generateHypotheses', () => {
     await expect(
       generateHypotheses(snapshot, { fetch: doFetch, apiKey: 'sk', model: 'm' }),
     ).rejects.toThrow(/envelope/);
+  });
+
+  it('ANA-38: a provider answer citing a fabricated number is flagged with unverifiedNumbers', async () => {
+    const payload = makeRawPayload(10, 10) as {
+      problems: Array<{ evidence: string }>;
+      solutions: Array<{ ice: { impactRationale: string } }>;
+    };
+    // The model invents «5123 заявок» — that number does not exist in the snapshot.
+    payload.problems[0]!.evidence = '5123 заявок B2C';
+    payload.solutions[0]!.ice.impactRationale = '5123 заявок против 60 визитов';
+    const doFetch = fakeFetch({ ok: true, status: 200, body: anthropicEnvelope(payload) });
+
+    const result = await generateHypotheses(snapshot, { fetch: doFetch, apiKey: 'sk', model: 'm' });
+
+    // The fabricated number is recorded on the hypothesis so the UI can warn the analyst.
+    expect(result.problems[0]!.unverifiedNumbers).toContain('5123');
+    expect(result.solutions[0]!.unverifiedNumbers).toContain('5123');
+    // Hypotheses citing only real snapshot numbers stay clean.
+    expect(result.problems[1]!.unverifiedNumbers).toEqual([]);
+    expect(result.solutions[1]!.unverifiedNumbers).toEqual([]);
+  });
+
+  it('ANA-38: numbers backed by the snapshot (incl. rounding tolerance) are not flagged', () => {
+    const payload = makeRawPayload(10, 10);
+    const flagged = flagUnverifiedNumbers(parseHypotheses(JSON.stringify(payload)), snapshot);
+    // «287 заявок B2C при 60 визитах с мобильных» — both numbers exist in the slice.
+    expect(flagged.problems[0]!.unverifiedNumbers).toEqual([]);
+    expect(flagged.solutions[0]!.unverifiedNumbers).toEqual([]);
+
+    const facts = snapshotNumberFacts(snapshot);
+    // Rounded share of the entry-page goal reaches (5/287 ≈ 1.74%): tolerance covers «1,7%».
+    expect(findUnverifiedNumbers(['около 1,7% всех заявок'], facts)).toEqual([]);
+    // A number that is nowhere in the facts is reported verbatim.
+    expect(findUnverifiedNumbers(['целых 9,9% всех заявок'], facts)).toContain('9,9');
+  });
+
+  it('ANA-38: import maps an AI hypothesis to the backlog with source=ai + provider/model', () => {
+    const parsed = ImportAiBody.safeParse({
+      problem: makeProblem('P01'),
+      solution: makeSolution('S01', 'P01'),
+      provider: 'openrouter',
+      model: 'claude-sonnet-4-6',
+      snapshotId: 'snap-1',
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const draft = generatedToNewHypothesis(parsed.data);
+    expect(draft.source).toBe('ai');
+    expect(draft.aiProvider).toBe('openrouter');
+    expect(draft.aiModel).toBe('claude-sonnet-4-6');
+    expect(draft.evidence?.[0]?.slice).toBe('snapshot:snap-1');
+    // The imported hypothesis must satisfy the full backlog format.
+    expect(new Set(draft.hiddenAssumptions.map((a) => a.category))).toEqual(
+      new Set(['behavior', 'market', 'tech']),
+    );
+    expect(new Set(draft.validationMethods.map((m) => m.type)).size).toBeGreaterThanOrEqual(2);
+
+    // Unverified numbers (from the problem and the solution) survive the import — the analyst
+    // sees the warning badge on the kanban card.
+    const flagged = generatedToNewHypothesis({
+      ...parsed.data,
+      problem: { ...parsed.data.problem!, unverifiedNumbers: ['9999'] },
+      solution: { ...parsed.data.solution, unverifiedNumbers: ['5123'] },
+    });
+    expect(flagged.unverifiedNumbers).toEqual(expect.arrayContaining(['5123', '9999']));
   });
 });

@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { DB } from '../../src/db/connection';
 import { MetricsRepo } from '../../src/db/repositories/metrics-repo';
+import { B2bRepo } from '../../src/db/repositories/b2b-repo';
+import { B2cPaymentsRepo } from '../../src/db/repositories/b2c-payments-repo';
 import { freshDb } from './helpers';
 import type { ChannelStat, GeoDeviceStat, Goal, PageStat, UtmStat } from '@pca/shared';
 
@@ -320,5 +322,114 @@ describe('MetricsRepo — resetSyncedWindow', () => {
     expect(repo.listGoals(true)).toHaveLength(0);
     expect(count('b2b_manual')).toBe(1);
     expect(count('report_snapshots')).toBe(1);
+  });
+});
+
+describe('MetricsRepo — statsCoverage (ANA-49)', () => {
+  it('returns null while nothing is synced', () => {
+    expect(repo.statsCoverage()).toBeNull();
+  });
+
+  it('returns the first/last synced day and the inclusive day count', () => {
+    repo.upsertChannelStats([stat('2025-01-01'), stat('2025-01-05'), stat('2025-01-03')]);
+    expect(repo.statsCoverage()).toEqual({ from: '2025-01-01', to: '2025-01-05', days: 5 });
+  });
+});
+
+// ANA-18 (appended): demo rows carry is_demo = 1 across every dataset; the demo banner reads
+// demoStatus() and the first successful sync calls deleteDemoRows() — demo and live data must
+// never mix in the KPIs.
+describe('MetricsRepo — demo marks (ANA-18)', () => {
+  const utmRow = (over: Partial<UtmStat> = {}): UtmStat => ({
+    date: '2025-01-01',
+    utmSource: 'vk',
+    utmMedium: 'cpc',
+    utmCampaign: 'demo',
+    visits: 10,
+    users: 9,
+    goalReaches: 1,
+    conversionRate: 0.1,
+    ...over,
+  });
+  const geoRow = (over: Partial<GeoDeviceStat> = {}): GeoDeviceStat => ({
+    date: '2025-01-01',
+    country: 'Россия',
+    device: 'mobile',
+    visits: 10,
+    users: 9,
+    goalReaches: 1,
+    conversionRate: 0.1,
+    ...over,
+  });
+  const pageRow = (over: Partial<PageStat> = {}): PageStat => ({
+    date: '2025-01-01',
+    page: '/tickets',
+    visits: 10,
+    users: 9,
+    bounceRate: 0.2,
+    goalReaches: 1,
+    conversionRate: 0.1,
+    ...over,
+  });
+  const count = (t: string): number =>
+    (db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n;
+
+  it('demoStatus counts is_demo rows per dataset and flips demo:true', () => {
+    repo.upsertChannelStats([stat('2025-01-01', { isDemo: true })]);
+    repo.upsertGoals([goal(80, { isDemo: true })]);
+    const s = repo.demoStatus();
+    expect(s.demo).toBe(true);
+    expect(s.counts.channels).toBe(1);
+    expect(s.counts.goals).toBe(1);
+    expect(s.counts.utm).toBe(0);
+    expect(s.counts.b2b).toBe(0);
+    expect(s.counts.b2c).toBe(0);
+  });
+
+  it('demoStatus is demo:false while only live rows exist', () => {
+    repo.upsertChannelStats([stat('2025-01-01')]);
+    const s = repo.demoStatus();
+    expect(s.demo).toBe(false);
+    expect(s.counts.channels).toBe(0);
+  });
+
+  it('deleteDemoRows wipes every demo row and keeps live rows — sync after seed never mixes', () => {
+    // Demo (seed-shaped) rows across every dataset, incl. b2b_manual and b2c_payments.
+    repo.upsertChannelStats([stat('2025-01-01', { isDemo: true })]);
+    repo.upsertUtmStats([utmRow({ isDemo: true })]);
+    repo.upsertGeoDeviceStats([geoRow({ isDemo: true })]);
+    repo.upsertPageStats([pageRow({ isDemo: true })]);
+    repo.upsertExitPageStats([pageRow({ page: '/checkout', isDemo: true })]);
+    repo.upsertGoals([goal(80, { isDemo: true })]);
+    const b2b = new B2bRepo(db);
+    b2b.create({
+      company: 'BigCorp',
+      tickets: 20,
+      stage: 'paid',
+      dateAdded: '2025-01-01',
+      isDemo: true,
+    });
+    const b2c = new B2cPaymentsRepo(db);
+    b2c.upsert(
+      { date: '2025-01-01', tickets: 6 },
+      { source: 'manual', isDemo: true, now: () => 'T' },
+    );
+
+    // Live rows interleaved in the same tables.
+    repo.upsertChannelStats([stat('2025-02-01')]);
+    b2b.create({ company: 'RealCo', tickets: 5, stage: 'lead', dateAdded: '2025-02-01' });
+    b2c.upsert({ date: '2025-02-01', tickets: 3 }, { source: 'csv', now: () => 'T' });
+
+    repo.deleteDemoRows();
+
+    expect(repo.listChannelStats().map((c) => c.date)).toEqual(['2025-02-01']);
+    expect(repo.listUtmStats()).toHaveLength(0);
+    expect(repo.listGeoDeviceStats()).toHaveLength(0);
+    expect(repo.listPageStats()).toHaveLength(0);
+    expect(repo.listExitPageStats()).toHaveLength(0);
+    expect(repo.listGoals(true)).toHaveLength(0);
+    expect(count('b2b_manual')).toBe(1);
+    expect(count('b2c_payments')).toBe(1);
+    expect(repo.demoStatus().demo).toBe(false);
   });
 });

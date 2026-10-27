@@ -288,6 +288,8 @@ describe('chainAsAnthropicFetch', () => {
     expect(payload).toEqual({
       content: [{ type: 'text', text: 'answer' }],
       model: 'm',
+      // ANA-33: the answering provider is part of the envelope so report blocks can attribute.
+      provider: 'openrouter',
       stop_reason: 'end_turn',
     });
     expect(onResult).toHaveBeenCalledWith(expect.objectContaining({ text: 'answer' }));

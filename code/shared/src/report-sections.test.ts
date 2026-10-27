@@ -570,6 +570,29 @@ describe('reportSections — breakdowns, AI and empty states', () => {
     const итог = withAi.find((s) => s.heading === 'Результирующий вывод');
     expect(итог?.lines).toEqual(['Итог: рост.', 'Риски: отвал.']);
   });
+
+  it('prints «Сгенерировано: provider · model · dd.mm.yyyy» at the end of the AI block (ANA-33)', () => {
+    const snap: ReportSnapshot = {
+      ...baseSnapshot,
+      aiNarrative: '## Вывод\n\nИтог: рост.',
+      aiGeneratedBy: {
+        insights: {
+          provider: 'yandexgpt',
+          providerName: 'YandexGPT (AI Studio)',
+          model: 'yandexgpt/latest',
+          at: '2026-10-27T10:00:00.000Z',
+        },
+      },
+    };
+    const sections = reportSections(snap);
+    const ai = sections.find((s) => s.heading === 'Вывод');
+    expect(ai?.lines.at(-1)).toBe(
+      '_Сгенерировано: YandexGPT (AI Studio) · yandexgpt/latest · 27.10.2026_',
+    );
+    // No attribution without aiGeneratedBy (old snapshots keep rendering unchanged).
+    const plain = reportSections({ ...baseSnapshot, aiNarrative: '## Вывод\n\nИтог: рост.' });
+    expect(plain.find((s) => s.heading === 'Вывод')?.lines.at(-1)).toBe('Итог: рост.');
+  });
 });
 
 describe('reportSections — AI-generated hypotheses', () => {
@@ -823,5 +846,97 @@ describe('reportSections — demo marks (ANA-18)', () => {
       .map((sec) => `${sec.heading}\n${sec.lines.join('\n')}`)
       .join('\n');
     expect(text).not.toContain('[ДЕМО]');
+  });
+});
+
+describe('reportSections — locale en (ANA-42)', () => {
+  it('ru stays byte-identical to the default call', () => {
+    expect(reportSections(baseSnapshot, 'ru')).toEqual(reportSections(baseSnapshot));
+  });
+
+  it('renders localized headings and template text; data values stay as stored', () => {
+    const sections = reportSections(baseSnapshot, 'en');
+    const headings = sections.map((sec) => sec.heading);
+    expect(headings).toContain('TERMS AND ABBREVIATIONS');
+    expect(headings).toContain('INTRODUCTION');
+    expect(headings).toContain('EXECUTIVE SUMMARY');
+    expect(headings).toContain('Methodology');
+    expect(headings).toContain('Hypothesis prioritisation (by ICE)');
+    expect(headings).toContain('Deliver — Decision Log (overview)');
+    expect(headings).toContain('Appendix: data');
+    // The hypothesis title (a data value) is never translated; the card suffix is.
+    expect(headings).toContain('Гипотеза (hypothesis)');
+    expect(headings).toContain('DL-001: validation outcome');
+
+    const intro = sections.find((sec) => sec.heading === 'INTRODUCTION')!;
+    expect(intro.lines.join('\n')).toContain('Purpose: an analytical report');
+    expect(intro.lines.join('\n')).toContain('application ≠ payment');
+
+    const summary = sections.find((sec) => sec.heading === 'Key results')!;
+    const text = summary.lines.join('\n');
+    expect(text).toContain('Period target (paid tickets)');
+    expect(text).toContain('B2C applications (Metrika goal reaches)');
+    // Exec summary: the KPI sentence is localized, the numbers are the same.
+    const exec = sections.find((sec) => sec.heading === 'EXECUTIVE SUMMARY')!;
+    expect(exec.lines.join('\n')).toContain('Period target — 300 paid tickets; credited 20');
+    // Funnel sentence keeps the data values.
+    expect(exec.lines.join('\n')).toContain(
+      'Funnel: 100 visits → 7 B2C applications (CR 7.0%) → 20 paid B2B tickets',
+    );
+  });
+
+  it('localizes hypothesis cards (labels, assumptions, methods, traffic light) and priority lines', () => {
+    const sections = reportSections(baseSnapshot, 'en');
+    const card = sections.find((sec) => sec.heading === 'Гипотеза (hypothesis)')!;
+    const text = card.lines.join('\n');
+    expect(text).toContain(
+      'Type: problem · Double Diamond phase: Define (problem) · status: draft',
+    );
+    expect(text).toContain('ICE priority = I × C × E = 8 × 6 × 7 = 336 (medium)');
+    expect(text).toContain('Hidden assumptions (3):');
+    expect(text).toContain('[Behaviour]');
+    expect(text).toContain('Validation methods (2):');
+    expect(text).toContain('Live test: A/B (cost: средняя)');
+    expect(text).toContain('Traffic-light criteria (decision thresholds):');
+    expect(text).toContain('Validation deadline: 5 d');
+
+    const prio = sections.find((sec) => sec.heading === 'Hypothesis prioritisation (by ICE)')!;
+    expect(prio.lines.join('\n')).toContain('| Hypothesis | I | C | E | ICE |');
+    expect(prio.lines.join('\n')).toMatch(
+      /1\. \[ICE 336 · medium\] problem: .* — status: draft, deadline/,
+    );
+  });
+
+  it('localizes the decision card, chart captions and empty states', () => {
+    const snapshot: ReportSnapshot = {
+      ...baseSnapshot,
+      channels: [],
+      breakdowns: { utm: [], geoDevice: [], entryPages: [], exitPages: [] },
+      hypotheses: { problems: [], solutions: [] },
+      decisions: [],
+    };
+    const sections = reportSections(snapshot, 'en');
+    // Decision cards survive with data; empty-state-only sections are dropped in both locales.
+    const headings = sections.map((sec) => sec.heading);
+    expect(headings).not.toContain('Roadmap: what we do next');
+
+    const dl = sections.find((sec) => sec.heading === 'Deliver — Decision Log (overview)');
+    // A section whose only line is the empty-state placeholder is dropped in both locales.
+    expect(dl).toBeUndefined();
+
+    // Captions are localized on the charted sections.
+    const captions = sections
+      .map((sec) => sec.caption)
+      .filter((c): c is string => typeof c === 'string');
+    expect(captions).toContain('Figure 1 — Traffic and conversion by channel');
+    expect(captions).toContain('Figure 2 — Funnel: visit → application → payment');
+
+    // Recommendations carry EN sentences from the shared tables.
+    const rec = sections.find(
+      (sec) => sec.heading === 'Recommendations: what works and what does not',
+    )!;
+    expect(rec.lines.join('\n')).toContain(
+      'No channel data for the period — sync data from Metrika.',
+    );
   });
 });

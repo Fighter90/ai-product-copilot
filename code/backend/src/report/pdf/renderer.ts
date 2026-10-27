@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import puppeteer from 'puppeteer-core';
-import type { ReportSnapshot } from '@pca/shared';
+import type { ReportLocale, ReportSnapshot } from '@pca/shared';
 import { reportHtml } from './html';
 
 /** Find Chrome executable path across platforms. */
@@ -48,7 +48,10 @@ export function findChromePath(): string | undefined {
  * installs stay fast). Excluded from coverage: launches a real browser. Auto-detects Chrome
  * on macOS/Linux/Windows; falls back to PUPPETEER_EXECUTABLE_PATH env var.
  */
-export async function buildPdf(snapshot: ReportSnapshot): Promise<Buffer> {
+export async function buildPdf(
+  snapshot: ReportSnapshot,
+  locale: ReportLocale = 'ru',
+): Promise<Buffer> {
   const executablePath = findChromePath();
   if (!executablePath) {
     throw new Error(
@@ -64,7 +67,7 @@ export async function buildPdf(snapshot: ReportSnapshot): Promise<Buffer> {
   });
   try {
     const page = await browser.newPage();
-    await page.setContent(reportHtml(snapshot), { waitUntil: 'load' });
+    await page.setContent(reportHtml(snapshot, locale), { waitUntil: 'load' });
     const pdf = await page.pdf({ format: 'A4', printBackground: true });
     return Buffer.from(pdf);
   } finally {

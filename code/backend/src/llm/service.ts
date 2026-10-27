@@ -436,6 +436,8 @@ export function chainAsAnthropicFetch(
       const payload = JSON.stringify({
         content: [{ type: 'text', text: res.text }],
         model: res.model,
+        // ANA-33: report AI blocks attribute themselves («Сгенерировано: …») via this field.
+        provider: res.provider,
         stop_reason: res.stopReason ?? 'end_turn',
         ...(res.usage
           ? {

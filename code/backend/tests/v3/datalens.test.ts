@@ -498,7 +498,7 @@ describe('datasets registry and exports (ANA-55)', () => {
 
   const seedChannels = () => {
     const ins = db.prepare(
-      "INSERT INTO channel_stats (date, channel, visits, users, bounce_rate, avg_duration, goal_reaches, conversion_rate) VALUES (?, ?, ?, ?, 10, 30, ?, 5)",
+      'INSERT INTO channel_stats (date, channel, visits, users, bounce_rate, avg_duration, goal_reaches, conversion_rate) VALUES (?, ?, ?, ?, 10, 30, ?, 5)',
     );
     ins.run('2025-01-01', 'ad', 100, 80, 5);
     ins.run('2025-01-01', 'tg', 50, 40, 10);
@@ -507,9 +507,7 @@ describe('datasets registry and exports (ANA-55)', () => {
 
   it('registry has goals_daily, funnel_daily and hypotheses; users columns are users_daily', () => {
     const ids = DATASETS.map((d) => d.id);
-    expect(ids).toEqual(
-      expect.arrayContaining(['goals_daily', 'funnel_daily', 'hypotheses']),
-    );
+    expect(ids).toEqual(expect.arrayContaining(['goals_daily', 'funnel_daily', 'hypotheses']));
     for (const ds of DATASETS.filter((d) => d.id.endsWith('_daily'))) {
       const users = ds.columns.find((col) => col.name.startsWith('users'));
       expect(users?.name).toBe('users_daily');

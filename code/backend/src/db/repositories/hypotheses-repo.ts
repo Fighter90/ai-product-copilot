@@ -2,6 +2,7 @@ import type { DB } from '../connection';
 import {
   validateHypothesis,
   type Hypothesis,
+  type HypothesisSource,
   type HypothesisStatus,
   type NewHypothesis,
 } from '@pca/shared';
@@ -42,6 +43,10 @@ interface HypRow {
   evidence: string | null;
   status: HypothesisStatus;
   is_demo: number;
+  source: HypothesisSource | null;
+  ai_provider: string | null;
+  ai_model: string | null;
+  unverified_numbers: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -79,9 +84,54 @@ function toHypothesis(r: HypRow): Hypothesis {
     evidence: r.evidence ? JSON.parse(r.evidence) : undefined,
     status: r.status,
     isDemo: r.is_demo ? true : undefined,
+    source: r.source ?? 'manual',
+    aiProvider: r.ai_provider ?? undefined,
+    aiModel: r.ai_model ?? undefined,
+    unverifiedNumbers: r.unverified_numbers ? JSON.parse(r.unverified_numbers) : undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
+}
+
+/** Column values shared by INSERT and UPDATE (everything except id/status/timestamps). */
+function contentParams(input: NewHypothesis, createdAt: string): Record<string, unknown> {
+  return {
+    diamond_phase: input.diamondPhase,
+    kind: input.kind,
+    subject: input.subject,
+    action: input.action,
+    solution: input.solution,
+    condition: input.condition,
+    title: input.title,
+    description: input.description ?? null,
+    parent_id: input.parentId ?? null,
+    hidden_assumptions: JSON.stringify(input.hiddenAssumptions),
+    validation_methods: JSON.stringify(input.validationMethods),
+    impact: input.impact,
+    confidence: input.confidence,
+    ease: input.ease,
+    impact_rationale: input.impactRationale,
+    confidence_rationale: input.confidenceRationale,
+    ease_rationale: input.easeRationale,
+    green_criteria: input.greenCriteria,
+    yellow_criteria: input.yellowCriteria,
+    red_criteria: input.redCriteria,
+    deadline_days: input.deadlineDays,
+    deadline_at: addDays(createdAt, input.deadlineDays),
+    evidence: input.evidence ? JSON.stringify(input.evidence) : null,
+    source: input.source === 'ai' ? 'ai' : 'manual',
+    ai_provider: input.aiProvider ?? null,
+    ai_model: input.aiModel ?? null,
+    unverified_numbers: input.unverifiedNumbers ? JSON.stringify(input.unverifiedNumbers) : null,
+  };
+}
+
+/** Thrown when deleting a hypothesis that Decision Log entries still reference. */
+export class HypothesisInUseError extends Error {
+  constructor(public readonly decisions: number) {
+    super(`Hypothesis is referenced by ${decisions} decision(s)`);
+    this.name = 'HypothesisInUseError';
+  }
 }
 
 export class HypothesesRepo {
@@ -100,44 +150,88 @@ export class HypothesesRepo {
            parent_id, hidden_assumptions, validation_methods,
            impact, confidence, ease, impact_rationale, confidence_rationale, ease_rationale,
            green_criteria, yellow_criteria, red_criteria,
-           deadline_days, deadline_at, evidence, is_demo, status, created_at, updated_at
+           deadline_days, deadline_at, evidence, is_demo,
+           source, ai_provider, ai_model, unverified_numbers,
+           status, created_at, updated_at
          ) VALUES (
            @diamond_phase, @kind, @subject, @action, @solution, @condition, @title, @description,
            @parent_id, @hidden_assumptions, @validation_methods,
            @impact, @confidence, @ease, @impact_rationale, @confidence_rationale, @ease_rationale,
            @green_criteria, @yellow_criteria, @red_criteria,
-           @deadline_days, @deadline_at, @evidence, @is_demo, 'draft', @created_at, @updated_at
+           @deadline_days, @deadline_at, @evidence, @is_demo,
+           @source, @ai_provider, @ai_model, @unverified_numbers,
+           'draft', @created_at, @updated_at
          ) RETURNING *`,
       )
       .get({
-        diamond_phase: input.diamondPhase,
-        kind: input.kind,
-        subject: input.subject,
-        action: input.action,
-        solution: input.solution,
-        condition: input.condition,
-        title: input.title,
-        description: input.description ?? null,
-        parent_id: input.parentId ?? null,
-        hidden_assumptions: JSON.stringify(input.hiddenAssumptions),
-        validation_methods: JSON.stringify(input.validationMethods),
-        impact: input.impact,
-        confidence: input.confidence,
-        ease: input.ease,
-        impact_rationale: input.impactRationale,
-        confidence_rationale: input.confidenceRationale,
-        ease_rationale: input.easeRationale,
-        green_criteria: input.greenCriteria,
-        yellow_criteria: input.yellowCriteria,
-        red_criteria: input.redCriteria,
-        deadline_days: input.deadlineDays,
-        deadline_at: addDays(now, input.deadlineDays),
-        evidence: input.evidence ? JSON.stringify(input.evidence) : null,
+        ...contentParams(input, now),
         is_demo: input.isDemo ? 1 : 0,
         created_at: now,
         updated_at: now,
       }) as HypRow;
     return toHypothesis(row);
+  }
+
+  /**
+   * Replaces the editable content of a hypothesis (status, demo mark and creation time are kept;
+   * the deadline is recomputed from the creation time). Same completeness check as create().
+   */
+  update(id: number, input: NewHypothesis): Hypothesis | undefined {
+    const result = validateHypothesis(input);
+    if (!result.ok) throw new HypothesisValidationError(result.errors);
+    const existing = this.getById(id);
+    if (!existing) return undefined;
+    if (input.parentId === id) {
+      throw new HypothesisValidationError(['parentId must not reference the hypothesis itself']);
+    }
+    const row = this.db
+      .prepare(
+        `UPDATE hypotheses SET
+           diamond_phase = @diamond_phase, kind = @kind, subject = @subject, action = @action,
+           solution = @solution, condition = @condition, title = @title,
+           description = @description, parent_id = @parent_id,
+           hidden_assumptions = @hidden_assumptions, validation_methods = @validation_methods,
+           impact = @impact, confidence = @confidence, ease = @ease,
+           impact_rationale = @impact_rationale, confidence_rationale = @confidence_rationale,
+           ease_rationale = @ease_rationale, green_criteria = @green_criteria,
+           yellow_criteria = @yellow_criteria, red_criteria = @red_criteria,
+           deadline_days = @deadline_days, deadline_at = @deadline_at, evidence = @evidence,
+           source = @source, ai_provider = @ai_provider, ai_model = @ai_model,
+           unverified_numbers = @unverified_numbers, updated_at = @updated_at
+         WHERE id = @id RETURNING *`,
+      )
+      .get({
+        ...contentParams(
+          {
+            ...input,
+            // Provenance survives edits: an AI-imported hypothesis stays labelled as AI.
+            source: input.source ?? existing.source,
+            aiProvider: input.aiProvider ?? existing.aiProvider,
+            aiModel: input.aiModel ?? existing.aiModel,
+            unverifiedNumbers: input.unverifiedNumbers ?? existing.unverifiedNumbers,
+          },
+          existing.createdAt,
+        ),
+        id,
+        updated_at: new Date().toISOString(),
+      }) as HypRow;
+    return toHypothesis(row);
+  }
+
+  /**
+   * Deletes a hypothesis. Child hypotheses are detached (parent_id → NULL). Refuses (throws
+   * HypothesisInUseError) when Decision Log entries reference it — the log must stay intact.
+   * Returns false when the id does not exist.
+   */
+  delete(id: number): boolean {
+    const { c } = this.db
+      .prepare('SELECT COUNT(*) AS c FROM decisions WHERE hypothesis_id = ?')
+      .get(id) as { c: number };
+    if (c > 0) throw new HypothesisInUseError(c);
+    return this.db.transaction((hid: number): boolean => {
+      this.db.prepare('UPDATE hypotheses SET parent_id = NULL WHERE parent_id = ?').run(hid);
+      return this.db.prepare('DELETE FROM hypotheses WHERE id = ?').run(hid).changes > 0;
+    })(id);
   }
 
   getById(id: number): Hypothesis | undefined {

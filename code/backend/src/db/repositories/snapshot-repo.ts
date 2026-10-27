@@ -6,6 +6,8 @@ export interface ReportSnapshotRecord {
   readonly dateFrom: string;
   readonly dateTo: string;
   readonly payload: unknown;
+  /** ANA-39: who built the snapshot (user email in cabinet mode, null in legacy mode). */
+  readonly createdBy?: string | null;
   readonly docxPath?: string;
   readonly pdfPath?: string;
 }
@@ -16,6 +18,7 @@ interface SnapshotRow {
   date_from: string;
   date_to: string;
   payload: string;
+  created_by: string | null;
   docx_path: string | null;
   pdf_path: string | null;
 }
@@ -27,6 +30,7 @@ function toRecord(r: SnapshotRow): ReportSnapshotRecord {
     dateFrom: r.date_from,
     dateTo: r.date_to,
     payload: JSON.parse(r.payload),
+    createdBy: r.created_by,
     docxPath: r.docx_path ?? undefined,
     pdfPath: r.pdf_path ?? undefined,
   };
@@ -40,8 +44,8 @@ export class SnapshotRepo {
     this.db
       .prepare(
         `INSERT OR REPLACE INTO report_snapshots
-           (id, generated_at, date_from, date_to, payload, docx_path, pdf_path)
-         VALUES (@id, @generated_at, @date_from, @date_to, @payload, @docx_path, @pdf_path)`,
+           (id, generated_at, date_from, date_to, payload, created_by, docx_path, pdf_path)
+         VALUES (@id, @generated_at, @date_from, @date_to, @payload, @created_by, @docx_path, @pdf_path)`,
       )
       .run({
         id: record.id,
@@ -49,6 +53,7 @@ export class SnapshotRepo {
         date_from: record.dateFrom,
         date_to: record.dateTo,
         payload: JSON.stringify(record.payload),
+        created_by: record.createdBy ?? null,
         docx_path: record.docxPath ?? null,
         pdf_path: record.pdfPath ?? null,
       });

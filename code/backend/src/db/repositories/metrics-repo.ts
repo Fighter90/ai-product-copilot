@@ -1,6 +1,7 @@
 import type { DB } from '../connection';
 import type {
   ChannelStat,
+  DemoStatus,
   GeoDeviceStat,
   Goal,
   NewRawResponse,
@@ -150,8 +151,8 @@ export class MetricsRepo {
 
   upsertGoals(goals: readonly Goal[]): void {
     const stmt = this.db.prepare(
-      `INSERT OR REPLACE INTO goals (id, name, type, is_b2b, is_archived, synced_at)
-       VALUES (@id, @name, @type, @is_b2b, @is_archived, @synced_at)`,
+      `INSERT OR REPLACE INTO goals (id, name, type, is_b2b, is_archived, synced_at, is_demo)
+       VALUES (@id, @name, @type, @is_b2b, @is_archived, @synced_at, @is_demo)`,
     );
     const tx = this.db.transaction((rows: readonly Goal[]) => {
       for (const g of rows) {
@@ -162,6 +163,7 @@ export class MetricsRepo {
           is_b2b: g.isB2b ? 1 : 0,
           is_archived: g.isArchived ? 1 : 0,
           synced_at: g.syncedAt,
+          is_demo: g.isDemo ? 1 : 0,
         });
       }
     });
@@ -313,9 +315,9 @@ export class MetricsRepo {
     const stmt = this.db.prepare(
       `INSERT OR REPLACE INTO channel_stats
          (date, channel, utm_source, utm_medium, utm_campaign, visits, users,
-          bounce_rate, avg_duration, goal_reaches, conversion_rate)
+          bounce_rate, avg_duration, goal_reaches, conversion_rate, is_demo)
        VALUES (@date, @channel, @utm_source, @utm_medium, @utm_campaign, @visits, @users,
-          @bounce_rate, @avg_duration, @goal_reaches, @conversion_rate)`,
+          @bounce_rate, @avg_duration, @goal_reaches, @conversion_rate, @is_demo)`,
     );
     const tx = this.db.transaction((items: readonly ChannelStat[]) => {
       for (const c of items) {
@@ -331,6 +333,7 @@ export class MetricsRepo {
           avg_duration: c.avgDuration,
           goal_reaches: c.goalReaches,
           conversion_rate: c.conversionRate,
+          is_demo: c.isDemo ? 1 : 0,
         });
       }
     });
@@ -349,9 +352,9 @@ export class MetricsRepo {
   upsertUtmStats(rows: readonly UtmStat[]): void {
     const stmt = this.db.prepare(
       `INSERT OR REPLACE INTO utm_stats
-         (date, utm_source, utm_medium, utm_campaign, visits, users, goal_reaches, conversion_rate)
+         (date, utm_source, utm_medium, utm_campaign, visits, users, goal_reaches, conversion_rate, is_demo)
        VALUES (@date, @utm_source, @utm_medium, @utm_campaign, @visits, @users,
-          @goal_reaches, @conversion_rate)`,
+          @goal_reaches, @conversion_rate, @is_demo)`,
     );
     const tx = this.db.transaction((items: readonly UtmStat[]) => {
       for (const u of items) {
@@ -364,6 +367,7 @@ export class MetricsRepo {
           users: u.users,
           goal_reaches: u.goalReaches,
           conversion_rate: u.conversionRate,
+          is_demo: u.isDemo ? 1 : 0,
         });
       }
     });
@@ -382,8 +386,8 @@ export class MetricsRepo {
   upsertGeoDeviceStats(rows: readonly GeoDeviceStat[]): void {
     const stmt = this.db.prepare(
       `INSERT OR REPLACE INTO geo_device_stats
-         (date, country, device, visits, users, goal_reaches, conversion_rate)
-       VALUES (@date, @country, @device, @visits, @users, @goal_reaches, @conversion_rate)`,
+         (date, country, device, visits, users, goal_reaches, conversion_rate, is_demo)
+       VALUES (@date, @country, @device, @visits, @users, @goal_reaches, @conversion_rate, @is_demo)`,
     );
     const tx = this.db.transaction((items: readonly GeoDeviceStat[]) => {
       for (const g of items) {
@@ -395,6 +399,7 @@ export class MetricsRepo {
           users: g.users,
           goal_reaches: g.goalReaches,
           conversion_rate: g.conversionRate,
+          is_demo: g.isDemo ? 1 : 0,
         });
       }
     });
@@ -413,8 +418,8 @@ export class MetricsRepo {
   upsertPageStats(rows: readonly PageStat[]): void {
     const stmt = this.db.prepare(
       `INSERT OR REPLACE INTO page_stats
-         (date, page, visits, users, bounce_rate, goal_reaches, conversion_rate)
-       VALUES (@date, @page, @visits, @users, @bounce_rate, @goal_reaches, @conversion_rate)`,
+         (date, page, visits, users, bounce_rate, goal_reaches, conversion_rate, is_demo)
+       VALUES (@date, @page, @visits, @users, @bounce_rate, @goal_reaches, @conversion_rate, @is_demo)`,
     );
     const tx = this.db.transaction((items: readonly PageStat[]) => {
       for (const p of items) {
@@ -426,6 +431,7 @@ export class MetricsRepo {
           bounce_rate: p.bounceRate,
           goal_reaches: p.goalReaches,
           conversion_rate: p.conversionRate,
+          is_demo: p.isDemo ? 1 : 0,
         });
       }
     });
@@ -444,8 +450,8 @@ export class MetricsRepo {
   upsertExitPageStats(rows: readonly PageStat[]): void {
     const stmt = this.db.prepare(
       `INSERT OR REPLACE INTO exit_page_stats
-         (date, page, visits, users, bounce_rate, goal_reaches, conversion_rate)
-       VALUES (@date, @page, @visits, @users, @bounce_rate, @goal_reaches, @conversion_rate)`,
+         (date, page, visits, users, bounce_rate, goal_reaches, conversion_rate, is_demo)
+       VALUES (@date, @page, @visits, @users, @bounce_rate, @goal_reaches, @conversion_rate, @is_demo)`,
     );
     const tx = this.db.transaction((items: readonly PageStat[]) => {
       for (const p of items) {
@@ -457,6 +463,7 @@ export class MetricsRepo {
           bounce_rate: p.bounceRate,
           goal_reaches: p.goalReaches,
           conversion_rate: p.conversionRate,
+          is_demo: p.isDemo ? 1 : 0,
         });
       }
     });
@@ -470,5 +477,76 @@ export class MetricsRepo {
           .all(range.from, range.to) as PageRow[])
       : (this.db.prepare('SELECT * FROM exit_page_stats ORDER BY date').all() as PageRow[]);
     return rows.map(toPageStat);
+  }
+
+  /**
+   * Cached data coverage (ANA-49): the first and the last synced day across the per-day stat
+   * tables. The FilterBar compares the selected period against it and offers «Догрузить N дней»
+   * when the selection starts before the cache. `null` while nothing has been synced yet.
+   */
+  statsCoverage(): { from: string; to: string; days: number } | null {
+    const r = this.db
+      .prepare('SELECT MIN(date) AS min_date, MAX(date) AS max_date FROM channel_stats')
+      .get() as { min_date: string | null; max_date: string | null };
+    if (!r.min_date || !r.max_date) return null;
+    const days =
+      Math.round((new Date(r.max_date).getTime() - new Date(r.min_date).getTime()) / 86_400_000) +
+      1; // inclusive both ends
+    return { from: r.min_date, to: r.max_date, days };
+  }
+
+  /**
+   * ANA-18: count of `is_demo = 1` rows per dataset — drives the «Демо-данные» banner
+   * (GET /api/demo/status). All-zero counts → demo: false.
+   */
+  demoStatus(): DemoStatus {
+    const tables: Array<[string, string]> = [
+      ['channels', 'channel_stats'],
+      ['utm', 'utm_stats'],
+      ['geoDevice', 'geo_device_stats'],
+      ['pages', 'page_stats'],
+      ['exitPages', 'exit_page_stats'],
+      ['goals', 'goals'],
+      ['b2b', 'b2b_manual'],
+      ['b2c', 'b2c_payments'],
+      ['hypotheses', 'hypotheses'],
+      ['decisions', 'decisions'],
+    ];
+    const counts: Record<string, number> = {};
+    let total = 0;
+    for (const [key, table] of tables) {
+      const n = (
+        this.db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE is_demo = 1`).all() as Array<{
+          n: number;
+        }>
+      )[0]?.n;
+      counts[key] = n ?? 0;
+      total += n ?? 0;
+    }
+    return { demo: total > 0, counts };
+  }
+
+  /**
+   * ANA-18: wipe every demo-marked row across all tables. Called after a successful sync — real
+   * Metrika data has arrived, so the made-up seed dataset must not mix into the KPIs anymore.
+   * Live (is_demo = 0) rows are never touched. Decisions are deleted before their hypotheses.
+   */
+  deleteDemoRows(): void {
+    const tables = [
+      'channel_stats',
+      'utm_stats',
+      'geo_device_stats',
+      'page_stats',
+      'exit_page_stats',
+      'goals',
+      'b2b_manual',
+      'b2c_payments',
+      'decisions',
+      'hypotheses',
+    ];
+    const tx = this.db.transaction(() => {
+      for (const t of tables) this.db.prepare(`DELETE FROM ${t} WHERE is_demo = 1`).run();
+    });
+    tx();
   }
 }

@@ -1,5 +1,5 @@
 import { selectPrimaryGoal, type Goal } from '@pca/shared';
-import type { ChannelStat, GeoDeviceStat, PageStat, UtmStat } from '@pca/shared';
+import type { ChannelStat, GeoDeviceStat, PageStat, SyncStepError, UtmStat } from '@pca/shared';
 import type { MetricsRepo } from '../db/repositories/metrics-repo';
 import { dayChunks } from '../utils/date-range';
 import { stableHash } from '../utils/hash';
@@ -55,6 +55,11 @@ export interface SyncSummary {
   readonly goalReachesRows?: number;
   readonly browserOsRows?: number;
   readonly newReturningRows?: number;
+  /**
+   * ANA-15: per-step failures of the optional (`best`) steps — surfaced in the sync status UI
+   * (GET /api/sync/status) instead of living only in console output. Empty when every step passed.
+   */
+  readonly errors?: SyncStepError[];
 }
 
 /** Pulls Metrika data into SQLite: raw responses (for traceability) + derived channel stats. */
@@ -315,15 +320,19 @@ export class SyncService {
    * Run an optional breakdown sync best-effort: a counter-specific failure (an attribute the API
    * rejects, an unavailable goal) is logged and skipped rather than aborting the whole pipeline,
    * so the dashboard still gets every dataset that IS available. Goals + traffic stay required.
+   * ANA-15: the failure is also pushed into `errors` so the sync status UI can show it.
    */
   private async best(
     label: string,
     fn: () => Promise<{ rows: number }>,
+    errors: SyncStepError[] = [],
   ): Promise<{ rows: number }> {
     try {
       return await fn();
     } catch (err) {
-      console.warn(`[sync] ${label} skipped: ${(err as Error).message}`);
+      const message = (err as Error).message;
+      console.warn(`[sync] ${label} skipped: ${message}`);
+      errors.push({ step: label, message });
       return { rows: 0 };
     }
   }
@@ -354,24 +363,38 @@ export class SyncService {
       throw err;
     }
     const { days, rows } = traffic;
-    const utm = await this.best('utm', () => this.syncUtm(from, to, resolvedGoalId));
-    const geo = await this.best('geo-device', () => this.syncGeoDevice(from, to, resolvedGoalId));
-    const pages = await this.best('pages', () => this.syncPages(from, to, resolvedGoalId));
-    const exitPages = await this.best('exit-pages', () =>
-      this.syncExitPages(from, to, resolvedGoalId),
+    const errors: SyncStepError[] = [];
+    const utm = await this.best('utm', () => this.syncUtm(from, to, resolvedGoalId), errors);
+    const geo = await this.best(
+      'geo-device',
+      () => this.syncGeoDevice(from, to, resolvedGoalId),
+      errors,
     );
-    const goalReaches = await this.best('goal-reaches-by-day', () =>
-      this.syncGoalReachesByDay(
-        from,
-        to,
-        goals.map((g) => g.id),
-      ),
+    const pages = await this.best('pages', () => this.syncPages(from, to, resolvedGoalId), errors);
+    const exitPages = await this.best(
+      'exit-pages',
+      () => this.syncExitPages(from, to, resolvedGoalId),
+      errors,
     );
-    const browserOs = await this.best('browser-os', () =>
-      this.syncBrowserOs(from, to, resolvedGoalId),
+    const goalReaches = await this.best(
+      'goal-reaches-by-day',
+      () =>
+        this.syncGoalReachesByDay(
+          from,
+          to,
+          goals.map((g) => g.id),
+        ),
+      errors,
     );
-    const newReturning = await this.best('new-returning', () =>
-      this.syncNewReturning(from, to, resolvedGoalId),
+    const browserOs = await this.best(
+      'browser-os',
+      () => this.syncBrowserOs(from, to, resolvedGoalId),
+      errors,
+    );
+    const newReturning = await this.best(
+      'new-returning',
+      () => this.syncNewReturning(from, to, resolvedGoalId),
+      errors,
     );
     // Optional step failed (best() → 0 rows) where the window previously had data → restore it.
     const optional: Array<[string, number]> = [
@@ -385,6 +408,10 @@ export class SyncService {
         this.deps.metrics.restoreWindowTable(backup, table);
       }
     }
+    // ANA-18: real Metrika data has arrived → the demo dataset must never mix into the KPIs.
+    // Live (is_demo = 0) rows are untouched; this is the documented «demo is removed on the first
+    // sync» moment. Only runs when the required steps succeeded (traffic throw → early re-throw).
+    this.deps.metrics.deleteDemoRows();
     return {
       goals: goals.length,
       resolvedGoalId,
@@ -397,6 +424,7 @@ export class SyncService {
       goalReachesRows: goalReaches.rows,
       browserOsRows: browserOs.rows,
       newReturningRows: newReturning.rows,
+      errors,
     };
   }
 }

@@ -6,6 +6,7 @@ import { MetricsRepo } from '../../src/db/repositories/metrics-repo';
 import { HypothesesRepo } from '../../src/db/repositories/hypotheses-repo';
 import { DecisionsRepo } from '../../src/db/repositories/decisions-repo';
 import { B2bRepo } from '../../src/db/repositories/b2b-repo';
+import { MarketingRepo } from '../../src/db/repositories/marketing-repo';
 import { SnapshotRepo } from '../../src/db/repositories/snapshot-repo';
 import { SnapshotBuilder } from '../../src/report/snapshot-builder';
 import type { ReportRunner } from '../../src/routes/report';
@@ -18,12 +19,16 @@ export interface TestApp {
 }
 
 /** Assemble the full app over an in-memory DB. Pass a logger to exercise that arg explicitly. */
-export function buildTestApp(logger?: FastifyServerOptions['logger']): TestApp {
+export function buildTestApp(
+  logger?: FastifyServerOptions['logger'],
+  overrides?: Partial<AppDeps>,
+): TestApp {
   const db = freshDb();
   const metrics = new MetricsRepo(db);
   const hypotheses = new HypothesesRepo(db);
   const decisions = new DecisionsRepo(db);
   const b2b = new B2bRepo(db);
+  const marketing = new MarketingRepo(db);
   const builder = new SnapshotBuilder({ metrics, hypotheses, decisions, b2b });
   const snapshots = new SnapshotRepo(db);
   const report: ReportRunner = {
@@ -70,6 +75,7 @@ export function buildTestApp(logger?: FastifyServerOptions['logger']): TestApp {
     hypotheses,
     decisions,
     b2b,
+    marketing,
     runSync: async () => ({
       goals: 0,
       resolvedGoalId: undefined,
@@ -81,6 +87,7 @@ export function buildTestApp(logger?: FastifyServerOptions['logger']): TestApp {
       exitPageRows: 0,
     }),
     report,
+    ...overrides,
   };
   const app = logger === undefined ? buildServer(deps) : buildServer(deps, logger);
   return { app, db, deps };

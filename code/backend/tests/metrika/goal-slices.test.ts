@@ -199,6 +199,7 @@ describe('SyncService new slices', () => {
       goalReachesRows: 3,
       browserOsRows: 3,
       newReturningRows: 3,
+      errors: [], // ANA-15: every slice passed
     });
   });
 

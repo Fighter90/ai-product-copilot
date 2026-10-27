@@ -3,6 +3,7 @@ import { migrate } from './migrate';
 import { config } from '../config';
 import { MetricsRepo } from './repositories/metrics-repo';
 import { B2bRepo } from './repositories/b2b-repo';
+import { B2cPaymentsRepo } from './repositories/b2c-payments-repo';
 import { HypothesesRepo } from './repositories/hypotheses-repo';
 import { DecisionsRepo } from './repositories/decisions-repo';
 import { buildSeedData } from './seed-data';
@@ -18,6 +19,7 @@ migrate(db);
 
 const metrics = new MetricsRepo(db);
 const b2b = new B2bRepo(db);
+const b2c = new B2cPaymentsRepo(db);
 const hypotheses = new HypothesesRepo(db);
 const decisions = new DecisionsRepo(db);
 const data = buildSeedData();
@@ -29,6 +31,8 @@ metrics.upsertGeoDeviceStats(data.geoDevice);
 metrics.upsertPageStats(data.pages);
 metrics.upsertExitPageStats(data.exitPages);
 for (const deal of data.b2b) b2b.create(deal);
+for (const p of data.b2c)
+  b2c.upsert(p, { source: 'manual', isDemo: true, now: () => new Date().toISOString() });
 
 // Hypotheses reference each other (parentId) and decisions reference hypotheses by 1-based index
 // into the seed array; remap those placeholders to the real DB ids assigned on insert.
@@ -45,7 +49,7 @@ for (const d of buildSeedDecisions()) {
 console.log(
   `Seeded demo data: ${data.channels.length} channel rows, ${data.utm.length} UTM, ` +
     `${data.geoDevice.length} geo/device, ${data.pages.length} entry + ${data.exitPages.length} exit pages, ` +
-    `${data.b2b.length} B2B deals, ${data.goals.length} goals, ${createdIds.length} hypotheses, ` +
-    `${buildSeedDecisions().length} decisions.`,
+    `${data.b2b.length} B2B deals, ${data.b2c.length} B2C payment days, ${data.goals.length} goals, ` +
+    `${createdIds.length} hypotheses, ${buildSeedDecisions().length} decisions.`,
 );
 db.close();

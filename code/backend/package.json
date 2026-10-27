@@ -8,6 +8,7 @@
     "start": "tsx src/server.ts",
     "migrate": "tsx src/db/cli-migrate.ts",
     "seed": "tsx src/db/cli-seed.ts",
+    "marketing:import": "tsx src/db/cli-marketing-import.ts",
     "auth": "tsx src/metrika/cli-auth.ts",
     "configure": "tsx src/setup/cli-init.ts",
     "sync": "tsx src/metrika/cli-sync.ts",
@@ -32,6 +33,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.19.43",
     "@vitest/coverage-v8": "^2.1.9",
+    "jszip": "^3.10.2",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^2.1.9"

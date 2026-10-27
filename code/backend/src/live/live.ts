@@ -33,18 +33,98 @@ const GoalsSchema = z.object({
 });
 export type LiveGoal = z.infer<typeof GoalsSchema>['goals'][number];
 
+/**
+ * A participant-funnel step. `goal` steps count reaches of a pc-goals JS event; the first step
+ * («Визит») is the counter's visits, the last one («Оплата») comes from a payment goal when the
+ * counter has one (PAYMENT_EVENTS), otherwise from manual input (B2B deals paid in the period).
+ */
+export type FunnelStep = { readonly key: string; readonly ru: string; readonly en: string } & (
+  { readonly source: 'goal'; readonly event: string } | { readonly source: 'visits' | 'payment' }
+);
+
 /** Funnel stages built from the pc-goals JS events on productcamp.ru (see docs/goals.md). */
-export const PC_FUNNEL: ReadonlyArray<{ key: string; event: string; ru: string; en: string }> = [
-  { key: 'price_view', event: 'price_view', ru: 'Увидел блок билетов', en: 'Saw ticket block' },
-  { key: 'cta_click', event: 'cta_click', ru: 'Клик по CTA', en: 'CTA click' },
-  { key: 'reg_open', event: 'reg_open', ru: 'Открыл регистрацию', en: 'Opened registration' },
-  { key: 'cart_open', event: 'cart_open', ru: 'Открыл корзину', en: 'Opened cart' },
+export const PC_FUNNEL: ReadonlyArray<FunnelStep> = [
+  { key: 'visits', source: 'visits', ru: 'Визит', en: 'Visit' },
+  {
+    key: 'price_view',
+    source: 'goal',
+    event: 'price_view',
+    ru: 'Увидел блок билетов',
+    en: 'Saw ticket block',
+  },
+  { key: 'cta_click', source: 'goal', event: 'cta_click', ru: 'Клик по CTA', en: 'CTA click' },
+  {
+    key: 'reg_open',
+    source: 'goal',
+    event: 'reg_open',
+    ru: 'Открыл регистрацию',
+    en: 'Opened registration',
+  },
+  { key: 'cart_open', source: 'goal', event: 'cart_open', ru: 'Открыл корзину', en: 'Opened cart' },
   {
     key: 'reg_step1',
+    source: 'goal',
     event: 'reg_step1',
     ru: 'Оставил контакты (заказ)',
     en: 'Left contacts (order)',
   },
+  { key: 'payment', source: 'payment', ru: 'Оплата', en: 'Payment' },
+];
+
+/** Steps of PC_FUNNEL backed by a pc-goals JS event (the audit reference uses only these). */
+export const PC_FUNNEL_GOAL_STEPS = PC_FUNNEL.filter(
+  (s): s is Extract<FunnelStep, { source: 'goal' }> => s.source === 'goal',
+);
+
+/** JS events that mean a confirmed payment, in preference order (first present goal wins). */
+export const PAYMENT_EVENTS = ['payment_success', 'ticket_paid', 'order_paid', 'purchase'] as const;
+
+/**
+ * Role application funnels. C-level fills a two-part form (view → start → part1 → part2 → apply),
+ * the other roles a single form (view → start → apply). Each step lists event aliases — the first
+ * one configured in the counter is used; steps without a goal report `goalId: null`.
+ */
+export interface RoleFunnelDef {
+  readonly key: string;
+  readonly ru: string;
+  readonly en: string;
+  readonly steps: ReadonlyArray<{
+    readonly key: string;
+    readonly events: readonly string[];
+    readonly ru: string;
+    readonly en: string;
+  }>;
+}
+
+const roleStep = (role: string, step: string, ru: string, en: string) => ({
+  key: step,
+  events: [`${role}_${step}`, `${role}_form_${step}`],
+  ru,
+  en,
+});
+
+const roleFunnel = (key: string, ru: string, en: string, twoPart: boolean): RoleFunnelDef => ({
+  key,
+  ru,
+  en,
+  steps: [
+    roleStep(key, 'view', 'Открыл анкету', 'Opened the form'),
+    roleStep(key, 'start', 'Начал заполнять', 'Started filling in'),
+    ...(twoPart
+      ? [
+          roleStep(key, 'part1', 'Заполнил часть 1', 'Completed part 1'),
+          roleStep(key, 'part2', 'Заполнил часть 2', 'Completed part 2'),
+        ]
+      : []),
+    { key: 'apply', events: [`${key}_apply`], ru: 'Отправил заявку', en: 'Submitted' },
+  ],
+});
+
+export const ROLE_FUNNELS: ReadonlyArray<RoleFunnelDef> = [
+  roleFunnel('clevel', 'C-level', 'C-level', true),
+  roleFunnel('speaker', 'Спикер', 'Speaker', false),
+  roleFunnel('volunteer', 'Волонтёр', 'Volunteer', false),
+  roleFunnel('partner', 'Партнёр', 'Partner', false),
 ];
 
 export const TICKET_TYPES = ['standard', 'optimal', 'max'] as const;
@@ -151,6 +231,8 @@ export interface LiveDeps {
   readonly clientFactory?: (token: string) => MetrikaClient;
   readonly cache?: TtlCache;
   readonly today?: () => string;
+  /** Manually entered payments for [from, to] — the «Оплата» step when no payment goal exists. */
+  readonly manualPayments?: (from: string, to: string) => number;
 }
 
 const dimName = (d: Record<string, unknown>): string => String(d.name ?? d.id ?? '(не определено)');
@@ -403,7 +485,7 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
       if (ev && !byEvent.has(ev)) byEvent.set(ev, g);
     }
     const wanted = [
-      ...PC_FUNNEL.map((s) => s.event),
+      ...PC_FUNNEL_GOAL_STEPS.map((s) => s.event),
       ...TICKET_TYPES.flatMap((t) => [
         `ticket_pick_${t}`,
         `ticket_buy_${t}`,
@@ -411,7 +493,16 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
       ]),
       ...ROLE_EVENTS.map((r) => r.event),
     ];
-    const present = wanted.filter((e) => byEvent.has(e));
+    // Optional events (payment goal, role-form steps) are queried only when the counter has them
+    // and never reported as missing — they are not part of the required pc-goals contract.
+    const paymentEvent = PAYMENT_EVENTS.find((e) => byEvent.has(e));
+    const roleEvent = (events: readonly string[]): string | undefined =>
+      events.find((e) => byEvent.has(e));
+    const optional = [
+      ...(paymentEvent ? [paymentEvent] : []),
+      ...ROLE_FUNNELS.flatMap((f) => f.steps.map((s) => roleEvent(s.events) ?? '')),
+    ].filter((e) => e && !wanted.includes(e));
+    const present = [...new Set([...wanted.filter((e) => byEvent.has(e)), ...optional])];
     const values = new Map<string, number>();
     for (let i = 0; i < present.length; i += 18) {
       const chunk = present.slice(i, i + 18);
@@ -428,25 +519,77 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
       ((await stat({ metrics: 'ym:s:visits', date1: from, date2: to, filters })).value.totals ?? [
         0,
       ])[0] ?? 0;
-    const stages = [
-      { key: 'visits', ru: 'Визиты', en: 'Visits', value: visits, goalId: null as number | null },
-      ...PC_FUNNEL.map((s) => ({
-        key: s.key,
-        ru: s.ru,
-        en: s.en,
-        value: values.get(s.event) ?? 0,
-        goalId: byEvent.get(s.event)?.id ?? null,
-      })),
-    ];
+    type StageSource = 'visits' | 'goal' | 'manual' | 'none';
+    const stages = PC_FUNNEL.map((s) => {
+      const base = { key: s.key, ru: s.ru, en: s.en };
+      if (s.source === 'visits')
+        return {
+          ...base,
+          value: visits,
+          goalId: null as number | null,
+          source: 'visits' as StageSource,
+        };
+      if (s.source === 'goal')
+        return {
+          ...base,
+          value: values.get(s.event) ?? 0,
+          goalId: byEvent.get(s.event)?.id ?? null,
+          source: 'goal' as StageSource,
+        };
+      if (paymentEvent)
+        return {
+          ...base,
+          value: values.get(paymentEvent) ?? 0,
+          goalId: byEvent.get(paymentEvent)!.id,
+          source: 'goal' as StageSource,
+        };
+      if (deps.manualPayments)
+        return {
+          ...base,
+          value: deps.manualPayments(from, to),
+          goalId: null,
+          source: 'manual' as StageSource,
+        };
+      return { ...base, value: 0, goalId: null, source: 'none' as StageSource };
+    });
+    const ratio = (num: number, den: number): number | null => (den ? num / den : null);
     return {
       from,
       to,
       updatedAt: new Date().toISOString(),
       stages: stages.map((s, i) => ({
         ...s,
-        fromPrevious: i === 0 || !stages[i - 1]!.value ? null : s.value / stages[i - 1]!.value,
-        fromFirst: i === 0 || !visits ? null : s.value / visits,
+        fromPrevious: i === 0 || s.source === 'none' ? null : ratio(s.value, stages[i - 1]!.value),
+        fromFirst: i === 0 || s.source === 'none' ? null : ratio(s.value, visits),
       })),
+      roleFunnels: ROLE_FUNNELS.map((f) => {
+        const steps = f.steps.map((st) => {
+          const ev = roleEvent(st.events);
+          return {
+            key: st.key,
+            ru: st.ru,
+            en: st.en,
+            value: ev ? (values.get(ev) ?? 0) : 0,
+            goalId: ev ? byEvent.get(ev)!.id : null,
+          };
+        });
+        return {
+          key: f.key,
+          ru: f.ru,
+          en: f.en,
+          steps: steps.map((st, i) => {
+            // Ratio to the closest previous step that is backed by a goal.
+            const prev = steps
+              .slice(0, i)
+              .reverse()
+              .find((p) => p.goalId !== null);
+            return {
+              ...st,
+              fromPrevious: st.goalId === null || !prev ? null : ratio(st.value, prev.value),
+            };
+          }),
+        };
+      }),
       tickets: TICKET_TYPES.map((t) => ({
         type: t,
         pick: values.get(`ticket_pick_${t}`) ?? 0,

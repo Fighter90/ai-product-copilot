@@ -6,14 +6,15 @@ import { MetricsRepo } from './db/repositories/metrics-repo';
 import { HypothesesRepo } from './db/repositories/hypotheses-repo';
 import { DecisionsRepo } from './db/repositories/decisions-repo';
 import { B2bRepo } from './db/repositories/b2b-repo';
+import { MarketingRepo } from './db/repositories/marketing-repo';
 import { SnapshotRepo } from './db/repositories/snapshot-repo';
 import { SnapshotBuilder } from './report/snapshot-builder';
 import { makeSyncRunner } from './metrika/production-sync';
-import { makeReportRunner, type AiBridge } from './report/production-report';
+import { makeReportRunner, providerDisplayName, type AiBridge } from './report/production-report';
 import { UsersRepo, ensureBootstrapUsers } from './auth/users-repo';
 import { AppSettings } from './settings/app-settings';
 import { LlmService, chainAsAnthropicFetch } from './llm/service';
-import type { HttpFetch } from './llm/providers';
+import { PROVIDER_IDS, type HttpFetch } from './llm/providers';
 import type { AnthropicFetch } from './report/ai-insights';
 
 const clean = (v: string): string => (isPlaceholder(v) ? '' : v);
@@ -26,6 +27,7 @@ async function main(): Promise<void> {
   const hypotheses = new HypothesesRepo(db);
   const decisions = new DecisionsRepo(db);
   const b2b = new B2bRepo(db);
+  const marketing = new MarketingRepo(db);
 
   // APP_SECRET шифрует токены/ключи, хранящиеся в БД. На сервере (NODE_ENV=production)
   // старт без него запрещён: предсказуемый fallback = компрометация всех секретов.
@@ -85,7 +87,14 @@ async function main(): Promise<void> {
 
   const ai: AiBridge = {
     available: () => llm.available().length > 0,
-    fetchFor: (purpose) => chainAsAnthropicFetch(llm, { purpose }) as unknown as AnthropicFetch,
+    // ANA-33: an explicit provider choice (≠ 'auto') is pinned for the call, 'auto'/undefined
+    // walks the admin-defined chain in priority order.
+    fetchFor: (purpose, choice) =>
+      chainAsAnthropicFetch(llm, {
+        purpose,
+        ...(choice && choice !== 'auto' ? { choice: choice as (typeof PROVIDER_IDS)[number] } : {}),
+      }) as unknown as AnthropicFetch,
+    providerName: providerDisplayName,
     unavailableMessage:
       'Нет настроенных AI-провайдеров — администратор включает их в «Администрирование → AI-провайдеры».',
   };
@@ -96,6 +105,7 @@ async function main(): Promise<void> {
       hypotheses,
       decisions,
       b2b,
+      marketing,
       runSync: makeSyncRunner({
         token: () => settings.get('YANDEX_OAUTH_TOKEN'),
         counterId: () => settings.getNumber('COUNTER_ID'),
@@ -126,6 +136,28 @@ async function main(): Promise<void> {
     app.log.error(err);
     process.exit(1);
   }
+
+  // Zero-downtime: systemd (RestartKillSignal/TimeoutStopSec) и docker compose посылают SIGTERM.
+  // Без app.close() соединения обрывались посреди LLM-отчёта/синка. Graceful shutdown:
+  // дождаться in-flight запросов (fastify close), затем выйти в 0. На случай зависших
+  // соединений — жёсткий exit через 10 с (TimeoutStopSec systemd стоит отличать от этого).
+  const shutdown = async (signal: string): Promise<void> => {
+    app.log.info({ signal }, 'shutting down gracefully');
+    const t = setTimeout(() => {
+      app.log.warn('graceful shutdown timed out — forcing exit');
+      process.exit(0);
+    }, 10000);
+    t.unref();
+    try {
+      await app.close();
+    } catch (err) {
+      app.log.error({ err }, 'error during app.close()');
+    } finally {
+      process.exit(0);
+    }
+  };
+  process.once('SIGTERM', () => void shutdown('SIGTERM'));
+  process.once('SIGINT', () => void shutdown('SIGINT'));
 }
 
 void main();

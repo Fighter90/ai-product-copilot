@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { PageStat } from '@pca/shared';
-import { normalizePageUrl, aggregatePages } from '../../src/metrika/queries/normalize-page';
+import {
+  normalizePageUrl,
+  aggregatePages,
+  isTildaVirtualEvent,
+  TILDA_EVENTS_GROUP,
+} from '../../src/metrika/queries/normalize-page';
 
 const page = (over: Partial<PageStat>): PageStat => ({
   date: '2026-05-13',
@@ -70,5 +75,38 @@ describe('aggregatePages', () => {
     ]);
     expect(out[0]!.bounceRate).toBe(0);
     expect(out[0]!.conversionRate).toBe(0);
+  });
+});
+
+// ANA-22 (appended): Tilda virtual pageviews are widget EVENTS, not landing pages — they must
+// group into the single «/tilda/*» bucket instead of inflating entry/exit-page tables.
+describe('Tilda virtual pageviews (ANA-22)', () => {
+  it('detects /tilda/* virtual URLs (absolute and path-only), but not a real /tilda page', () => {
+    expect(isTildaVirtualEvent('/tilda/popup/rec123/opened')).toBe(true);
+    expect(isTildaVirtualEvent('/tilda/click/rec123')).toBe(true);
+    expect(isTildaVirtualEvent('/tilda/form484/submit')).toBe(true);
+    expect(isTildaVirtualEvent('/tilda/cart/add/product')).toBe(true);
+    expect(isTildaVirtualEvent('https://productcamp.ru/tilda/form484/submit')).toBe(true);
+    expect(isTildaVirtualEvent('https://productcamp.ru/page312425509.html')).toBe(false);
+    expect(isTildaVirtualEvent('/tilda')).toBe(false); // a real page, not a virtual event
+    expect(isTildaVirtualEvent('/')).toBe(false);
+  });
+
+  it('groups every /tilda/* virtual pageview into the single «/tilda/*» bucket', () => {
+    expect(normalizePageUrl('/tilda/popup/rec1/opened')).toBe(TILDA_EVENTS_GROUP);
+    expect(normalizePageUrl('https://productcamp.ru/tilda/form484/submit?utm_source=test')).toBe(
+      TILDA_EVENTS_GROUP,
+    );
+    expect(TILDA_EVENTS_GROUP).toBe('/tilda/*');
+  });
+
+  it('merges Tilda event rows into one aggregated row (visits summed)', () => {
+    const out = aggregatePages([
+      page({ page: '/tilda/popup/rec1/opened', visits: 30 }),
+      page({ page: 'https://productcamp.ru/tilda/click/rec1', visits: 12 }),
+      page({ page: '/tickets', visits: 50 }),
+    ]);
+    expect(out.map((r) => r.page).sort()).toEqual(['/tickets', '/tilda/*']);
+    expect(out.find((r) => r.page === TILDA_EVENTS_GROUP)?.visits).toBe(42);
   });
 });

@@ -2,17 +2,35 @@ import type { PageStat } from '@pca/shared';
 import { mergeByKey, weightedRate } from './dedupe';
 
 /**
+ * ANA-22: Tilda virtual pageviews (`/tilda/popup/…`, `/tilda/click/…`, `/tilda/form…/submitted`,
+ * `/tilda/cart/…`) are widget EVENTS, not pages a visitor lands on. They are grouped into the
+ * single «/tilda/*» bucket so they stop inflating the entry/exit-page tables as fake pages.
+ */
+export const TILDA_EVENTS_GROUP = '/tilda/*';
+
+/** True when the URL (absolute or path-only) is a Tilda virtual pageview. */
+export function isTildaVirtualEvent(url: string): boolean {
+  const path = /^[a-z][a-z0-9+.-]*:\/\//i.test(url)
+    ? (url.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/?]*/i, '').split('?')[0] ?? '')
+    : (url.split('?')[0] ?? '');
+  return path.startsWith('/tilda/');
+}
+
+/**
  * Canonicalise a page URL so trailing-slash / host-case variants collapse to one key
  * (e.g. `https://productcamp.ru/` and `https://productcamp.ru` → same page). Query string and
  * fragment are dropped. Non-URL values (e.g. the «(none)» bucket) are returned trimmed (C-005).
+ * Tilda virtual pageviews collapse into the «{@link TILDA_EVENTS_GROUP}» bucket (ANA-22).
  */
 export function normalizePageUrl(url: string): string {
+  const trimmed = url.trim();
+  if (isTildaVirtualEvent(trimmed)) return TILDA_EVENTS_GROUP;
   try {
-    const u = new URL(url);
+    const u = new URL(trimmed);
     const path = u.pathname.replace(/\/+$/, '') || '/';
     return `${u.protocol}//${u.host.toLowerCase()}${path}`;
   } catch {
-    return url.trim();
+    return trimmed;
   }
 }
 

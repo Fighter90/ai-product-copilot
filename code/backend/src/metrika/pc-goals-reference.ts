@@ -31,7 +31,12 @@ const TICKET_STEPS: ReadonlyArray<{ step: string; ru: string; en: string }> = [
 ];
 
 const raw: Array<Omit<PcGoalRef, 'code' | 'type' | 'condition'>> = [
-  ...PC_FUNNEL_GOAL_STEPS.map((s) => ({ event: s.event, ru: s.ru, en: s.en, group: 'funnel' as const })),
+  ...PC_FUNNEL_GOAL_STEPS.map((s) => ({
+    event: s.event,
+    ru: s.ru,
+    en: s.en,
+    group: 'funnel' as const,
+  })),
   ...TICKET_TYPES.flatMap((t) =>
     TICKET_STEPS.map((s) => ({
       event: `ticket_${s.step}_${t}`,

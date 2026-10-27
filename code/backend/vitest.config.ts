@@ -27,7 +27,8 @@ export default defineConfig({
         'src/utils/logger.ts',
         '**/*.test.ts',
       ],
-      thresholds: { lines: 100, functions: 100, branches: 100, statements: 100 },
+      // ANA-26: 75% вместо 100% (см. docs/decisions/014-coverage-threshold-75.md).
+      thresholds: { lines: 75, functions: 75, branches: 75, statements: 75 },
     },
   },
 });

@@ -11,6 +11,7 @@ interface B2bRow {
   notes: string | null;
   date_added: string;
   date_paid: string | null;
+  is_demo: number;
 }
 
 function toDeal(r: B2bRow): B2bDeal {
@@ -24,6 +25,7 @@ function toDeal(r: B2bRow): B2bDeal {
     notes: r.notes ?? undefined,
     dateAdded: r.date_added,
     datePaid: r.date_paid ?? undefined,
+    isDemo: r.is_demo ? true : undefined,
   };
 }
 
@@ -35,8 +37,8 @@ export class B2bRepo {
     const row = this.db
       .prepare(
         `INSERT INTO b2b_manual
-           (company, tickets, stage, amount_rub, contact_email, notes, date_added, date_paid)
-         VALUES (@company, @tickets, @stage, @amount_rub, @contact_email, @notes, @date_added, @date_paid)
+           (company, tickets, stage, amount_rub, contact_email, notes, date_added, date_paid, is_demo)
+         VALUES (@company, @tickets, @stage, @amount_rub, @contact_email, @notes, @date_added, @date_paid, @is_demo)
          RETURNING *`,
       )
       .get({
@@ -48,6 +50,7 @@ export class B2bRepo {
         notes: input.notes ?? null,
         date_added: input.dateAdded,
         date_paid: input.datePaid ?? null,
+        is_demo: input.isDemo ? 1 : 0,
       }) as B2bRow;
     return toDeal(row);
   }
@@ -69,6 +72,14 @@ export class B2bRepo {
         `UPDATE b2b_manual SET stage = @stage, date_paid = @date_paid WHERE id = @id RETURNING *`,
       )
       .get({ id, stage, date_paid: datePaid ?? null }) as B2bRow | undefined;
+    return r ? toDeal(r) : undefined;
+  }
+
+  /** ANA-50: set/clear the deal amount in ₽ (null clears). Returns the updated deal, or undefined. */
+  updateAmount(id: number, amountRub: number | null): B2bDeal | undefined {
+    const r = this.db
+      .prepare(`UPDATE b2b_manual SET amount_rub = @amount_rub WHERE id = @id RETURNING *`)
+      .get({ id, amount_rub: amountRub }) as B2bRow | undefined;
     return r ? toDeal(r) : undefined;
   }
 

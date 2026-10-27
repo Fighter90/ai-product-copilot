@@ -6,6 +6,7 @@ import { HypothesesRepo } from '../../src/db/repositories/hypotheses-repo';
 import { DecisionsRepo } from '../../src/db/repositories/decisions-repo';
 import { B2bRepo } from '../../src/db/repositories/b2b-repo';
 import { SnapshotBuilder } from '../../src/report/snapshot-builder';
+import { reportSections } from '../../src/report/docx/sections';
 import { freshDb } from '../db/helpers';
 
 /**
@@ -78,5 +79,41 @@ describe('factsource invariant — visits/applications consistent across surface
     });
     expect(snap.funnel.visits).toBe(fact.visits); // both = 140 (only day 1)
     expect(fact.visits).toBe(140);
+  });
+
+  it('report channels: table row == text detail line (same snapshot aggregates, §5)', () => {
+    const snap = builder.build({
+      id: 's3',
+      generatedAt: 'T',
+      from: '2025-01-01',
+      to: '2025-01-07',
+    });
+    const section = reportSections(snap).find(
+      (sec) => sec.heading === 'Каналы: трафик и конверсия',
+    );
+    expect(section).toBeDefined();
+
+    // Markdown table rows «| direct | 160 | 7 | 4.4 |» (header + data; the `|---` separator is
+    // a renderer directive, not a row).
+    const rows = section!.lines
+      .filter((l) => /^\| .+ \|$/.test(l) && !l.includes('|---'))
+      .map((l) =>
+        l
+          .split('|')
+          .map((c) => c.trim())
+          .filter(Boolean),
+      );
+    expect(rows[0]).toEqual(['Канал', 'Визиты', 'Заявки', 'CR %']);
+
+    // Every table row's numbers must appear verbatim in that channel's text detail block —
+    // both surfaces read the same channelTotals(s.channels), never a second source.
+    for (const [channel, visits, reaches] of rows.slice(1)) {
+      const at = section!.lines.findIndex((l) => l.endsWith(`. ${channel}`));
+      expect(at).toBeGreaterThanOrEqual(0);
+      const block = section!.lines.slice(at, at + 4).join('\n');
+      expect(block).toContain(`Визиты: ${visits} `);
+      expect(block).toContain(`Заявки: ${reaches}`);
+    }
+    expect(rows.length).toBeGreaterThan(1); // the seeded channels actually exercised the pin
   });
 });

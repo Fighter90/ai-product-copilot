@@ -91,7 +91,11 @@ const STOP = new Set(
   ),
 );
 
-/** Lowercase, split, drop stop-words, crude stemming (prefix of 6 chars) — good enough for RU/EN. */
+/**
+ * Lowercase, split, drop stop-words, then light stemming: latin `ing|ed|s` suffixes
+ * (shows→show, pages→page, signing→sign) and a 6-char prefix for long words — good
+ * enough for RU/EN without a real stemmer.
+ */
 export function tokenize(text: string): string[] {
   return (
     text
@@ -100,7 +104,10 @@ export function tokenize(text: string): string[] {
       .match(/[a-zа-я0-9_]+/g) ?? []
   )
     .filter((t) => t.length > 1 && !STOP.has(t))
-    .map((t) => (t.length > 6 ? t.slice(0, 6) : t));
+    .map((t) => {
+      const stemmed = t.length > 4 ? t.replace(/(?:ing|ed|s)$/, '') : t;
+      return stemmed.length > 6 ? stemmed.slice(0, 6) : stemmed;
+    });
 }
 
 /** Okapi BM25 over chunks. */

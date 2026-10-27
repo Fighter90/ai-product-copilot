@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { KPI_TARGET_PAID_TICKETS, resolveKpiTarget } from '@pca/shared';
 import type { MetricsRepo } from '../db/repositories/metrics-repo';
 import { resolvePrimaryGoal } from '../metrika/primary-goal';
+import { PC_GOALS_REFERENCE } from '../metrika/pc-goals-reference';
 
 export interface MetricsRouteOptions {
   readonly repo: MetricsRepo;
@@ -99,5 +100,29 @@ export async function metricsRoutes(
       const raw = opts.repo.getRawResponse(Number((req.params as { id: string }).id));
       return raw ?? reply.code(404).send({ error: 'not found' });
     },
+  );
+
+  // ANA-34: pc-goals reference — funnel role of each JS-event goal. The Goals page joins this by
+  // `event` to fill the «Роль в воронке» column. Static, read-only, no Metrika calls.
+  app.get(
+    '/metrics/goal-roles',
+    { schema: { tags: ['metrics'], summary: 'pc-goals reference: funnel role per goal event' } },
+    async () => ({
+      roles: PC_GOALS_REFERENCE.map((r) => ({
+        code: r.code,
+        event: r.event,
+        ru: r.ru,
+        en: r.en,
+        group: r.group,
+      })),
+    }),
+  );
+
+  // ANA-49: how far back the cached data reaches, so the FilterBar can offer «Догрузить N дней»
+  // when the selected period starts before the first synced day. 200 with nulls while empty.
+  app.get(
+    '/metrics/coverage',
+    { schema: { tags: ['metrics'], summary: 'Cached data coverage (first/last synced day)' } },
+    async () => opts.repo.statsCoverage() ?? { from: null, to: null, days: 0 },
   );
 }

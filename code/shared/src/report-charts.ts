@@ -7,7 +7,8 @@
  * report's chart content stays traceable. Animations are disabled for byte-stable rendering.
  */
 import type { ReportSnapshot, ReportChartId } from './types/report';
-import { REPORT_BENCHMARKS } from './report-recommendations';
+import { REPORT_BENCHMARKS, RECOMMENDATION_TEXT } from './report-recommendations';
+import type { ReportLocale } from './report-locale';
 
 export const REPORT_CHART_IDS = ['channelBar', 'funnel', 'channelMix'] as const;
 
@@ -16,6 +17,36 @@ export const REPORT_CHART_TITLES: Record<ReportChartId, string> = {
   funnel: 'Воронка: визит → заявка → оплата',
   channelMix: 'Доля каналов по визитам',
 };
+
+/** English chart titles (ANA-42). */
+export const REPORT_CHART_TITLES_EN: Record<ReportChartId, string> = {
+  channelBar: 'Visits and applications by channel',
+  funnel: 'Funnel: visit → application → payment',
+  channelMix: 'Channel share of visits',
+};
+
+/** Chart titles for the requested report locale. */
+export function reportChartTitles(locale: ReportLocale = 'ru'): Record<ReportChartId, string> {
+  return locale === 'en' ? REPORT_CHART_TITLES_EN : REPORT_CHART_TITLES;
+}
+
+/** Series / stage names drawn inside the chart PNGs, per locale. */
+const CHART_LABELS = {
+  ru: {
+    visits: 'Визиты',
+    applications: 'Заявки',
+    b2c: 'Заявки B2C',
+    b2bPipeline: 'B2B в работе',
+    b2bPaid: 'Оплачено B2B',
+  },
+  en: {
+    visits: 'Visits',
+    applications: 'Applications',
+    b2c: 'B2C applications',
+    b2bPipeline: 'B2B in progress',
+    b2bPaid: 'B2B paid',
+  },
+} as const satisfies Record<ReportLocale, unknown>;
 
 /** Fixed GOST-friendly palette (deterministic order). */
 const PALETTE = ['#1d4ed8', '#0891b2', '#16a34a', '#ca8a04', '#dc2626', '#7c3aed', '#475569'];
@@ -40,14 +71,15 @@ function channelTotals(
     .sort((a, b) => b.visits - a.visits);
 }
 
-function channelBarOption(s: ReportSnapshot): ChartOption {
+function channelBarOption(s: ReportSnapshot, locale: ReportLocale): ChartOption {
+  const L = CHART_LABELS[locale];
   const totals = channelTotals(s);
   return {
     animation: false,
     textStyle: BASE_TEXT,
     color: PALETTE,
     grid: { left: 48, right: 16, top: 40, bottom: 64, containLabel: true },
-    legend: { data: ['Визиты', 'Заявки'], top: 8, textStyle: BASE_TEXT },
+    legend: { data: [L.visits, L.applications], top: 8, textStyle: BASE_TEXT },
     xAxis: {
       type: 'category',
       data: totals.map((t) => t.channel),
@@ -55,13 +87,19 @@ function channelBarOption(s: ReportSnapshot): ChartOption {
     },
     yAxis: { type: 'value', scale: true },
     series: [
-      { name: 'Визиты', type: 'bar', data: totals.map((t) => t.visits), barMaxWidth: 48 },
-      { name: 'Заявки', type: 'bar', data: totals.map((t) => t.goalReaches), barMaxWidth: 48 },
+      { name: L.visits, type: 'bar', data: totals.map((t) => t.visits), barMaxWidth: 48 },
+      {
+        name: L.applications,
+        type: 'bar',
+        data: totals.map((t) => t.goalReaches),
+        barMaxWidth: 48,
+      },
     ],
   };
 }
 
-function funnelOption(s: ReportSnapshot): ChartOption {
+function funnelOption(s: ReportSnapshot, locale: ReportLocale): ChartOption {
+  const L = CHART_LABELS[locale];
   const f = s.funnel;
   return {
     animation: false,
@@ -74,10 +112,10 @@ function funnelOption(s: ReportSnapshot): ChartOption {
         gap: 2,
         label: { show: true, position: 'inside', color: '#fff' },
         data: [
-          { value: f.visits, name: 'Визиты' },
-          { value: f.b2cApplications, name: 'Заявки B2C' },
-          { value: f.b2bPipelineTickets, name: 'B2B в работе' },
-          { value: f.b2bPaidTickets, name: 'Оплачено B2B' },
+          { value: f.visits, name: L.visits },
+          { value: f.b2cApplications, name: L.b2c },
+          { value: f.b2bPipelineTickets, name: L.b2bPipeline },
+          { value: f.b2bPaidTickets, name: L.b2bPaid },
         ],
       },
     ],
@@ -103,12 +141,16 @@ function channelMixOption(s: ReportSnapshot): ChartOption {
 }
 
 /** ECharts option for a report chart (deterministic, animations off). */
-export function reportChartOption(s: ReportSnapshot, id: ReportChartId): ChartOption {
+export function reportChartOption(
+  s: ReportSnapshot,
+  id: ReportChartId,
+  locale: ReportLocale = 'ru',
+): ChartOption {
   switch (id) {
     case 'channelBar':
-      return channelBarOption(s);
+      return channelBarOption(s, locale);
     case 'funnel':
-      return funnelOption(s);
+      return funnelOption(s, locale);
     case 'channelMix':
       return channelMixOption(s);
   }
@@ -121,11 +163,46 @@ export interface ChartRecommendation {
 
 const pct = (r: number): string => `${(r * 100).toFixed(1)}%`;
 
+/** Per-chart interpretation sentences per locale (best-channel / no-data reuse the report text). */
+const CHART_REC_TEXT = {
+  ru: {
+    noData: 'Нет данных по каналам за период.',
+    worstChannel: (ch: string, cr: number) =>
+      `Канал «${ch}»: CR ${pct(cr)} — проверить качество трафика.`,
+    concentrated: (ch: string, share: number) =>
+      `Канал «${ch}» даёт ${pct(share)} визитов — высокая зависимость от одного источника.`,
+    diversified: (ch: string, share: number) =>
+      `Трафик диверсифицирован: топ-канал «${ch}» — ${pct(share)} визитов.`,
+    crGood: (cr: number) => `Конверсия визит → заявка ${pct(cr)} — на уровне/выше ориентира 5%.`,
+    crBad: (cr: number) => `Конверсия визит → заявка ${pct(cr)} — ниже 2%.`,
+    gap: (gap: number) => `До цели не хватает ${gap} оплаченных билетов.`,
+  },
+  en: {
+    noData: 'No channel data for the period.',
+    worstChannel: (ch: string, cr: number) =>
+      `Channel “${ch}”: CR ${pct(cr)} — check traffic quality.`,
+    concentrated: (ch: string, share: number) =>
+      `Channel “${ch}” brings ${pct(share)} of visits — heavy dependence on a single source.`,
+    diversified: (ch: string, share: number) =>
+      `Traffic is diversified: top channel “${ch}” — ${pct(share)} of visits.`,
+    crGood: (cr: number) =>
+      `Visit → application conversion ${pct(cr)} — at/above the 5% benchmark.`,
+    crBad: (cr: number) => `Visit → application conversion ${pct(cr)} — below 2%.`,
+    gap: (gap: number) => `${gap} paid tickets short of the target.`,
+  },
+} as const satisfies Record<ReportLocale, unknown>;
+
 /**
  * Per-chart 🟢/🔴 interpretation (FINAL §6.3) — a small traffic-light block tied to one diagram,
  * derived purely from snapshot numbers against {@link REPORT_BENCHMARKS}. Deterministic.
  */
-export function chartRecommendation(s: ReportSnapshot, id: ReportChartId): ChartRecommendation {
+export function chartRecommendation(
+  s: ReportSnapshot,
+  id: ReportChartId,
+  locale: ReportLocale = 'ru',
+): ChartRecommendation {
+  const T = CHART_REC_TEXT[locale];
+  const R = RECOMMENDATION_TEXT[locale];
   const good: string[] = [];
   const bad: string[] = [];
   const totals = channelTotals(s);
@@ -133,7 +210,7 @@ export function chartRecommendation(s: ReportSnapshot, id: ReportChartId): Chart
 
   if (id === 'channelBar' || id === 'channelMix') {
     if (totalVisits === 0) {
-      bad.push('Нет данных по каналам за период.');
+      bad.push(T.noData);
       return { good, bad };
     }
   }
@@ -146,10 +223,10 @@ export function chartRecommendation(s: ReportSnapshot, id: ReportChartId): Chart
       const best = [...sized].sort((a, b) => b.cr - a.cr)[0]!;
       const worst = [...sized].sort((a, b) => a.cr - b.cr)[0]!;
       if (best.cr >= REPORT_BENCHMARKS.crGood) {
-        good.push(`Лучший канал «${best.channel}»: CR ${pct(best.cr)} — масштабировать.`);
+        good.push(R.bestChannel(best.channel, best.cr));
       }
       if (worst.channel !== best.channel && worst.cr < REPORT_BENCHMARKS.crBad) {
-        bad.push(`Канал «${worst.channel}»: CR ${pct(worst.cr)} — проверить качество трафика.`);
+        bad.push(T.worstChannel(worst.channel, worst.cr));
       }
     }
   }
@@ -159,11 +236,9 @@ export function chartRecommendation(s: ReportSnapshot, id: ReportChartId): Chart
     const top = totals[0]!;
     const share = top.visits / totalVisits;
     if (share >= 0.7) {
-      bad.push(
-        `Канал «${top.channel}» даёт ${pct(share)} визитов — высокая зависимость от одного источника.`,
-      );
+      bad.push(T.concentrated(top.channel, share));
     } else {
-      good.push(`Трафик диверсифицирован: топ-канал «${top.channel}» — ${pct(share)} визитов.`);
+      good.push(T.diversified(top.channel, share));
     }
   }
 
@@ -171,18 +246,18 @@ export function chartRecommendation(s: ReportSnapshot, id: ReportChartId): Chart
     const f = s.funnel;
     const cr = f.visits > 0 ? f.b2cApplications / f.visits : 0;
     if (cr >= REPORT_BENCHMARKS.crGood) {
-      good.push(`Конверсия визит → заявка ${pct(cr)} — на уровне/выше ориентира 5%.`);
+      good.push(T.crGood(cr));
     } else if (cr < REPORT_BENCHMARKS.crBad) {
-      bad.push(`Конверсия визит → заявка ${pct(cr)} — ниже 2%.`);
+      bad.push(T.crBad(cr));
     }
     if (s.kpi.gap <= 0) {
-      good.push(`Цель ${s.kpi.target} оплаченных билетов достигнута.`);
+      good.push(R.targetMet(s.kpi.target));
     } else {
-      bad.push(`До цели не хватает ${s.kpi.gap} оплаченных билетов.`);
+      bad.push(T.gap(s.kpi.gap));
     }
   }
 
-  if (good.length === 0) good.push('Явных сильных сторон по порогам не выявлено.');
-  if (bad.length === 0) bad.push('Явных проблем по порогам не выявлено.');
+  if (good.length === 0) good.push(R.noGood);
+  if (bad.length === 0) bad.push(R.noBad);
   return { good, bad };
 }

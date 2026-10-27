@@ -87,3 +87,93 @@ describe('withDefaultGoal (runtime GOAL_ID)', () => {
     ]);
   });
 });
+
+// ANA-15 (appended): every run is recorded (ok / partial / failed) and readable via
+// GET /api/sync/status so the admin UI can show the last result and its step errors.
+describe('sync run recording (ANA-15)', () => {
+  interface Run {
+    id: number;
+    status: string;
+    summary?: Record<string, unknown>;
+    errors: unknown[];
+  }
+  function recorder() {
+    const runs: Run[] = [];
+    let next = 1;
+    return {
+      runs,
+      start: vi.fn(() => next++),
+      finish: vi.fn(
+        (id: number, status: string, summary?: Record<string, unknown>, errors: unknown[] = []) => {
+          runs.push({ id, status, summary, errors });
+        },
+      ),
+      latest: vi.fn(() => runs.at(-1)),
+    };
+  }
+
+  function appWithRecorder(runSync: SyncRunner, rec: ReturnType<typeof recorder>): FastifyInstance {
+    const app = Fastify();
+    app.register(syncRoutes, {
+      prefix: '/api',
+      runSync,
+      recordRun: rec as unknown as never,
+    });
+    return app;
+  }
+
+  it('records a clean run as ok and GET /sync/status returns it', async () => {
+    const rec = recorder();
+    const app = appWithRecorder(vi.fn().mockResolvedValue({ goals: 1, days: 1 }), rec);
+    const post = await app.inject({
+      method: 'POST',
+      url: '/api/sync',
+      payload: { from: '2025-01-01', to: '2025-01-07' },
+    });
+    expect(post.statusCode).toBe(200);
+    expect(rec.finish).toHaveBeenCalledWith(1, 'ok', { goals: 1, days: 1 }, []);
+    const status = await app.inject({ method: 'GET', url: '/api/sync/status' });
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({ id: 1, status: 'ok' });
+    await app.close();
+  });
+
+  it('records a run with failed optional steps as partial, errors attached', async () => {
+    const rec = recorder();
+    const app = appWithRecorder(
+      vi.fn().mockResolvedValue({ goals: 1, days: 1, errors: [{ step: 'utm', message: '400' }] }),
+      rec,
+    );
+    await app.inject({ method: 'POST', url: '/api/sync', payload: { from: 'a', to: 'b' } });
+    expect(rec.finish).toHaveBeenCalledWith(
+      1,
+      'partial',
+      { goals: 1, days: 1, errors: [{ step: 'utm', message: '400' }] },
+      [{ step: 'utm', message: '400' }],
+    );
+    await app.close();
+  });
+
+  it('records an aborted run as failed and rethrows (500)', async () => {
+    const rec = recorder();
+    const app = appWithRecorder(vi.fn().mockRejectedValue(new Error('token expired')), rec);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sync',
+      payload: { from: 'a', to: 'b' },
+    });
+    expect(res.statusCode).toBe(500);
+    expect(rec.finish).toHaveBeenCalledWith(1, 'failed', undefined, [
+      { step: 'sync', message: 'token expired' },
+    ]);
+    await app.close();
+  });
+
+  it('GET /sync/status returns 404 before the first sync', async () => {
+    const rec = recorder();
+    const app = appWithRecorder(vi.fn(), rec);
+    const status = await app.inject({ method: 'GET', url: '/api/sync/status' });
+    expect(status.statusCode).toBe(404);
+    await app.close();
+  });
+});

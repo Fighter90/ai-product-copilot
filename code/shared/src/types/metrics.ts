@@ -7,6 +7,8 @@ export interface Goal {
   readonly isB2b: boolean;
   readonly isArchived: boolean;
   readonly syncedAt: string;
+  /** ANA-18: true for rows created by the demo seeder (goals.is_demo); wiped on the first sync. */
+  readonly isDemo?: boolean;
 }
 
 export interface RawResponse {
@@ -40,6 +42,8 @@ export interface ChannelStat {
   readonly avgDuration: number;
   readonly goalReaches: number;
   readonly conversionRate: number;
+  /** ANA-18: true for rows created by the demo seeder (channel_stats.is_demo); wiped on sync. */
+  readonly isDemo?: boolean;
 }
 
 /**
@@ -56,6 +60,8 @@ export interface UtmStat {
   readonly users: number;
   readonly goalReaches: number;
   readonly conversionRate: number;
+  /** ANA-18: true for rows created by the demo seeder (utm_stats.is_demo); wiped on sync. */
+  readonly isDemo?: boolean;
 }
 
 /** Sentinel for a missing breakdown-dimension value (UTM, geo, device, …). */
@@ -77,6 +83,8 @@ export interface GeoDeviceStat {
   readonly users: number;
   readonly goalReaches: number;
   readonly conversionRate: number;
+  /** ANA-18: true for rows created by the demo seeder; wiped on the first sync. */
+  readonly isDemo?: boolean;
 }
 
 /**
@@ -92,6 +100,8 @@ export interface PageStat {
   readonly bounceRate: number;
   readonly goalReaches: number;
   readonly conversionRate: number;
+  /** ANA-18: true for rows created by the demo seeder; wiped on the first sync. */
+  readonly isDemo?: boolean;
 }
 
 export type B2bStage = 'lead' | 'negotiation' | 'invoiced' | 'paid';
@@ -105,6 +115,8 @@ export interface NewB2bDeal {
   readonly notes?: string;
   readonly dateAdded: string;
   readonly datePaid?: string;
+  /** ANA-18: true for deals created by the demo seeder (`b2b_manual.is_demo`). */
+  readonly isDemo?: boolean;
 }
 
 export interface B2bDeal extends NewB2bDeal {

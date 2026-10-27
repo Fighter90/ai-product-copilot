@@ -46,6 +46,18 @@ const snapshot: ReportSnapshot = {
   breakdowns: { utm: [], geoDevice: [], entryPages: [], exitPages: [] },
 };
 
+// §5 degradation: charts = {} → no figures, no ПЕРЕЧЕНЬ РИСУНКОВ (same rule as the DOCX builder:
+// a figure exists ⇔ its PNG exists), the document itself stays valid.
+it('omits ПЕРЕЧЕНЬ РИСУНКОВ and figure captions when charts = {}', () => {
+  const html = reportHtml({ ...snapshot, charts: {} });
+  expect(html.startsWith('<!doctype html>')).toBe(true);
+  expect(html).not.toContain('ПЕРЕЧЕНЬ РИСУНКОВ');
+  expect(html).not.toContain('Рисунок ');
+  // Front matter and the TOC survive the degradation.
+  expect(html).toContain('СОДЕРЖАНИЕ');
+  expect(html).toContain('<h1>УПРАВЛЕНЧЕСКОЕ РЕЗЮМЕ</h1>');
+});
+
 describe('reportHtml', () => {
   it('produces a ГОСТ-formatted HTML document (cover, TOC, numbered sections, A4/Times New Roman)', () => {
     const html = reportHtml(snapshot);
@@ -58,7 +70,7 @@ describe('reportHtml', () => {
     expect(html).toContain('class="cover-title"');
     // ГОСТ-2: фронт-материя капсом без сквозного номера, разделы «N. ЗАГОЛОВОК»
     expect(html).toContain('СОДЕРЖАНИЕ');
-    expect(html).toContain('Период данных: 2025-01-01 — 2025-01-07');
+    expect(html).toContain('Период данных: 01.01.2025 – 07.01.2025');
     // UUID среза на титуле отсутствует (ANA-39) — он живёт в «Приложении с данными»
     expect(html).not.toContain('Идентификатор среза');
     // Фронт-материя (без номера): ОБОЗНАЧЕНИЯ/ВВЕДЕНИЕ/РЕЗЮМЕ
@@ -68,9 +80,15 @@ describe('reportHtml', () => {
     // Первый нумерованный раздел — «Краткие итоги» (после трёх секций фронт-материи)
     expect(html).toContain('<h1>1. КРАТКИЕ ИТОГИ</h1>');
     expect(html).toContain('<li><a href="#sec-4">1. КРАТКИЕ ИТОГИ</a></li>');
-    // ПЕРЕЧЕНЬ РИСУНКОВ и подписи (chartId-фикстура даёт 2 рисунка)
-    expect(html).toContain('ПЕРЕЧЕНЬ РИСУНКОВ');
-    expect(html).toContain('Рисунок 1 — Воронка конверсии');
+    // ANA-39: human-readable period on the cover and in the document <title> (no raw UUID).
+    expect(html).toContain('<title>ProductCamp report 01.01.2025 – 07.01.2025</title>');
+    const cover = html.slice(
+      html.indexOf('<section class="cover">'),
+      html.indexOf('<section class="toc">'),
+    );
+    expect(cover).not.toContain('snap-1');
+    // Деградация (§5): без PNG ни подписей, ни ПЕРЕЧЕНЯ РИСУНКОВ — переезд assert'ов
+    // в тест с chart-фикстурой ниже (a figure exists ⇔ its PNG exists).
   });
 
   it('escapes &, < and > in content', () => {
@@ -92,6 +110,10 @@ describe('reportHtml', () => {
     });
     expect(html).toContain(`src="data:image/png;base64,${png}"`);
     expect(html).toContain('class="chart"');
+    // ГОСТ-подписи: каждая под графиком и каждая строкой в ПЕРЕЧЕНЕ РИСУНКОВ (§2/§3).
+    expect(html).toContain('ПЕРЕЧЕНЬ РИСУНКОВ');
+    expect(html).toContain('<p class="caption">Рисунок 1 — Воронка конверсии</p>');
+    expect(html).toContain('<li>Рисунок 1 — Воронка конверсии</li>');
     // Without charts, no image is emitted.
     expect(reportHtml(snapshot)).not.toContain('data:image/png;base64');
   });
