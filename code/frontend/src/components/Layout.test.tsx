@@ -1,8 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { screen, fireEvent } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { Layout } from './Layout';
 import { renderWithProviders } from '../test/utils';
+
+// FilterBar (rendered inside Layout) reads the session for admin-only controls (ANA-22 test
+// traffic toggle) — provide an admin without pulling the real AuthProvider/network in.
+vi.mock('../auth/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 1, email: 'admin@x.ru', role: 'admin' } }),
+}));
 
 describe('Layout', () => {
   it('renders the nav and the routed outlet', () => {

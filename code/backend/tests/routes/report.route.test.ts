@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { GeneratedHypotheses, ReportSnapshot } from '@pca/shared';
+import type { User } from '../../src/auth/users-repo';
 import { reportRoutes, type ReportRunner } from '../../src/routes/report';
 
 const snap = {
@@ -46,7 +47,46 @@ describe('report routes', () => {
     });
     expect(res.statusCode).toBe(201);
     expect(res.json().id).toBe('snap-1');
-    expect(runner.build).toHaveBeenCalledWith({ from: '2025-01-01', to: '2025-01-07' });
+    // ANA-39: no authenticated user in this bare app → author is null.
+    expect(runner.build).toHaveBeenCalledWith({ from: '2025-01-01', to: '2025-01-07', by: null });
+    await app.close();
+  });
+
+  it('POST /api/report/snapshot records the authenticated author (ANA-39)', async () => {
+    const runner: ReportRunner = {
+      build: vi.fn().mockResolvedValue(snap),
+      get: vi.fn(),
+      list: vi.fn().mockReturnValue([]),
+      generate: vi.fn(),
+      download: vi.fn(),
+      insights: vi.fn(),
+      hypotheses: vi.fn(),
+    };
+    const app = appWith(runner);
+    // Same decoration registerAuth performs; the getter yields a fresh user per request.
+    app.decorateRequest('user', {
+      getter: () =>
+        ({
+          id: 2,
+          email: 'analyst@example.com',
+          name: 'Analyst',
+          role: 'analyst',
+          isActive: true,
+          locale: 'ru',
+          createdAt: '',
+          passwordHash: '',
+        }) as unknown as User,
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/api/report/snapshot',
+      payload: { from: '2025-01-01', to: '2025-01-07' },
+    });
+    expect(runner.build).toHaveBeenCalledWith({
+      from: '2025-01-01',
+      to: '2025-01-07',
+      by: 'analyst@example.com',
+    });
     await app.close();
   });
 
@@ -179,6 +219,37 @@ describe('report routes', () => {
     expect(ok.statusCode).toBe(200);
     expect(ok.json().narrative).toBe('анализ');
 
+    // ANA-33: the optional providerId is forwarded to the runner, and the attribution returned
+    // by it («Сгенерировано: …») is passed through to the client.
+    const pinned = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok', providerId: 'yandexgpt' },
+    });
+    expect(pinned.statusCode).toBe(200);
+    expect(runner.insights).toHaveBeenCalledWith('ok', 'yandexgpt');
+    const auto = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok', providerId: 'auto' },
+    });
+    expect(auto.statusCode).toBe(200);
+    expect(runner.insights).toHaveBeenCalledWith('ok', 'auto');
+    const noProvider = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok' },
+    });
+    expect(runner.insights).toHaveBeenLastCalledWith('ok', undefined);
+    expect(noProvider.statusCode).toBe(200);
+    // Unknown provider → validation error, not a silent fallback.
+    const badProvider = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok', providerId: 'chatgpt' },
+    });
+    expect(badProvider.statusCode).toBe(400);
+
     const missing = await app.inject({
       method: 'POST',
       url: '/api/report/insights',
@@ -223,6 +294,14 @@ describe('report routes', () => {
     });
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toEqual({ hypotheses: fakeHypotheses });
+
+    // ANA-33: the optional providerId is forwarded to the runner here as well.
+    await app.inject({
+      method: 'POST',
+      url: '/api/report/hypotheses',
+      payload: { snapshotId: 'ok', providerId: 'gigachat' },
+    });
+    expect(runner.hypotheses).toHaveBeenCalledWith('ok', 'gigachat');
 
     const missing = await app.inject({
       method: 'POST',
@@ -274,6 +353,15 @@ describe('report routes', () => {
 
     const bad = await app.inject({ method: 'GET', url: '/api/report/download/snap-1/xlsx' });
     expect(bad.statusCode).toBe(400);
+
+    // ANA-42: ?lang=en is forwarded to the runner (ru stays the default).
+    await app.inject({ method: 'GET', url: '/api/report/download/snap-1/docx' });
+    expect(runner.download).toHaveBeenLastCalledWith('snap-1', 'docx', 'ru');
+    await app.inject({ method: 'GET', url: '/api/report/download/snap-1/pdf?lang=en' });
+    expect(runner.download).toHaveBeenLastCalledWith('snap-1', 'pdf', 'en');
+    // Unknown lang degrades to ru instead of failing the download.
+    await app.inject({ method: 'GET', url: '/api/report/download/snap-1/docx?lang=de' });
+    expect(runner.download).toHaveBeenLastCalledWith('snap-1', 'docx', 'ru');
     await app.close();
   });
 });

@@ -14,7 +14,8 @@ import {
 import { registerAuth } from '../../src/auth/auth';
 import { AppSettings } from '../../src/settings/app-settings';
 import { UsersRepo } from '../../src/auth/users-repo';
-import { freshDb } from '../db/helpers';
+import { HypothesesRepo } from '../../src/db/repositories/hypotheses-repo';
+import { freshDb, validHypothesis } from '../db/helpers';
 import type { DB } from '../../src/db/connection';
 
 describe('csvCell (RFC 4180 + formula injection)', () => {
@@ -168,10 +169,13 @@ describe('dataLensRoutes', () => {
     const list = res.json();
     expect(list.map((d: { id: string }) => d.id)).toEqual([
       'channels_daily',
+      'goals_daily',
+      'funnel_daily',
       'utm_daily',
       'pages_daily',
       'geo_device_daily',
       'b2b_deals',
+      'hypotheses',
     ]);
     expect(list[0].columns).toHaveLength(8);
   });
@@ -482,5 +486,82 @@ describe('checkDataLensConnection', () => {
     );
     expect(r.ok).toBe(false);
     expect(r.message).toMatch(/Таймаут/);
+  });
+});
+
+describe('datasets registry and exports (ANA-55)', () => {
+  let db: DB;
+  beforeEach(() => {
+    db = freshDb();
+  });
+  afterEach(() => db.close());
+
+  const seedChannels = () => {
+    const ins = db.prepare(
+      "INSERT INTO channel_stats (date, channel, visits, users, bounce_rate, avg_duration, goal_reaches, conversion_rate) VALUES (?, ?, ?, ?, 10, 30, ?, 5)",
+    );
+    ins.run('2025-01-01', 'ad', 100, 80, 5);
+    ins.run('2025-01-01', 'tg', 50, 40, 10);
+    ins.run('2025-01-02', 'ad', 60, 50, 3);
+  };
+
+  it('registry has goals_daily, funnel_daily and hypotheses; users columns are users_daily', () => {
+    const ids = DATASETS.map((d) => d.id);
+    expect(ids).toEqual(
+      expect.arrayContaining(['goals_daily', 'funnel_daily', 'hypotheses']),
+    );
+    for (const ds of DATASETS.filter((d) => d.id.endsWith('_daily'))) {
+      const users = ds.columns.find((col) => col.name.startsWith('users'));
+      expect(users?.name).toBe('users_daily');
+      // Honest-total rule stated right in the field dictionary (both languages).
+      expect(users?.ru).toContain('не суммируется');
+      expect(users?.en).toContain('do not sum');
+    }
+  });
+
+  it('goals_daily aggregates the KPI goal per day across channels', () => {
+    seedChannels();
+    const ds = DATASETS.find((d) => d.id === 'goals_daily')!;
+    const rows = exportDataset(db, ds, '2025-01-01', '2025-12-31') as unknown[][];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual(['2025-01-01', 150, 120, 15, 10]);
+    expect(rows[1]).toEqual(['2025-01-02', 60, 50, 3, 5]);
+  });
+
+  it('funnel_daily joins Metrika days with manual B2B dates (no gaps in the day axis)', () => {
+    seedChannels();
+    db.prepare(
+      "INSERT INTO b2b_manual (company, tickets, stage, amount_rub, date_added, date_paid) VALUES ('BigCorp', 4, 'paid', 1000, '2025-01-01', '2025-01-03')",
+    ).run();
+    db.prepare(
+      "INSERT INTO b2b_manual (company, tickets, stage, amount_rub, date_added, date_paid) VALUES ('Small', 2, 'lead', 500, '2025-01-02', NULL)",
+    ).run();
+    const ds = DATASETS.find((d) => d.id === 'funnel_daily')!;
+    const rows = exportDataset(db, ds, '2025-01-01', '2025-12-31') as unknown[][];
+    expect(rows.map((r) => r[0])).toEqual(['2025-01-01', '2025-01-02', '2025-01-03']);
+    // visits, users_daily, applications, pipeline (unpaid, by added date), paid (by payment date).
+    // BigCorp is already 'paid' → it leaves the pipeline and is counted on its PAYMENT date only.
+    expect(rows[0]).toEqual(['2025-01-01', 150, 120, 15, 0, 0]);
+    expect(rows[1]).toEqual(['2025-01-02', 60, 50, 3, 2, 0]);
+    expect(rows[2]).toEqual(['2025-01-03', 0, 0, 0, 0, 4]);
+  });
+
+  it('funnel_daily returns [] when the manual pipeline table is absent', () => {
+    db.exec('DROP TABLE b2b_manual');
+    const ds = DATASETS.find((d) => d.id === 'funnel_daily')!;
+    expect(exportDataset(db, ds, '2025-01-01', '2025-12-31')).toEqual([]);
+  });
+
+  it('hypotheses exports the ICE backlog sorted by score', () => {
+    const repo = new HypothesesRepo(db);
+    const strong = repo.create(validHypothesis({ impact: 9, ease: 9 }));
+    repo.create(validHypothesis({ impact: 2, confidence: 2, ease: 2 }));
+    const ds = DATASETS.find((d) => d.id === 'hypotheses')!;
+    const rows = exportDataset(db, ds, '2000-01-01', '2100-01-01') as unknown[][];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]![0]).toBe(strong.id);
+    expect(rows[0]![1]).toBe('define');
+    expect(Number(rows[0]![11])).toBe(9 * 6 * 9);
+    expect(Number(rows[1]![11])).toBe(2 * 2 * 2);
   });
 });

@@ -46,6 +46,43 @@ describe('b2b API', () => {
     expect(missing.statusCode).toBe(404);
   });
 
+  it('patches the amount in ₽ alone or together with the stage (ANA-50)', async () => {
+    const id = (
+      await ctx.app.inject({
+        method: 'POST',
+        url: '/api/b2b',
+        payload: { ...deal, amountRub: 100000 },
+      })
+    ).json().id as number;
+
+    // Amount only — stage stays.
+    const amount = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/b2b/${id}`,
+      payload: { amountRub: 250000 },
+    });
+    expect(amount.json()).toMatchObject({ stage: 'lead', amountRub: 250000 });
+
+    // Both in one call; null clears the amount.
+    const both = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/b2b/${id}`,
+      payload: { stage: 'paid', amountRub: null },
+    });
+    expect(both.json()).toMatchObject({ stage: 'paid' });
+    expect(both.json().amountRub).toBeUndefined(); // amount cleared
+
+    // Nothing to update → 400; negative amount → 400.
+    const empty = await ctx.app.inject({ method: 'PATCH', url: `/api/b2b/${id}`, payload: {} });
+    expect(empty.statusCode).toBe(400);
+    const negative = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/b2b/${id}`,
+      payload: { amountRub: -5 },
+    });
+    expect(negative.statusCode).toBe(400);
+  });
+
   it('deletes a deal (204) and 404s a missing id', async () => {
     const id = (await ctx.app.inject({ method: 'POST', url: '/api/b2b', payload: deal })).json()
       .id as number;
