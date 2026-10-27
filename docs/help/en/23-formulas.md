@@ -12,12 +12,12 @@ hidden multipliers. Next to each formula — the source file, so you can always 
 
 ## Traffic and conversions
 
-| Value | Formula | Example |
-| ----- | ------- | ------- |
-| **Visits in period** | Σ `channel_stats.visits` over the period dates | Oct 12–25: sum over all channels and days |
-| **Channel CR** | `goal_reaches / visits` | 420 visits, 12 leads → CR = 12/420 = **2.86 %** |
-| **Page CR** | `goal_reaches / visits` from `page_stats` | `/lp`: 14/380 = **3.68 %** |
-| **Channel share** | `channel visits / Σ visits` | podcast 420 of 680 → **61.8 %** |
+| Value                | Formula                                        | Example                                         |
+| -------------------- | ---------------------------------------------- | ----------------------------------------------- |
+| **Visits in period** | Σ `channel_stats.visits` over the period dates | Oct 12–25: sum over all channels and days       |
+| **Channel CR**       | `goal_reaches / visits`                        | 420 visits, 12 leads → CR = 12/420 = **2.86 %** |
+| **Page CR**          | `goal_reaches / visits` from `page_stats`      | `/lp`: 14/380 = **3.68 %**                      |
+| **Channel share**    | `channel visits / Σ visits`                    | podcast 420 of 680 → **61.8 %**                 |
 
 Sources: `code/backend/src/db/repositories/metrics-repo.ts`, `code/shared/src/aggregate.ts`.
 The bot filter is applied at the counter level (not on breakdowns) — otherwise rows get lost
@@ -25,12 +25,12 @@ The bot filter is applied at the counter level (not on breakdowns) — otherwise
 
 ## Funnel and KPI
 
-| Value | Formula | Example |
-| ----- | ------- | ------- |
-| **B2C applications** | Σ primary-goal `goal_reaches` in the period | 30 leads |
-| **B2B paid** | Σ `tickets` of deals in stage `paid` | 20 tickets |
-| **Paid total** | `b2c_payments.tickets` (per day) + Σ paid B2B deal tickets | 12 + 20 = **32** |
-| **Gap to target** | `max(0, target − paid)`, where «paid» = B2B paid **+ Metrika orders** if the primary goal is a payment-type goal (`goalLabel.isPaid`) | target 300, 20+47 → gap **233** |
+| Value                | Formula                                                                                                                               | Example                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| **B2C applications** | Σ primary-goal `goal_reaches` in the period                                                                                           | 30 leads                        |
+| **B2B paid**         | Σ `tickets` of deals in stage `paid`                                                                                                  | 20 tickets                      |
+| **Paid total**       | `b2c_payments.tickets` (per day) + Σ paid B2B deal tickets                                                                            | 12 + 20 = **32**                |
+| **Gap to target**    | `max(0, target − paid)`, where «paid» = B2B paid **+ Metrika orders** if the primary goal is a payment-type goal (`goalLabel.isPaid`) | target 300, 20+47 → gap **233** |
 
 Sources: `code/backend/src/report/snapshot-builder.ts` (lines 92–105),
 `code/backend/src/routes/payments.ts` (`/payments/summary`). Invariant: **lead ≠ payment** —
@@ -67,13 +67,13 @@ Sources: `code/shared/src/validation.ts`, the `/app/hypotheses` page.
 
 Aggregation follows the «стата» sheet weeks (not calendar weeks):
 
-| Row | Week formula [start … end] |
-| --- | -------------------------- |
-| landing visits | `Σ channel_stats.visits` where `date ∈ [start, end]` |
-| site goals | `Σ channel_stats.goal_reaches` for the same week |
-| payments | `Σ b2c_payments.tickets` + `Σ b2b_manual.tickets` where `date_paid` in week |
-| B2B leads | `COUNT(b2b_manual)` where `date_added` in week |
-| the rest | manual (analyst) or sheet import |
+| Row            | Week formula [start … end]                                                  |
+| -------------- | --------------------------------------------------------------------------- |
+| landing visits | `Σ channel_stats.visits` where `date ∈ [start, end]`                        |
+| site goals     | `Σ channel_stats.goal_reaches` for the same week                            |
+| payments       | `Σ b2c_payments.tickets` + `Σ b2b_manual.tickets` where `date_paid` in week |
+| B2B leads      | `COUNT(b2b_manual)` where `date_added` in week                              |
+| the rest       | manual (analyst) or sheet import                                            |
 
 Write rule: week totals are computed only when the window has source data — a week without
 data stays empty. Sources: `code/backend/src/marketing/sync.ts`,

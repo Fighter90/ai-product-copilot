@@ -18,10 +18,10 @@ The grid copies the sheet 1-to-1: **13 campaign weeks** in columns, **13 metrics
 split into two sections. Irregular month splits are kept exactly as in the source (e.g.
 «Week 3 (Aug 15-23)» spans nine days) so dashboard and sheet numbers always match.
 
-| Section | Metrics (in order) |
-| ------- | ------------------ |
-| Content marketing | Landing page visits, email link clicks, posts published (total), Telegram link clicks, site goal reaches, total leads, payments, B2B leads, planned B2B tickets |
-| Influence partners | partner posts published, speaker posts published, ambassadors, referral clicks |
+| Section            | Metrics (in order)                                                                                                                                              |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Content marketing  | Landing page visits, email link clicks, posts published (total), Telegram link clicks, site goal reaches, total leads, payments, B2B leads, planned B2B tickets |
+| Influence partners | partner posts published, speaker posts published, ambassadors, referral clicks                                                                                  |
 
 Weeks: Aug 1–7, 8–14, 15–23, 24–30 · Aug 31–Sep 6, 7–13, 14–20, 21–27 · Sep 28–Oct 4, 5–11,
 12–18, 19–25, Oct 26–Nov 1. Hover a week header for exact dates (e.g. «2026-08-31 …
@@ -31,11 +31,11 @@ Weeks: Aug 1–7, 8–14, 15–23, 24–30 · Aug 31–Sep 6, 7–13, 14–20, 2
 
 Every cell has a source shown as a coloured left border and a hover tooltip:
 
-| Source | Colour | Meaning | Who can change it |
-| ------ | ------ | ------- | ----------------- |
-| `manual` | orange | entered/corrected by a person in the dashboard | any user; the sync **never** overwrites |
-| `import` | sky | loaded from the Google Sheet by the import script | import may refresh; sync may not |
-| `metrika` | green | recomputed by the sync from Metrika/DB data | the next sync overwrites |
+| Source    | Colour | Meaning                                           | Who can change it                       |
+| --------- | ------ | ------------------------------------------------- | --------------------------------------- |
+| `manual`  | orange | entered/corrected by a person in the dashboard    | any user; the sync **never** overwrites |
+| `import`  | sky    | loaded from the Google Sheet by the import script | import may refresh; sync may not        |
+| `metrika` | green  | recomputed by the sync from Metrika/DB data       | the next sync overwrites                |
 
 Priority: **manual > import > metrika**. The sync fills only empty and metrika-sourced cells;
 the import refreshes empty and metrika-sourced cells; a manual value is untouchable. The

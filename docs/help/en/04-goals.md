@@ -89,12 +89,12 @@ API; analysts browse. A goal created in the Metrika UI appears here after the ne
 
 ## Goal types and their quirks
 
-| Type | Fires when | Watch out for |
-| ---- | ---------- | ------------- |
-| URL condition | Visiting a page by mask (contain/start/regexp) | Masks break on redesigns |
-| JS event | `ym(…, 'reachGoal', name)` from the site | Exact event name, no typos |
-| Page views per visit | N pages in one visit | Depth, not conversion |
-| Ecommerce/order | E-commerce data | The primary `GOAL_ID` candidate |
+| Type                 | Fires when                                     | Watch out for                   |
+| -------------------- | ---------------------------------------------- | ------------------------------- |
+| URL condition        | Visiting a page by mask (contain/start/regexp) | Masks break on redesigns        |
+| JS event             | `ym(…, 'reachGoal', name)` from the site       | Exact event name, no typos      |
+| Page views per visit | N pages in one visit                           | Depth, not conversion           |
+| Ecommerce/order      | E-commerce data                                | The primary `GOAL_ID` candidate |
 
 ## Related pages
 
