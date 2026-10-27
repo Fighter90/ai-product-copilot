@@ -78,6 +78,48 @@ jobs:
       - name: Unit tests · shared (vitest)
         run: pnpm --filter @pca/shared test
 
+      # ANA-25: структура openspec-спек и изменений проверяется строго (WHEN/THEN у каждого
+      # requirement). Падение — ошибка PR так же, как падение тестов.
+      - name: 'Gate: openspec specs (strict)'
+        run: npx @fission-ai/openspec validate --all --strict
+
+  # ANA-26: покрытие по порогам 75% (ADR-014, docs/decisions/014-coverage-threshold-75.md).
+  # Порог зашит в vitest.config.ts каждого пакета — vitest падает сам, если coverage ниже.
+  coverage:
+    name: Coverage · 75% thresholds (backend / frontend / shared)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "STORE_PATH=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # better-sqlite3 — нативный модуль: prebuild для Node 22 на ubuntu ставится автоматически.
+      - name: Coverage (all packages, 75% thresholds)
+        run: pnpm coverage
+
   # ЗАГЛУШКА под будущие браузерные E2E (Playwright). Реальный прогон требует секретов
   # (URL стенда, тестовые учётки) и вынесен в .github/workflows/e2e.yml — здесь не подключаем.
   # Job появляется только при ручном запуске (workflow_dispatch).
