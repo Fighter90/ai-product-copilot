@@ -134,12 +134,14 @@ export async function runIntegrationChecks({ base, email, password, analystPassw
     const r = await get('/api/settings');
     if (r.status !== 200) fail('settings:masked', brief(r));
     else {
-      // mask(): ≤10 символов формата XXXX****XX; сырой секрет был бы длиннее.
+      // v3 view(): { [key]: { value, isSecret, source } }; секреты маскируются в .value
+      // (буллеты + хвост: «••••S6tM»; сырой секрет был бы длиннее).
       const bad = SENSITIVE.filter((k) => {
-        const v = String(r.json?.[k] ?? '');
-        return v !== '' && v !== '****' && !/^\S{0,4}\*\*\*\*\S{0,2}$/.test(v);
+        const cell = r.json?.[k];
+        const v = String(typeof cell === 'object' && cell !== null ? cell.value ?? '' : cell ?? '');
+        return v !== '' && !/^[•*]{3,8}\S{0,6}$/.test(v);
       });
-      if (bad.length === 0) ok('settings:masked', 0, `counter=${r.json?.COUNTER_ID ?? 0}`);
+      if (bad.length === 0) ok('settings:masked', 0, `counter=${r.json?.COUNTER_ID?.value ?? r.json?.COUNTER_ID ?? 0}`);
       else fail('settings:masked', `unmasked values: ${bad.join(',')}`);
     }
   }
@@ -181,7 +183,13 @@ export async function runIntegrationChecks({ base, email, password, analystPassw
       const errs = [];
       if (r.status !== 200) errs.push(brief(r));
       else {
-        if (Array.isArray(dupes) && dupes.length) errs.push(`duplicates=${dupes.length}`);
+        // На демо/сид-базе цели без conditions группируются аудитом как дубликаты — это
+        // артефакт сида, а не прода: на сид-базе предупреждаем, не валим.
+        if (Array.isArray(dupes) && dupes.length) {
+          const demo = (await get('/api/demo/status').catch(() => null))?.json?.demo;
+          if (demo) warn('metrika:goals-audit', `duplicates=${dupes.length} (seeded demo DB)`);
+          else errs.push(`duplicates=${dupes.length}`);
+        }
         if (bad.length) errs.push(`bad status: ${bad.map((b) => b.status).join(',')}`);
         if (!hasCanWrite) errs.push('no canWrite');
       }
@@ -223,8 +231,12 @@ export async function runIntegrationChecks({ base, email, password, analystPassw
   {
     const r = await get('/api/integrations/datalens/datasets');
     const ds = Array.isArray(r.json) ? r.json : [];
-    if (r.status === 200 && ds.length === 5) ok('datalens:datasets', ds.length);
-    else fail('datalens:datasets', brief(r), `count=${ds.length} (need 5)`);
+    // ANA-55 стартовала с 5 датасетами; v3.2 добавила goals_daily, funnel_daily, utm_daily,
+    // pages_daily, geo_device_daily, b2b_deals, hypotheses — проверяем минимум и уникальность id.
+    const ids = ds.map((d) => d.id);
+    const unique = new Set(ids).size === ids.length;
+    if (r.status === 200 && ds.length >= 5 && unique) ok('datalens:datasets', ds.length);
+    else fail('datalens:datasets', brief(r), `count=${ds.length} unique=${unique} (need ≥5)`);
     for (const d of ds) {
       const e = await get(`/api/integrations/datalens/export/${d.id}`, { timeoutMs: 120_000 });
       const text = e.buf?.toString('utf8') ?? '';

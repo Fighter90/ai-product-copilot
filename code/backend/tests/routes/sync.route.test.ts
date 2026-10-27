@@ -134,7 +134,8 @@ describe('sync run recording (ANA-15)', () => {
     expect(rec.finish).toHaveBeenCalledWith(1, 'ok', { goals: 1, days: 1 }, []);
     const status = await app.inject({ method: 'GET', url: '/api/sync/status' });
     expect(status.statusCode).toBe(200);
-    expect(status.json()).toMatchObject({ id: 1, status: 'ok' });
+    // ANA-68 style: the response wraps the run — { run: {...} } — so «no sync yet» can be 200.
+    expect(status.json()).toMatchObject({ run: { id: 1, status: 'ok' } });
     await app.close();
   });
 
@@ -169,11 +170,12 @@ describe('sync run recording (ANA-15)', () => {
     await app.close();
   });
 
-  it('GET /sync/status returns 404 before the first sync', async () => {
+  it('GET /sync/status returns 200 {run: null} before the first sync (no console 404)', async () => {
     const rec = recorder();
     const app = appWithRecorder(vi.fn(), rec);
     const status = await app.inject({ method: 'GET', url: '/api/sync/status' });
-    expect(status.statusCode).toBe(404);
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toEqual({ run: null });
     await app.close();
   });
 });

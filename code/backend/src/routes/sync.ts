@@ -80,9 +80,11 @@ export async function syncRoutes(app: FastifyInstance, opts: SyncRouteOptions): 
   app.get(
     '/sync/status',
     { schema: { tags: ['sync'], summary: 'Latest sync run (status + errors)' } },
-    async (_req, reply) => {
-      const run = opts.recordRun?.latest();
-      return run ?? reply.code(404).send({ error: 'no sync has been run yet' });
+    async () => {
+      const run = opts.recordRun?.latest() ?? null;
+      // ANA-68 style: «ещё не запускался» — это нормальное состояние, а не ошибка. 404 здесь
+      // рисовал красную строку в консоли браузера на каждой загрузке админ-страницы.
+      return { run };
     },
   );
 }

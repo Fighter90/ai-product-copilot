@@ -149,7 +149,7 @@ export const api = {
   /** ANA-18: demo-data presence — drives the yellow «Демо-данные» banner on every screen. */
   demoStatus: () => http<DemoStatus>('/demo/status'),
   /** ANA-15: the latest sync run (status + per-step errors) for the admin sync-status UI. */
-  syncStatus: () => http<SyncRunStatus>('/sync/status'),
+  syncStatus: () => http<{ run: SyncRunStatus | null }>('/sync/status'),
   /** ANA-19: manual B2C payments (paid tickets per day, entered or CSV-imported). */
   b2cPayments: (range?: { from: string; to: string }) =>
     http<B2cPayment[]>(`/payments/b2c${range ? `?from=${range.from}&to=${range.to}` : ''}`),

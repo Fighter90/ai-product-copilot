@@ -111,6 +111,8 @@ export function MetrikaSettings(): JSX.Element {
     queryFn: () => api.syncStatus(),
     retry: false,
   });
+  // ANA-68 style: { run: null } = ещё не запускался — нормальное состояние, без 404 в консоли.
+  const lastRun = syncStatusQ.data?.run ?? null;
   const clear = useMutation({
     mutationFn: v3.clearMetrikaData,
     onSuccess: () => {
@@ -213,34 +215,34 @@ export function MetrikaSettings(): JSX.Element {
         {/* ANA-15: the last sync result is visible in the UI, not only in the console. */}
         <div className="mt-4 border-t border-line pt-3 text-sm" data-testid="sync-status">
           <p className="mb-1 font-medium">{t('dh.sync.title')}</p>
-          {syncStatusQ.isLoading ? null : !syncStatusQ.data ? (
+          {syncStatusQ.isLoading ? null : !lastRun ? (
             <p className="text-muted">{t('dh.sync.none')}</p>
           ) : (
             <div className="space-y-1">
               <p>
                 <span
                   className={`mr-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                    syncStatusQ.data.status === 'ok'
+                    lastRun.status === 'ok'
                       ? 'bg-green-100 text-green-800'
-                      : syncStatusQ.data.status === 'partial'
+                      : lastRun.status === 'partial'
                         ? 'bg-amber-100 text-amber-800'
                         : 'bg-red-100 text-red-800'
                   }`}
                 >
-                  {t(`dh.sync.status.${syncStatusQ.data.status}` as DictKey)}
+                  {t(`dh.sync.status.${lastRun.status}` as DictKey)}
                 </span>
                 <span className="text-muted">
-                  {t('dh.sync.range', { from: syncStatusQ.data.from, to: syncStatusQ.data.to })}
-                  {syncStatusQ.data.finishedAt
-                    ? ` · ${t('dh.sync.finished', { at: syncStatusQ.data.finishedAt })}`
+                  {t('dh.sync.range', { from: lastRun.from, to: lastRun.to })}
+                  {lastRun.finishedAt
+                    ? ` · ${t('dh.sync.finished', { at: lastRun.finishedAt })}`
                     : ''}
                 </span>
               </p>
-              {syncStatusQ.data.errors.length > 0 ? (
+              {lastRun.errors.length > 0 ? (
                 <div>
                   <p className="text-amber-700">{t('dh.sync.errors')}</p>
                   <ul className="list-disc pl-5 text-xs text-muted">
-                    {syncStatusQ.data.errors.map((e, i) => (
+                    {lastRun.errors.map((e, i) => (
                       <li key={i}>
                         <code>{e.step}</code>: {e.message}
                       </li>
