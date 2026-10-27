@@ -27,10 +27,10 @@
 
 ## Затрагиваемые файлы
 
-| Файл | Роль |
-| ---- | ---- |
-| `docs/help/ru/{21..24}-*.md` | новые статьи (RU) |
-| `docs/help/en/{21..24}-*.md` | новые статьи (EN) |
-| `docs/help/{ru,en}/0{2,4,5,6,7,8,9}-*.md`, `13-prefs.md` | расширение |
-| `code/frontend/src/components/PageHelpLink.tsx` | слаг/маршрут маркетинга |
-| `openspec/specs/help/spec.md` | вечная спека |
+| Файл                                                     | Роль                    |
+| -------------------------------------------------------- | ----------------------- |
+| `docs/help/ru/{21..24}-*.md`                             | новые статьи (RU)       |
+| `docs/help/en/{21..24}-*.md`                             | новые статьи (EN)       |
+| `docs/help/{ru,en}/0{2,4,5,6,7,8,9}-*.md`, `13-prefs.md` | расширение              |
+| `code/frontend/src/components/PageHelpLink.tsx`          | слаг/маршрут маркетинга |
+| `openspec/specs/help/spec.md`                            | вечная спека            |
