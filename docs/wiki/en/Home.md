@@ -1,6 +1,6 @@
 # ProductCamp Analytics Copilot — Wiki (EN)
 
-English mirror of the wiki. Полная версия на русском — [Home](../Home).
+English mirror of the wiki. Полная версия на русском — [Home](../Home.md).
 
 **ProductCamp Analytics Copilot** — an analytics tool for paid product programs: it pulls
 Yandex.Metrika data into SQLite, shows an analyst cabinet (overview, Live, goals & KPI, funnel,
@@ -11,15 +11,15 @@ Metrika → SQLite → dashboard → DOCX/PDF. Current version — **v3.1.0**
 
 ## Pages
 
-| Page                                 | About                                                  |
-| ------------------------------------ | ------------------------------------------------------ |
-| [Quickstart](Quickstart)             | Local setup from scratch                               |
-| [Roles](Roles)                       | Admin vs analyst permissions, sessions, counter grants |
-| [Metrika & Goals](Metrika-and-Goals) | Sync pipeline, day-history, KPI «lead ≠ payment»       |
-| [AI Providers](AI-Providers)         | Keys, priority chain, fallback, ai_usage               |
-| [DataLens](DataLens)                 | CSV datasets, Public API, webhook                      |
-| [Deploy](Deploy)                     | Ubuntu + nginx + systemd + certbot layout              |
-| [FAQ](FAQ)                           | Frequently asked questions                             |
+| Page                                    | About                                                  |
+| --------------------------------------- | ------------------------------------------------------ |
+| [Quickstart](Quickstart.md)             | Local setup from scratch                               |
+| [Roles](Roles.md)                       | Admin vs analyst permissions, sessions, counter grants |
+| [Metrika & Goals](Metrika-and-Goals.md) | Sync pipeline, day-history, KPI «lead ≠ payment»       |
+| [AI Providers](AI-Providers.md)         | Keys, priority chain, fallback, ai_usage               |
+| [DataLens](DataLens.md)                 | CSV datasets, Public API, webhook                      |
+| [Deploy](Deploy.md)                     | Ubuntu + nginx + systemd + certbot layout              |
+| [FAQ](FAQ.md)                           | Frequently asked questions                             |
 
 ## Full documentation (repo)
 

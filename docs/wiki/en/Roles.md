@@ -2,7 +2,7 @@
 
 > Source: `docs/help/en/16-roles.md`, spec
 > [openspec/specs/auth](https://github.com/Fighter90/ai-product-copilot/blob/main/openspec/specs/auth/spec.md).
-> Русская версия: [Roles](../Roles).
+> Русская версия: [Roles](../Roles.md).
 
 Two roles: **Administrator** and **Analyst**. Public pages (landing `/`, sign-in `/login`,
 help `/help`) need no session; everything under `/app` requires signing in.

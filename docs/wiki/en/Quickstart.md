@@ -1,7 +1,7 @@
 # Quickstart
 
 > Source of truth: [docs/quickstart.md](https://github.com/Fighter90/ai-product-copilot/blob/main/docs/quickstart.md).
-> Русская версия: [Quickstart](../Quickstart).
+> Русская версия: [Quickstart](../Quickstart.md).
 
 ## Requirements
 
@@ -44,6 +44,6 @@ Kept only in `.env` (gitignored, never committed). Template: `.env.example`:
 
 ## Next
 
-- [Roles](Roles) — who sees what in the cabinet
-- [Metrika and Goals](Metrika-and-Goals) — sync, KPI goal, live mode
-- [FAQ](FAQ)
+- [Roles](Roles.md) — who sees what in the cabinet
+- [Metrika and Goals](Metrika-and-Goals.md) — sync, KPI goal, live mode
+- [FAQ](FAQ.md)

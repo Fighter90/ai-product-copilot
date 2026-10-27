@@ -2,7 +2,7 @@
 
 > Source: `docs/help/en/18-llm-keys.md`, spec
 > [openspec/specs/llm](https://github.com/Fighter90/ai-product-copilot/blob/main/openspec/specs/llm/spec.md).
-> Русская версия: [AI-провайдеры](../AI-Providers).
+> Русская версия: [AI-провайдеры](../AI-Providers.md).
 
 Four providers are supported: **OpenRouter, Anthropic (Claude), YandexGPT, GigaChat**.
 Managed under "Administration → AI providers" (administrator only).

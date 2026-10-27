@@ -58,7 +58,7 @@ const PROMPT = `Ты — строгий код-ревьюер релиза ве�
 Формат ответа — СТРОГО JSON (без markdown-обёртки):
 {"findings":[{"level":"HIGH","file":"path","line":42,"title":"...","fix":"..."}]}
 Если всё чисто — {"findings":[]}.
-Файлы чанка (${ '{files}' } replace) ниже.`;
+Файлы чанка (${'{files}'} replace) ниже.`;
 
 async function review(area, files) {
   let body = '';

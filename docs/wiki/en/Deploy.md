@@ -2,7 +2,7 @@
 
 > Source of truth: [docs/deploy.md](https://github.com/Fighter90/ai-product-copilot/blob/main/docs/deploy.md),
 > configs — [deploy/](https://github.com/Fighter90/ai-product-copilot/tree/main/deploy).
-> Русская версия: [Деплой](../Deploy).
+> Русская версия: [Деплой](../Deploy.md).
 
 Production layout: **Ubuntu + nginx + systemd + certbot**; the frontend is Vite static
 files, the backend is Fastify on Node 22, the DB is SQLite (a file).

@@ -2,8 +2,13 @@
 useDefault = true
 
 [allowlist]
-description = "Generated lockfiles and example placeholders are not secrets"
+description = "Generated lockfiles, example placeholders and test fixtures are not secrets"
 paths = [
   '''pnpm-lock\.yaml''',
   '''\.env\.example''',
+  '''code/backend/tests/llm/llm-resilience\.test\.ts''',
+]
+regexes = [
+  # Known false positives: field-name assignments caught by the generic-api-key rule.
+  '''b2cApplications|b2bPaidTickets|b2b_planned_tickets''',
 ]

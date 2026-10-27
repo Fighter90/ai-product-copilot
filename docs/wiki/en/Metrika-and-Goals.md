@@ -2,7 +2,7 @@
 
 > Sources: `docs/help/en/04-goals.md`, `docs/help/en/03-live.md`, `docs/help/en/14-metrics.md`,
 > spec [openspec/specs/metrika-sync](https://github.com/Fighter90/ai-product-copilot/blob/main/openspec/specs/metrika-sync/spec.md).
-> Русская версия: [Метрика и цели](../Metrika-and-Goals).
+> Русская версия: [Метрика и цели](../Metrika-and-Goals.md).
 
 ## How data gets into the product
 

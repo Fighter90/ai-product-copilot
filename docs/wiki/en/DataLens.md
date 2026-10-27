@@ -2,7 +2,7 @@
 
 > Source: `docs/help/en/10-datalens.md`, spec
 > [openspec/specs/datalens](https://github.com/Fighter90/ai-product-copilot/blob/main/openspec/specs/datalens/spec.md).
-> Русская версия: [DataLens](../DataLens).
+> Русская версия: [DataLens](../DataLens.md).
 
 The product prepares **flat CSV datasets** for Yandex DataLens: channels, UTM, geo+devices,
 pages, B2B deals. Dashboards and alerts are built on the DataLens side.

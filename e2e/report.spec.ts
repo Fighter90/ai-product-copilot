@@ -12,8 +12,12 @@ test.describe('Report — snapshot, on-screen render, export, AI', () => {
     const full = page.getByRole('article', { name: 'Полный отчёт' });
     // Section titles appear twice (TOC link + <summary> row) — take the first occurrence.
     await expect(full.getByText('Краткие итоги', { exact: true }).first()).toBeVisible();
-    await expect(full.getByText('Воронка: визит → заявка → оплата', { exact: true }).first()).toBeVisible();
-    await expect(full.getByText('Каналы: трафик и конверсия', { exact: true }).first()).toBeVisible();
+    await expect(
+      full.getByText('Воронка: визит → заявка → оплата', { exact: true }).first(),
+    ).toBeVisible();
+    await expect(
+      full.getByText('Каналы: трафик и конверсия', { exact: true }).first(),
+    ).toBeVisible();
     await expect(full.getByText('Глоссарий и принципы', { exact: true }).first()).toBeVisible();
     await expect(full.getByText('Приложение с данными', { exact: true }).first()).toBeVisible();
   });

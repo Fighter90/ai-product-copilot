@@ -14,8 +14,8 @@
 [DataLens](DataLens.md) · [Деплой](Deploy.md) · [FAQ — частые вопросы](FAQ.md) ·
 [Roadmap — статус и планы](Roadmap.md)
 
-EN: [Home](en/Home) · [Quickstart](en/Quickstart) · [Roles](en/Roles) · [AI providers](en/AI-Providers) ·
-[Metrika and goals](en/Metrika-and-Goals) · [DataLens](en/DataLens) · [Deploy](en/Deploy) · [FAQ](en/FAQ)
+EN: [Home](en/Home.md) · [Quickstart](en/Quickstart.md) · [Roles](en/Roles.md) · [AI providers](en/AI-Providers.md) ·
+[Metrika and goals](en/Metrika-and-Goals.md) · [DataLens](en/DataLens.md) · [Deploy](en/Deploy.md) · [FAQ](en/FAQ.md)
 
 Исходники вики живут в репозитории (`docs/wiki/`) и публикуются в GitHub Wiki скриптом
 [`scripts/publish-wiki.sh`](https://github.com/Fighter90/ai-product-copilot/blob/main/scripts/publish-wiki.sh)

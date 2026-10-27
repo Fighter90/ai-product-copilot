@@ -6,12 +6,14 @@
 ## Статус: Phase D (деплой main) — в полёте; далее S/V/K/F
 
 ## Гейты (заморожены на fda52bf, vitest 4.1.12 + vite 7.3.7)
+
 - tsc backend/frontend/shared ✅
 - vitest: backend **802/802**, frontend **555+2 skip**, shared **144/144** ✅
 - vite build ✅ · eslint 0/0 ✅ · prettier ✅ · pnpm audit **0 уязвимостей** ✅
 - i18n: dict 1073/1073, хардкод-скан 0 ✅ · merge-gates ✅
 
 ## Волны агентов (итог)
+
 - Волна 1+2 (по 9 скоупов) + соло-прогоны — ВСЕ ЗАВЕРШЕНЫ с отчётами:
   ANA-37/24/38 ✅ (канбан+ICE+Decision Log+анти-галлюцинация), ANA-42/55/44 ✅ (локаль
   отчёта, 8 датасетов DataLens, DataGrid), ANA-50/35/33/39 ✅ (воронка визит→оплата,
@@ -25,7 +27,8 @@
 - Инцидент: 5h-лимит кодинг-плана (сброс 19:37) — последние скоупы добраны инлайн.
 
 ## CI/CD — работает
-- deploy.yml: тег v*.*.* / dispatch → гейты → deploy.sh → health → GitHub Deployment
+
+- deploy.yml: тег v*._._ / dispatch → гейты → deploy.sh → health → GitHub Deployment
   (production) → Release. Починено по пути: Actions включены, -F для gh api,
   StrictHostKeyChecking=accept-new, IFS в push_rsync, выделенный deploy-ключ.
 - packages.yml: @fighter90/shared опубликован ✅.
@@ -33,11 +36,12 @@
   релиз идёт деплоем fda52bf.
 
 ## Next (порядок)
+
 1. Дождаться деплой fda52bf → health build == fda52bf, CSP на проде.
 2. S: backfill-365.sh (паузинг 250 мс) → DataLens push --rebuild-dataset → reconcile → VERDICT.
 3. V: e2e-prod-check (+integrations, --ai) + browser-regression RU/EN.
 4. K: Linear — Done с честными комментариями (см. таблицу статусов), долг: 2 flaky-теста
-  Hypotheses (skip → доводка), ANA-33 остаток — нет (закрыто волной 2).
+   Hypotheses (skip → доводка), ANA-33 остаток — нет (закрыто волной 2).
 5. F: финальный вердикт юзеру.
 
 ## Состояние пула агентов (макс. параллелизм без rate-клифа: ~9)
