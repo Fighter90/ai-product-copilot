@@ -48,6 +48,7 @@ function EditableCell({
   useEffect(() => {
     setDraft(cell ? String(cell.value) : '');
     setInvalid(false);
+  }, [cell]);
 
   const dirty = draft !== (cell ? String(cell.value) : '');
 
