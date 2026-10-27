@@ -60,3 +60,29 @@ A practical consequence: the B2B page keeps working even during a Metrika outage
 - **A day is missing in History** — the sync for that day did not run or failed; an administrator should check the sync service and re-run a manual sync.
 - **B2B deal disappeared after an edit** — edits are logged in **Admin → Audit**; check the log before re-entering data.
 - **B2B tickets don't match the partner's word** — the page is a manual tracker; it is only as current as the last edit, and every change is attributable in the audit log.
+
+## Report history
+
+Every report build stores a snapshot (period, date, size) — from History you can open the
+preview, export DOCX/PDF again or delete the slice. A snapshot is immutable: a rebuild creates
+a new one. This protects against «the numbers changed after the report was sent».
+
+## B2B deals
+
+The manual-entry registry: Metrika does not see B2B, so deals are tracked here (the
+`b2b_manual` table). Columns: company, tickets, amount, stage (Lead → Negotiation → Invoiced →
+Paid), added/paid dates, contact. Paid tickets enter the «300 paid» KPI and the marketing grid
+«payments» row.
+
+### CSV history import
+
+The import button accepts
+`company,tickets,stage,date_added[,date_paid[,amount,email,notes]]` — for moving deals from a
+CRM/sheet covering the period before the dashboard launch. Duplicates (same company + date +
+tickets) are skipped — re-importing is safe. Row errors are reported with line numbers.
+
+### Data coverage
+
+The coverage indicator shows first/last dates of each series (b2b, b2c, Metrika) and gaps
+≥ 3 days — close them with imports or a window sync so KPI and the forecast cover the full
+period.

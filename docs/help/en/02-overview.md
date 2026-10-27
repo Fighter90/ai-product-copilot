@@ -61,3 +61,19 @@ The whole routine takes two minutes when data is healthy — and the same two mi
 - **KPI shows zero although tickets exist** — the primary goal may be pinned to a wrong `GOAL_ID` or the goal was archived; check **Goals** and the admin Metrika settings.
 - **Yesterday is missing** — the 3-hour sync may not have covered the end of the day yet; run a manual sync or wait for the next scheduled one.
 - **Numbers differ from the Metrika interface** — the cabinet deduplicates test traffic and uses daily rows; compare the same period and same goal before reporting a discrepancy.
+
+## Data source and limits
+
+Every Overview number reads from the dashboard's own database (`channel_stats`, `b2b_manual`,
+`b2c_payments`) filled by the Metrika sync per day — pages open instantly and do not depend on
+Metrika API availability. Limits: data appears after a sync (scheduled every 3 hours, «today»
+lives in Live); the bot filter applies at the counter level; demo seeds are flagged and wiped
+by the first real sync. Compare against Metrika with the same period and the «all visitors»
+segment.
+
+## Related pages
+
+- **Live** — today's funnel and goals (no sync wait).
+- **Traffic / Behavior** — channels, UTM, geo, devices, pages.
+- **Marketing** — the weekly content/influence grid (mirrors the Google Sheet).
+- **KPI & forecast** — «on track for 300?» and the What-if scenarios.

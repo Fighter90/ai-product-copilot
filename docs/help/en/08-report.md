@@ -77,3 +77,25 @@ Reading the results:
 - **PDF button fails but DOCX works** — Chromium is missing on the server; an administrator must set `PUPPETEER_EXECUTABLE_PATH`.
 - **AI analysis returns an error** — check the provider status in **Admin → AI providers** (press **Test**) and the usage log; rate limits and exhausted keys are the usual causes.
 - **Snapshot numbers differ from live dashboards** — the snapshot is frozen at generation time; regenerate it to capture the current state.
+
+## Data source and limits
+
+The report builds from a snapshot — a frozen slice at build time: KPI, channels, UTM,
+geo/devices, pages, B2B summary, funnel. The on-screen preview and DOCX/PDF render from the
+same sections (`reportSections`) — «what you see is what the file contains». Snapshots are
+stored in History — a report from a specific date can be reopened and re-exported.
+
+## AI analysis
+
+«Generate AI analysis» calls the configured LLM (OpenRouter / Anthropic / YandexGPT / GigaChat
+— the priority chain; the provider dropdown sits next to the button). The interpretation text
+is labelled as AI and stored in the snapshot (`aiNarrative`), included in exports. Report
+numbers are always deterministic; the AI writes only the interpretation on top. Structured
+hypothesis generation is a separate button feeding the hypotheses section.
+
+## Export
+
+DOCX follows the GOST-style template (title page, TOC field, figures list, terms and
+notations, numbered sections, tables, «Figure N — …» captions). PDF mirrors the DOCX. Files are
+named `productcamp-report-<snapshotId>.<ext>`; re-exporting the same snapshot returns the same
+file.

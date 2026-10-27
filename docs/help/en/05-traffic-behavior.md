@@ -68,3 +68,24 @@ Numbers follow the active interface locale: with RU selected, dates are DD.MM.YY
 - **The UTM table is empty** — either no tagged traffic existed in the period, or the sync has not run since; check **History** and run a manual sync if needed.
 - **Channel numbers differ from the Metrika report** — the cabinet uses the last-signature attribution of the daily sync; compare with the same attribution model in Metrika before alarming anyone.
 - **CSV opens with broken characters in Excel** — the export is UTF-8 with BOM; if your tool still misreads it, import the file explicitly as UTF-8.
+
+## Data source and limits
+
+Channels, UTM, geo/devices and pages come from the daily tables `channel_stats`, `utm_stats`,
+`geo_device_stats`, `page_stats`/`exit_page_stats` filled by the sync. Each row is a day slice;
+the period total is the sum of days. The bot filter is applied at the counter level. Limit: a
+slice never splits a visit across channels inside one session — Metrika attributes by the last
+source.
+
+## The B2C / B2B segment
+
+The header segment switch filters channels by traffic type: B2B — referrals from business
+platforms and direct from known domains, B2C — the rest. Channel lists live in
+`lib/segment-filter.ts` and stay in sync with real Metrika names (ANA-17). If a channel misses
+a segment — check its exact name in `Traffic → Channels`.
+
+## Exports
+
+The CSV button in every table header downloads raw values (no locale formatting) with a BOM —
+ready for Excel and Google Sheets. For BI systems use the DataLens exports
+(`/api/integrations/datalens/export/...`) — the same data in a stable schema.

@@ -63,3 +63,22 @@ Note: CSV **contents** keep machine formats (dot decimals, ISO dates) so that Da
 - **The language switched back** — another person used the same browser profile, or the profile cleared localStorage; the setting is per browser, not per account.
 - **Charts show mixed colors after a theme switch** — a refresh of the page rebuilds the charts; if a stale chart remains, it is a rendering cache, not lost data.
 - **Numbers look "wrong" after switching** — the decimal separator changed with the locale; the values are identical, only formatting differs.
+
+## What is stored and where
+
+Appearance settings live in the browser (localStorage): theme (`pca.theme`), language
+(`pca.locale`), sidebar collapse. The locale is also saved to the user profile — signing in on
+another device pulls the language from the profile. Numbers, dates and channel names are
+formatted per the chosen locale across the cabinet.
+
+## Theme and accessibility
+
+Dark and light themes toggle in the header; charts follow the choice (the «pca» and «pca-dark»
+palettes re-register automatically). Contrast and focus rings meet WCAG AA; transitions animate
+and respect `prefers-reduced-motion`.
+
+## Profile
+
+Name and password changes — `User menu → Profile`. The password is length-checked; the session
+refreshes after a change. Signing out ends the session on the device; the audit log records
+logins/logouts (visible to administrators).

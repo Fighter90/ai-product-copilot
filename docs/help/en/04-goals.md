@@ -79,3 +79,24 @@ Old counters accumulate junk goals. Goals with ids above the archive threshold a
 - **A new goal does not appear** — goals are fetched during a sync; run **Admin → Yandex Metrika → Sync** or wait for the 3-hour schedule.
 - **KPI counts a wrong goal** — check the pinned `GOAL_ID` and the archive threshold; archived ids above the threshold are excluded even if they still get reaches.
 - **Two goals show identical numbers** — they are duplicates with the same conditions; archive one from the admin UI.
+
+## Data source and limits
+
+The goal list comes from the Metrika catalogue at sync time (the `goals` table: id, name, type,
+archive flag). Card reaches are daily series from `channel_stats`/`raw_responses`, so the card
+follows the header period. Management (create/archive) is admin-only via the Metrika Management
+API; analysts browse. A goal created in the Metrika UI appears here after the next sync.
+
+## Goal types and their quirks
+
+| Type | Fires when | Watch out for |
+| ---- | ---------- | ------------- |
+| URL condition | Visiting a page by mask (contain/start/regexp) | Masks break on redesigns |
+| JS event | `ym(…, 'reachGoal', name)` from the site | Exact event name, no typos |
+| Page views per visit | N pages in one visit | Depth, not conversion |
+| Ecommerce/order | E-commerce data | The primary `GOAL_ID` candidate |
+
+## Related pages
+
+- **Live → Goals** — today's goal reaches (Reporting API, no sync wait).
+- **Marketing** — the «site goals» grid row aggregates the same primary goal by weeks.

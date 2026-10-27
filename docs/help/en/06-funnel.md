@@ -64,3 +64,17 @@ When time is short, this checklist covers the essentials:
 - **The funnel ends at the first stage** — the primary goal may have zero reaches in the period; check the goal selection on **Goals** and the Archived goals toggle.
 - **Today is missing** — daily data appears after a sync; either wait for the 3-hour schedule or run a manual sync from the admin panel.
 - **Conversion above 100% on some stage** — this happens when the goal can fire several times per visit (multi-reach goals); interpret such stages as "reaches per visit" rather than a share of visitors.
+
+## Data source and limits
+
+The period funnel aggregates daily data (primary-goal `channel_stats` + `b2b_manual` +
+`b2c_payments`) — it freezes after a sync and reflects the settled period. The live funnel
+(`/app/funnel-live`) reads pc-goals ticket-funnel events via the Reporting API on the fly and
+shows registration steps: registration opened → cart → registration step → payment. Stages are
+labelled and coloured; each stage shows its value source (visits/goal/manual).
+
+## Reading the B2C and B2B funnel
+
+The dashboard funnel shows two branches: B2C (visit → goal) and the B2B deal pipeline. The
+«B2B paid» column counts stage `paid` only; negotiations and invoices live in the B2B pipeline
+page. The «lead ≠ payment» rule holds here too: leads are never added to paid tickets.
