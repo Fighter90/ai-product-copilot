@@ -18,7 +18,7 @@ _Daily archive: visits, goals and sync activity per day._
 
 ### What it is for
 
-- **Sync audit** — "was yesterday synced? when?" The sync events (manual and scheduled, every 3 hours) are recorded per day, so a missing row means a missing sync, not missing traffic.
+- **Sync audit** — "was yesterday synced? when?" The sync events (manual and scheduled, every 30 minutes) are recorded per day, so a missing row means a missing sync, not missing traffic.
 - **Any-date comparison** — compare two arbitrary dates without rebuilding periods: the daily rows are the ground truth the dashboards aggregate from.
 - **Gap detection before reports** — before generating a report snapshot, scan History for zero-days; a report over a range with a gap will understate results.
 

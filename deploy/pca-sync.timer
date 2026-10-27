@@ -1,18 +1,18 @@
-# Таймер: синк Метрики каждые 3 часа.
+# Таймер: синк Метрики каждые 30 минут (ANA-74 — «актуальный дашборд»).
 # Включение: systemctl enable --now pca-sync.timer
 # Проверка:  systemctl list-timers pca-sync.timer
 
 [Unit]
-Description=Run PCA Metrika sync every 3 hours
+Description=Run PCA Metrika sync every 30 minutes
 
 [Timer]
-# Каждый день в 00:00, 03:00, 06:00, ... по локальному времени сервера.
+# Каждая получасовая метка: :00 и :30 по локальному времени сервера.
 # ВНИМАНИЕ: на свежей Ubuntu часовой пояс часто UTC; при необходимости:
 #   timedatectl set-timezone Europe/Moscow
-OnCalendar=*-*-* 00/3:00:00
+OnCalendar=*:0/30
 
 # Разброс запусков, чтобы не бить в API Метрики синхронно с чужими кронами.
-RandomizedDelaySec=10min
+RandomizedDelaySec=5min
 
 # Если сервер был выключен в слот запуска — догнать при старте.
 Persistent=true

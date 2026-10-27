@@ -20,7 +20,7 @@ Some analytics pages (Overview, Traffic, Behaviour, Funnel & B2B, KPI, Report, H
 - **Header**: RU/EN language toggle, theme (🌙/☀️), notification bell, your name and role, sign-out button.
 - **“→ hypothesis”** links on Overview and Traffic carry the context (segment, problem, evidence) into a hypothesis draft on the Report page.
 
-Two data sources: **Monitoring** pages (Live, Metrika goals, pc-goals funnel, Data) query Metrika directly in real time; **Analytics** pages and the report read the local database filled by the sync (every 3 hours on the server).
+Two data sources: **Monitoring** pages (Live, Metrika goals, pc-goals funnel, Data) query Metrika directly in real time; **Analytics** pages and the report read the local database filled by the sync (every 30 minutes on the server).
 
 ## Overview (`/app`)
 

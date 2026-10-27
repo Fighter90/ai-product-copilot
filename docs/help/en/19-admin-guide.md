@@ -93,7 +93,7 @@ Notes on the current version: a manual sync always auto-detects the primary purc
 
 When finished, a line “Sync: {…}” shows the summary: number of goals, the detected primary goal id, days and rows per breakdown. Errors appear under the button.
 
-On the server the sync also runs every 3 hours (`pca-sync.timer`). A manual sync is needed after changing the counter or token, after creating goals and to load long history (choose a period up to 365 days).
+On the server the sync also runs every 30 minutes (`pca-sync.timer`). A manual sync is needed after changing the counter or token, after creating goals and to load long history (choose a period up to 365 days).
 
 ### Danger zone
 

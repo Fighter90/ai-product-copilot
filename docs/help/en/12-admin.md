@@ -72,7 +72,7 @@ _Metrika settings: counter, sync controls, goal management._
 
 1. **Counter status** — verifies the connected counter and shows the goal catalog fetch state.
 2. **Manual sync** — pulls goals, channels, UTM, geo, devices, pages and exit pages into the local SQLite database. Use it after site changes, after creating goals, or to close a data gap spotted in History.
-3. **Scheduled sync** — systemd runs a sync **every 3 hours** on the server; the admin page shows when it last succeeded.
+3. **Scheduled sync** — systemd runs a sync **every 30 minutes** on the server; the admin page shows when it last succeeded.
 4. **`GOAL_ID` pinning** — fixes the primary KPI goal instead of auto-detecting the purchase goal; needed when several purchase-like goals exist.
 5. **Data cleanup** — removes collected daily rows (with confirmation); the next sync re-fills them.
 

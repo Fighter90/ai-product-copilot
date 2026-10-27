@@ -43,7 +43,7 @@ Two demo users exist by default: `admin@dashboardcamp.ru` (administrator) and `a
 2. **Admin → AI providers** — add a provider key (OpenRouter, Anthropic, YandexGPT or GigaChat) and press **Test**. This enables the assistant and AI report analysis.
 3. **Admin → Users** — create personal analyst accounts.
 4. **Admin → Integrations** — generate the DataLens webhook token if you plan to hook up DataLens alerts.
-5. Wait for the first scheduled sync (every 3 hours) and confirm daily rows appear in **History**.
+5. Wait for the first scheduled sync (every 30 minutes) and confirm daily rows appear in **History**.
 
 ## Navigation at a glance
 

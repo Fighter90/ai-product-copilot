@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { MarketingRepo } from '../db/repositories/marketing-repo';
 import type { SyncRunner } from '../routes/sync';
 import { recomputeWeekly, type MarketingSyncResult } from './sync';
+import { buildStataSheetCells } from './sheet-data';
 import {
   MARKETING_METRICS,
   MARKETING_MONTHS,
@@ -100,6 +101,20 @@ export async function marketingRoutes(
       const { weekStart, metricKey } = req.params as { weekStart: string; metricKey: string };
       const removed = opts.repo.remove(weekStart, metricKey);
       return removed ? reply.code(204).send() : reply.code(404).send({ error: 'not found' });
+    },
+  );
+
+  app.post(
+    '/marketing/weekly/import-sheet',
+    { schema: { tags: ['marketing'], summary: 'Import the real «стата» sheet cells (admin; source=import, manual untouched)' } },
+    async (req, reply) => {
+      const cells = buildStataSheetCells();
+      const written = opts.repo.upsertMany(cells, {
+        source: 'import',
+        updatedBy: userEmail(req) ?? 'sheet-import',
+        now,
+      });
+      return reply.code(200).send({ cells: cells.length, written });
     },
   );
 

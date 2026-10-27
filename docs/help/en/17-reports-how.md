@@ -27,7 +27,7 @@ The key rule: steps 3–5 never call Metrika or AI — only the stored snapshot.
 
 - The sync asks Metrika (Stat API) for daily aggregates: channels, UTM tags, geo and devices, entry and exit pages, goals.
 - Every raw Metrika response is stored in `raw_responses` — the **source of facts**. The aggregates `channel_stats`, `utm_stats`, `geo_device_stats`, `page_stats`, `exit_page_stats` are derived from it.
-- On the server the sync runs every 3 hours (systemd timer `pca-sync.timer`). Manually — the “Refresh data from Metrika” button under “Administration → Metrika & data” (administrators only).
+- On the server the sync runs every 30 minutes (systemd timer `pca-sync.timer`). Manually — the “Refresh data from Metrika” button under “Administration → Metrika & data” (administrators only).
 - Robots and service visits are filtered out by default.
 
 If no sync covered the period, the report is empty: the recommendations block says there is no channel data for the period and asks to sync Metrika.

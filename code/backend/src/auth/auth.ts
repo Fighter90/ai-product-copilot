@@ -89,6 +89,8 @@ const ADMIN_RULES: Array<{ method?: string; prefix: string }> = [
   // ANA-73: the marketing sync may trigger a Metrika backfill window — admin only; analysts
   // keep hand-edit rights on the grid itself (PUT /api/marketing/weekly).
   { prefix: '/api/marketing/weekly/sync' },
+  // Импорт реальных значений листа «стата» — массовая запись, только админ.
+  { prefix: '/api/marketing/weekly/import-sheet' },
 ];
 
 /**

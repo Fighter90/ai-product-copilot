@@ -1,10 +1,11 @@
-# systemd-юнит разового синка Яндекс Метрики (npm run sync => tsx src/metrika/cli-sync.ts).
-# Запускается по расписанию из pca-sync.timer (каждые 3 часа), вручную не нужен:
-#   systemctl start pca-sync.service
+# systemd-юнит разового синка Яндекс Метрики (cli-sync.ts).
+# Запускается по расписанию из pca-sync.timer (каждые 30 минут, ANA-74).
+# Окно — последние 3 дня (--days=3): свежие дни + экономия квоты API; крупные догрузки —
+# вручную: pnpm --filter @pca/backend sync --from=... --to=...
 # Логи последнего запуска: journalctl -u pca-sync.service -n 100
 
 [Unit]
-Description=PCA Yandex Metrika sync (last 14 days)
+Description=PCA Yandex Metrika sync (last 3 days)
 # Независим от API-юнита: cli-sync сам открывает SQLite (WAL выдерживает параллельный доступ).
 Wants=network-online.target
 After=network-online.target
@@ -20,9 +21,8 @@ WorkingDirectory=/opt/pca/backend
 EnvironmentFile=/opt/pca/.env
 Environment=NODE_ENV=production
 
-# Синк тянет данные из API Метрики за 14 дней — на слабом канале может идти долго.
-ExecStart=/usr/bin/tsx src/metrika/cli-sync.ts
-TimeoutStartSec=30min
+ExecStart=/usr/bin/tsx src/metrika/cli-sync.ts --days=3
+TimeoutStartSec=15min
 
 # Фоновая задача: не мешаем основному API на 1-CPU машине.
 Nice=10

@@ -1,0 +1,16 @@
+# Таймер: обновление воркбука DataLens каждые 30 минут со сдвигом на :15/:45
+# (чтобы не совпадать с синком Метрики :00/:30 — DataLens читает уже обновлённые CSV).
+# Юнит пропускается без DATALENS_WORKBOOK_ID (см. pca-datalens.service).
+
+[Unit]
+Description=Run PCA DataLens workbook refresh every 30 minutes
+
+[Timer]
+OnCalendar=*:15/30
+RandomizedDelaySec=5min
+AccuracySec=1min
+
+Unit=pca-datalens.service
+
+[Install]
+WantedBy=timers.target

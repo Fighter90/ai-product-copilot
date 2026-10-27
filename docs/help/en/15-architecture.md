@@ -23,7 +23,7 @@ _Everything you see is the client layer drawing data delivered by the API._
 | **Database (SQLite)** | Stores synced daily data and your own records | daily visits, goals, B2B deals, snapshots, users          |
 | **Sources**           | External systems the cabinet reads from       | Yandex Metrika (counter 54280963), DataLens, AI providers |
 
-One more process runs beside the application: the **sync job** (scheduled via systemd), which pulls data from Metrika into the database every **3 hours**.
+One more process runs beside the application: the **sync job** (scheduled via systemd), which pulls data from Metrika into the database every **30 minutes**.
 
 ## What happens when you open a page
 
@@ -52,7 +52,7 @@ The database is the single source for reports and DataLens exports; Metrika rema
 |              | Daily pages                       | Live pages                      |
 | ------------ | --------------------------------- | ------------------------------- |
 | Source       | local database                    | Metrika Reporting API           |
-| Freshness    | up to 3 hours old                 | current                         |
+| Freshness    | up to 30 minutes old              | current                         |
 | Availability | always (works if Metrika is down) | requires Metrika                |
 | Use for      | analysis, reports, comparisons    | operational monitoring of today |
 
@@ -91,7 +91,7 @@ _Admin → Yandex Metrika: the control point of the 3-hour sync and manual re-sy
 
 | Process              | Schedule                          | What it does                                                      |
 | -------------------- | --------------------------------- | ----------------------------------------------------------------- |
-| Metrika sync         | every 3 hours (systemd)           | pulls daily rows: goals, channels, UTM, geo/devices, pages, exits |
+| Metrika sync         | every 30 minutes (systemd)        | pulls daily rows: goals, channels, UTM, geo/devices, pages, exits |
 | Session lifetime     | 7 days                            | then sign-in again                                                |
 | Assistant rate limit | 20 questions / 10 min per address | protects the AI provider quota                                    |
 | Backups              | per deployment policy             | the SQLite file is a single file — copying it is the backup       |

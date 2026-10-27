@@ -1,0 +1,29 @@
+# systemd-юнит обновления воркбука Yandex DataLens (ANA-74): идемпотентный push датасетов,
+# чартов и дашборда из свежих CSV-экспортов кабинета (scripts/push-datalens.mjs).
+# Запускается по расписанию pca-datalens.timer (каждые 30 минут, сдвиг на :15/:45).
+# Юнит пропускается, если DATALENS_WORKBOOK_ID не задан в /opt/pca/.env.
+# Логи: journalctl -u pca-datalens.service -n 100
+
+[Unit]
+Description=PCA DataLens workbook refresh (push-datalens)
+Wants=network-online.target
+After=network-online.target pca-sync.service
+
+[Service]
+Type=oneshot
+# Без воркбука обновлять нечего — юнит пропускается (Condition*, а не ExecStart).
+ConditionEnvironment=DATALENS_WORKBOOK_ID
+
+User=pca
+Group=pca
+WorkingDirectory=/opt/pca
+
+EnvironmentFile=/opt/pca/.env
+Environment=NODE_ENV=production
+
+ExecStart=/usr/bin/node scripts/push-datalens.mjs --workbook=${DATALENS_WORKBOOK_ID}
+TimeoutStartSec=10min
+
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=250M

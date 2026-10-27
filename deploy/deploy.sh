@@ -82,6 +82,8 @@ push_rsync "$REPO_ROOT/code/shared/src/"         /opt/pca/code/shared/src/
 push_rsync "$REPO_ROOT/code/shared/package.json" /opt/pca/code/shared/package.json
 push_rsync "$REPO_ROOT/code/frontend/dist/"      /opt/pca/frontend/dist/
 push_rsync "$REPO_ROOT/docs/help/"               /opt/pca/docs/help/
+# Скрипты финализации (reconcile, push-datalens для таймера DataLens, i18n-аудит).
+push_rsync "$REPO_ROOT/scripts/"                 /opt/pca/scripts/
 # Workspace-файлы: package.json (версия показывается в UI и /api/health), lock, workspace.
 push_rsync "$REPO_ROOT/package.json"             /opt/pca/package.json
 push_rsync "$REPO_ROOT/pnpm-workspace.yaml"      /opt/pca/pnpm-workspace.yaml
@@ -132,7 +134,12 @@ for unit in /tmp/pca-deploy/pca-*.service /tmp/pca-deploy/pca-*.timer; do
 done
 rm -rf /tmp/pca-deploy
 systemctl daemon-reload
+# restart (не только enable --now): новое расписание таймеров должно применяться без ребута.
 systemctl enable --now pca-sync.timer
+systemctl restart pca-sync.timer
+# ANA-74: юнит пропустится сам, если DATALENS_WORKBOOK_ID не задан (ConditionEnvironment).
+systemctl enable --now pca-datalens.timer 2>/dev/null || true
+systemctl restart pca-datalens.timer 2>/dev/null || true
 systemctl restart pca-api.service'
 
 # --- 5. Health-check с ретраями --------------------------------------------------------------

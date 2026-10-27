@@ -39,7 +39,7 @@ A compact table of channels (direct, search, social, email, messenger, referrals
 
 ## Data status
 
-Until a sync runs, pages show empty states with a hint to run **Admin → Yandex Metrika → Sync**. After the first sync the daily rows land in the local database, and every daily-based page fills up. The sync schedule is every 3 hours (see [How the product works](#)).
+Until a sync runs, pages show empty states with a hint to run **Admin → Yandex Metrika → Sync**. After the first sync the daily rows land in the local database, and every daily-based page fills up. The sync schedule is every 30 minutes (see [How the product works](#)).
 
 ### Morning routine
 
@@ -66,7 +66,7 @@ The whole routine takes two minutes when data is healthy — and the same two mi
 
 Every Overview number reads from the dashboard's own database (`channel_stats`, `b2b_manual`,
 `b2c_payments`) filled by the Metrika sync per day — pages open instantly and do not depend on
-Metrika API availability. Limits: data appears after a sync (scheduled every 3 hours, «today»
+Metrika API availability. Limits: data appears after a sync (scheduled every 30 minutes, «today»
 lives in Live); the bot filter applies at the counter level; demo seeds are flagged and wiped
 by the first real sync. Compare against Metrika with the same period and the «all visitors»
 segment.

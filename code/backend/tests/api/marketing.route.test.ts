@@ -166,6 +166,42 @@ describe('POST /api/marketing/weekly/sync', () => {
   });
 });
 
+describe('POST /api/marketing/weekly/import-sheet (ANA-73 «стата»)', () => {
+  it('imports the real sheet cells with source=import (admin-only by ADMIN_RULES)', async () => {
+    const ctx = buildTestApp();
+    // Ручное значение должно пережить импорт.
+    await ctx.app.inject({
+      method: 'PUT',
+      url: '/api/marketing/weekly',
+      payload: { weekStart: '2026-10-19', metricKey: 'tg_clicks', value: 777 },
+    });
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/marketing/weekly/import-sheet' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.cells).toBe(112);
+    expect(body.written).toBeGreaterThan(100);
+
+    const grid = await ctx.app.inject({ method: 'GET', url: '/api/marketing/weekly' });
+    const cells = grid.json().cells;
+    expect(cells.length).toBeGreaterThanOrEqual(112);
+    const sources = new Set(cells.map((c: { source: string }) => c.source));
+    expect(sources.has('import')).toBe(true);
+    // Ручные ячейки не перетёрты.
+    const manual = cells.find(
+      (c: { weekStart: string; metricKey: string }) =>
+        c.weekStart === '2026-10-19' && c.metricKey === 'tg_clicks',
+    );
+    expect(manual).toMatchObject({ value: 777, source: 'manual' });
+    // Известное значение листа: заходы недели 2026-08-01 = 486.
+    const visits = cells.find(
+      (c: { weekStart: string; metricKey: string }) =>
+        c.weekStart === '2026-08-01' && c.metricKey === 'landings_visits',
+    );
+    expect(visits).toMatchObject({ value: 486, source: 'import' });
+    await ctx.app.close();
+  });
+});
+
 describe('GET /api/marketing/weekly.csv', () => {
   it('exports the sheet layout with a BOM and the week header row', async () => {
     const ctx = buildTestApp();
