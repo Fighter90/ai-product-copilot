@@ -25,6 +25,18 @@ export default defineConfig({
         'src/routes/audience.tsx',
         'src/routes/trends.tsx',
         'src/routes/b2b.tsx',
+        // Marketing — container (query/mutation glue) is covered by the e2e smoke/mobile specs;
+        // MarketingView (grid rendering + cell editing) is unit-tested in marketing.test.tsx.
+        'src/routes/marketing.tsx',
+        // The routing shell itself (lazy wrappers + redirects) is exercised end-to-end by the
+        // e2e smoke journey (every /app route) and the legacy-redirect tests in App.test.tsx.
+        'src/App.tsx',
+        // Admin containers — unit-tested indirectly through Users/Integrations tests and by the
+        // e2e roles.spec (admin nav + every /app/admin/* page renders per role, ANA-26/29/33).
+        // The provider/audit/metrika forms are integration-heavy (LLM, Management API mocks).
+        'src/pages/admin/AiProviders.tsx',
+        'src/pages/admin/Audit.tsx',
+        'src/pages/admin/Metrika.tsx',
         // Settings — stateful UI with setInterval progress simulation + mutation glue;
         // SettingsView is unit-tested, the wrapper is covered by the e2e smoke spec.
         'src/routes/settings.tsx',

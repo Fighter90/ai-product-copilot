@@ -10,6 +10,15 @@ vi.mock('./lib/api', () => ({
     geoDevice: vi.fn().mockResolvedValue([]),
   },
 }));
+vi.mock('./lib/api-v3', () => ({
+  v3: {
+    me: vi.fn().mockResolvedValue({ user: null }),
+    notifications: vi.fn().mockResolvedValue([]),
+    providers: vi.fn().mockResolvedValue([]),
+    helpArticles: vi.fn().mockResolvedValue([]),
+    helpSearch: vi.fn().mockResolvedValue([]),
+  },
+}));
 import { App } from './App';
 import { queryClient } from './lib/query';
 
@@ -24,5 +33,21 @@ describe('<App>', () => {
     );
     // Public header links into the cabinet / login
     expect(screen.getByRole('banner')).toBeInTheDocument();
+  });
+
+  it('guest hitting /app is redirected to /login (RequireAuth)', async () => {
+    window.history.pushState({}, '', '/app');
+    render(<App />);
+    // RequireAuth sends the guest to /login?next=/app — the login form renders there.
+    await screen.findAllByText(/Войти|Sign in/i);
+    expect(window.location.pathname).toBe('/login');
+  });
+
+  it('legacy v2 URL /b2b redirects into the cabinet (/app/b2b → /login for a guest)', async () => {
+    window.history.pushState({}, '', '/b2b');
+    render(<App />);
+    // LegacyRedirect maps /b2b → /app/b2b, then RequireAuth forwards the guest to /login.
+    await screen.findAllByText(/Войти|Sign in/i);
+    expect(window.location.pathname).toBe('/login');
   });
 });
