@@ -37,11 +37,17 @@ jobs:
       - name: Stamp package metadata (name/version/exports → dist)
         working-directory: code/shared
         env:
-          VERSION: ${{ github.ref_name }}
+          REF: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           node -e '
             const fs = require("fs");
-            const version = process.env.VERSION.replace(/^v/, "");
+            // Tag push (v3.1.0) → 3.1.0; manual dispatch from a branch → 0.0.0-dev.<run_number>
+            // (npm rejects non-semver versions, and reruns must not collide with a published one).
+            const ref = process.env.REF ?? "";
+            const version = /^v\d+\.\d+\.\d+/.test(ref)
+              ? ref.replace(/^v/, "")
+              : `0.0.0-dev.${process.env.RUN_NUMBER}`;
             const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
             // GitHub Packages requires the npm scope to equal the repo owner (lowercase).
             p.name = "@fighter90/shared";
