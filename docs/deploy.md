@@ -249,3 +249,45 @@ NODE_EXTRA_CA_CERTS=/opt/pca/russian-trusted-ca.pem \
 - [ ] Настроены пользователи-аналитики (роли в «Администрирование → Пользователи»), аудит включён.
 - [ ] Бэкап `data/productcamp.sqlite` (cron + offsite).
 - [ ] AI-провайдеры настроены в UI (ключи шифруются AES-256-GCM, в `.env` не нужны).
+
+## 10. CI/CD (GitHub Actions)
+
+Релиз полностью автоматизирован — по аналогии с career-ops-ui: гейты → деплой → GitHub Deployment
+(environment `production`, dashboardcamp.ru) → GitHub Release → пакет в GitHub Packages.
+
+### 10.1. CI — `.github/workflows/ci.yml`
+
+Push в `main`/`feat/**` и PR: prettier → eslint → typecheck (3 пакета) → vitest (backend,
+frontend, shared). Конкурентность: устаревший запуск ветки отменяется.
+
+### 10.2. CD — `.github/workflows/deploy.yml`
+
+Триггеры: тег `v*.*.*` и ручной запуск (`workflow_dispatch`, позволяет выкатить любую ветку).
+
+1. Job `gates` — тот же набор гейтов, что и CI.
+2. Job `deploy` (environment `production`, url https://dashboardcamp.ru):
+   создаёт GitHub Deployment (`in_progress`), пишет SSH-ключ из секрета во временный файл,
+   запускает проверенный `deploy/deploy.sh` (сборка фронта на раннере, rsync, рестарт юнитов),
+   ждёт зелёный `/api/health`, закрывает Deployment статусом `success`/`failure`.
+3. Job `release` — `gh release create <tag> --generate-notes`.
+
+Секреты репозитория (Settings → Secrets and variables → Actions):
+
+| Секрет           | Значение                                              |
+| ---------------- | ----------------------------------------------------- |
+| `DEPLOY_SSH_KEY` | приватный SSH-ключ деплой-пользователя (файл целиком) |
+| `DEPLOY_HOST`    | `user@ip`, напр. `root@5.129.219.145`                 |
+
+Выкатить вручную из ветки: `gh workflow run deploy.yml --ref <branch>`.
+
+### 10.3. Пакеты — `.github/workflows/packages.yml`
+
+Тег `v*.*.*` публикует `code/shared` в GitHub Packages npm-реестр как `@fighter90/shared`
+(scope обязан совпадать с владельцем репозитория): `tsc -p tsconfig.build.json` (CJS-эмит в
+`dist/`, т.к. исходники используют extensionless-импорты), smoke-импорт собранного файла,
+подстановка метаданных (version из тега, exports → `dist`), `npm publish --access restricted`.
+Локальная сборка для проверки: `cd code/shared && npx tsc -p tsconfig.build.json`.
+
+Установка в другом проекте: `.npmrc` →
+`@fighter90:registry=https://npm.pkg.github.com` + `//npm.pkg.github.com/:_authToken=<GH PAT with read:packages>`,
+затем `npm i @fighter90/shared@3.x`.

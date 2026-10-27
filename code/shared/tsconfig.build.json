@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    // CJS emit: shared sources use extensionless relative imports (fine for require, illegal for
+    // NodeNext ESM). The published artifact is CommonJS; the workspace keeps using TS sources.
+    "module": "CommonJS",
+    "moduleResolution": "node10",
+    "target": "ES2022",
+    "outDir": "dist",
+    "declaration": true,
+    "sourceMap": true
+  },
+  // Tests and fixtures never ship in the npm package.
+  "exclude": ["src/**/*.test.ts", "src/test-fixtures/**", "src/**/__tests__/**"]
+}

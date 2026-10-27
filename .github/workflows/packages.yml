@@ -1,0 +1,79 @@
+# CI/CD: Continuous Delivery пакета @pca/shared в GitHub Packages npm-реестр
+# (по образцу career-ops-ui → Packages). Публикация по тегу v*.*.*.
+#
+# GitHub Packages требует, чтобы npm-scope совпадал с владельцем репозитория
+# (в нижнем регистре): публикуем как @fighter90/shared, внутреннее имя @pca/shared
+# переопределяется только в метаданных публикуемого артефакта.
+name: Packages (npm → GitHub Packages)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-shared:
+    name: Publish @fighter90/shared
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com
+          scope: '@fighter90'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (tsc → dist)
+        working-directory: code/shared
+        run: npx tsc -p tsconfig.build.json
+
+      - name: Smoke-check the build output
+        working-directory: code/shared
+        run: node -e "import('./dist/index.js').then(m => { if (!Object.keys(m).length) throw new Error('empty exports'); console.log('exports:', Object.keys(m).length) })"
+
+      - name: Stamp package metadata (name/version/exports → dist)
+        working-directory: code/shared
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const version = process.env.VERSION.replace(/^v/, "");
+            const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            // GitHub Packages requires the npm scope to equal the repo owner (lowercase).
+            p.name = "@fighter90/shared";
+            p.version = version;
+            p.private = false;
+            // dist is emitted as CommonJS (extensionless relative imports in sources).
+            p.type = "commonjs";
+            p.description = "Shared types, terms and pure helpers for ProductCamp Analytics Copilot (dashboardcamp.ru)";
+            p.license = "UNLICENSED";
+            p.main = "dist/index.js";
+            p.types = "dist/index.d.ts";
+            p.files = ["dist"];
+            p.exports = {
+              ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
+              "./constants": { types: "./dist/constants.d.ts", default: "./dist/constants.js" },
+            };
+            p.publishConfig = { registry: "https://npm.pkg.github.com" };
+            delete p.scripts.build;
+            delete p.scripts.typecheck;
+            fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
+          '
+
+      - name: Publish to GitHub Packages
+        working-directory: code/shared
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: npm publish --access restricted --no-git-checks
