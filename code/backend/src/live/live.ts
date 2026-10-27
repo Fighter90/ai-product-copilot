@@ -47,6 +47,14 @@ export const PC_FUNNEL: ReadonlyArray<{ key: string; event: string; ru: string; 
   },
 ];
 
+/**
+ * Steps of PC_FUNNEL backed by a pc-goals JS event (the audit reference uses only these).
+ * In the current funnel shape every step is goal-backed, so this is PC_FUNNEL itself; the
+ * visits/payment split and the filtered version live in the upcoming live.ts refactor —
+ * replace this alias with it when that lands.
+ */
+export const PC_FUNNEL_GOAL_STEPS = PC_FUNNEL;
+
 export const TICKET_TYPES = ['standard', 'optimal', 'max'] as const;
 
 export const ROLE_EVENTS: ReadonlyArray<{ key: string; event: string; ru: string; en: string }> = [
