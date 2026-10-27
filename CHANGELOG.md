@@ -31,6 +31,9 @@
   «Проверить подключение».
 - **Скрипты финализации:** `scripts/reconcile-data.mjs` (сверка Метрика ↔ БД ↔ CSV ↔ отчёты),
   `scripts/i18n-audit.mjs`, `scripts/publish-wiki.sh`, merge-gates, e2e-prod-check.
+- **E2E-сьют переведён на кабинет v3** (`openspec/changes/e2e-v3-cabinet`): общая фикстура
+  сессии/провайдеров/live-funnel, спеки smoke/filters/report/b2b/mobile на роутах `/app/*`,
+  mobile-проект в CI ставит webkit; 69 тестов зелёные.
 
 ### Changed
 

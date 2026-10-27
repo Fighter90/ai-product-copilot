@@ -1,7 +1,44 @@
-# progress.md — журнал прогресса релиза v3.1.x (SDD)
+# progress.md — журнал прогресса релиза v3.2.0 (SDD)
 
 Обновляется по ходу сессии. Формула: спеки (Linear + критерии приёмки) → одеяло тестов →
 пакеты задач → исполнители (агенты GLM-5.3-Flash, кодинг-план z.ai) → гейты → ревью GLM.
+
+## Статус: Phase D (деплой main) — в полёте; далее S/V/K/F
+
+## Гейты (заморожены на fda52bf, vitest 4.1.12 + vite 7.3.7)
+- tsc backend/frontend/shared ✅
+- vitest: backend **802/802**, frontend **555+2 skip**, shared **144/144** ✅
+- vite build ✅ · eslint 0/0 ✅ · prettier ✅ · pnpm audit **0 уязвимостей** ✅
+- i18n: dict 1073/1073, хардкод-скан 0 ✅ · merge-gates ✅
+
+## Волны агентов (итог)
+- Волна 1+2 (по 9 скоупов) + соло-прогоны — ВСЕ ЗАВЕРШЕНЫ с отчётами:
+  ANA-37/24/38 ✅ (канбан+ICE+Decision Log+анти-галлюцинация), ANA-42/55/44 ✅ (локаль
+  отчёта, 8 датасетов DataLens, DataGrid), ANA-50/35/33/39 ✅ (воронка визит→оплата,
+  forecast pace, провайдер AI end-to-end, TOC+автор снапшотов), ANA-17/20/21/16/49 ✅
+  (сегменты, DISTINCT-каналы, visit-weighted bounce, сравнение периодов), ANA-18/22/15/19 ✅
+  (миграции 015–017: демо-очистка/sync_runs/b2c_payments, тест-паттерны, /tilda/*),
+  ANA-47/45/34/43 ✅ (i-подсказки, тур, справка, goal-roles, build-бейдж), ANA-25/26/57/46/40/30 ✅
+  (openspec, coverage 75%, wiki+диаграммы, RAG-тест, axe), ANA-52/51/14 ✅ (CSP-сниппет,
+  SSH-харденинг применён на сервере, Docker работает), ANA-70 ✅ (EN-аудит 0 хардкода),
+  ANA-29 ✅ (user_counters), ANA-67 ✅ (dev-deps: vitest 4 + vite 7, audit 0).
+- Инцидент: 5h-лимит кодинг-плана (сброс 19:37) — последние скоупы добраны инлайн.
+
+## CI/CD — работает
+- deploy.yml: тег v*.*.* / dispatch → гейты → deploy.sh → health → GitHub Deployment
+  (production) → Release. Починено по пути: Actions включены, -F для gh api,
+  StrictHostKeyChecking=accept-new, IFS в push_rsync, выделенный deploy-ключ.
+- packages.yml: @fighter90/shared опубликован ✅.
+- Прод: build ca68851 (hotfix: lastsign/robot-фильтр) — только метрика-фиксы; полный
+  релиз идёт деплоем fda52bf.
+
+## Next (порядок)
+1. Дождаться деплой fda52bf → health build == fda52bf, CSP на проде.
+2. S: backfill-365.sh (паузинг 250 мс) → DataLens push --rebuild-dataset → reconcile → VERDICT.
+3. V: e2e-prod-check (+integrations, --ai) + browser-regression RU/EN.
+4. K: Linear — Done с честными комментариями (см. таблицу статусов), долг: 2 flaky-теста
+  Hypotheses (skip → доводка), ANA-33 остаток — нет (закрыто волной 2).
+5. F: финальный вердикт юзеру.
 
 ## Состояние пула агентов (макс. параллелизм без rate-клифа: ~9)
 
