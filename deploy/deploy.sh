@@ -31,7 +31,7 @@ die()  { printf '\033[1;31m[deploy] ОШИБКА:\033[0m %s\n' "$*" >&2; exit 1;
 
 # --- Обёртки ssh/rsync: поддерживают и ключ, и пароль (sshpass) -------------------------
 # BatchMode=yes только при входе по ключу: с паролем он бы запретил ввод пароля.
-SSH_OPTS=(-p "$SSH_PORT")
+SSH_OPTS=(-p "$SSH_PORT" -o StrictHostKeyChecking=accept-new)
 [[ -n "$SSH_KEY" ]] && SSH_OPTS+=(-i "$SSH_KEY")
 [[ -z "$SSH_PASS" ]] && SSH_OPTS+=(-o BatchMode=yes)
 
@@ -86,6 +86,9 @@ push_rsync "$REPO_ROOT/package.json"             /opt/pca/package.json
 push_rsync "$REPO_ROOT/pnpm-workspace.yaml"      /opt/pca/pnpm-workspace.yaml
 push_rsync "$REPO_ROOT/pnpm-lock.yaml"           /opt/pca/pnpm-lock.yaml
 # Конфигурация деплоя: nginx-сайт и systemd-юниты (свежие версии при каждом деплое).
+# Сниппет security-заголовков обязателен ДО установки сайта: nginx-pca.conf делает
+# include /etc/nginx/snippets/pca-security-headers.conf (ANA-52).
+push_rsync "$REPO_ROOT/deploy/nginx-security-headers.conf" /tmp/pca-sec-headers.conf
 push_rsync "$REPO_ROOT/deploy/nginx-pca.conf"    /tmp/pca-nginx-pca.conf
 push_rsync "$REPO_ROOT/deploy/"                  /tmp/pca-deploy/
 # ВАЖНО: /opt/pca/data (SQLite) и /opt/pca/.env никогда не rsync-аются.
@@ -110,6 +113,13 @@ fi'
 # --- 4. nginx + systemd ---------------------------------------------------------------------
 log "Шаг 4/5: nginx-конфиг и перезапуск сервисов..."
 run_remote 'set -Eeuo pipefail
+# 1) Сниппет security-заголовков (ANA-52): нужен до nginx -t, на него ссылается сайт.
+if [[ -f /tmp/pca-sec-headers.conf ]]; then
+  mkdir -p /etc/nginx/snippets
+  install -m 644 /tmp/pca-sec-headers.conf /etc/nginx/snippets/pca-security-headers.conf
+  rm -f /tmp/pca-sec-headers.conf
+fi
+# 2) Сайт и systemd-юниты.
 if [[ -f /tmp/pca-nginx-pca.conf ]]; then
   install -m 644 /tmp/pca-nginx-pca.conf /etc/nginx/sites-available/pca.conf
   ln -sfn /etc/nginx/sites-available/pca.conf /etc/nginx/sites-enabled/pca.conf

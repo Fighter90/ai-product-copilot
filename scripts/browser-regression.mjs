@@ -53,7 +53,7 @@ const note = (page, status, detail = '') => {
 
 async function newSession(browser, { locale, email, password }) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  await ctx.addInitScript((loc) => localStorage.setItem('pca.locale', loc), locale);
+  await ctx.addInitScript((loc) => globalThis.localStorage.setItem('pca.locale', loc), locale);
   const page = await ctx.newPage();
   const consoleErrors = [];
   page.on('console', (m) => {
@@ -93,7 +93,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 // --- Публичная часть ---
 {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  await ctx.addInitScript((loc) => localStorage.setItem('pca.locale', loc), LOCALE);
+  await ctx.addInitScript((loc) => globalThis.localStorage.setItem('pca.locale', loc), LOCALE);
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', (e) => errs.push(String(e).slice(0, 200)));
@@ -122,7 +122,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
     await checkPage(page, path, label, join(OUT, `analyst${path.replaceAll('/', '_')}.png`));
   }
   // RBAC: админ-страницы аналитику → 403-панель или редирект
-  const r = await page.goto(`${BASE}/app/admin`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${BASE}/app/admin`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1200);
   const url = page.url();
   const denied =
