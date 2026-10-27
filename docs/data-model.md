@@ -1,10 +1,12 @@
 # Модель данных (SQLite)
 
-> Источник истины — миграции `code/backend/src/db/migrations/001..010`. Доступ только через
+> Источник истины — миграции `code/backend/src/db/migrations/001..017`. Доступ только через
 > репозитории (`code/backend/src/db/repositories/`). История копится **по дням** (см. ADR-007).
 > БД: `data/productcamp.sqlite` (gitignored), `better-sqlite3`, WAL + `PRAGMA foreign_keys=ON`.
 > Миграция `010_auth_settings_ai.sql` (v3.0.0) добавляет кабинет: пользователи, сессии, аудит,
-> runtime-настройки, AI-провайдеры, события DataLens и уведомления.
+> runtime-настройки, AI-провайдеры, события DataLens и уведомления; `013` — доступ аналитика к
+> счётчикам (`user_counters`), `016` — журнал синков (`sync_runs`), `017` — B2C-оплаты
+> (`b2c_payments`, «заявка ≠ оплата»).
 
 ## Обзор таблиц
 
@@ -29,12 +31,180 @@
 | `ai_usage`         | журнал вызовов AI (v3)                             | PK `id`                                                    |
 | `datalens_events`  | события webhook DataLens (v3)                      | PK `id`; хвост 500 записей                                 |
 | `notifications`    | уведомления (колокольчик в кабинете, v3)           | PK `id`; `audience` ∈ admin/all; `read_by` JSON            |
+| `user_counters`    | доступ аналитика к счётчикам Метрики (013, ANA-29) | PK `(user_id, counter_id)`; FK → `users` CASCADE           |
+| `sync_runs`        | журнал запусков синка (016, ANA-15)                | PK `id`; `status` ∈ running/ok/partial/failed              |
+| `b2c_payments`     | оплаченные B2C-билеты по дням (017, ANA-19)        | PK `date`; `source` ∈ manual/csv; «заявка ≠ оплата»        |
 | `_migrations`      | трекинг применённых миграций                       | PK `name`                                                  |
 
 > **Где живут AI-гипотезы и AI Decision Log (с v2.7.0).** AI-сгенерированные гипотезы и решения
 > хранятся НЕ в таблицах `hypotheses`/`decisions`, а внутри JSON-payload снапшота
 > (`report_snapshots.payload.generatedHypotheses` / `.generatedDecisions`). Таблицы `hypotheses` и
 > `decisions` остаются для ручной методологии и обратной совместимости API.
+
+## ER-диаграмма
+
+Схема по миграциям 001–017 (показаны ключевые поля; «метрические» таблицы связаны не
+внешними ключами, а датой и идемпотентностью `raw_responses`):
+
+```mermaid
+erDiagram
+    users ||--o{ sessions : "user_id (CASCADE)"
+    users ||--o{ audit_log : "user_id"
+    users ||--o{ user_counters : "user_id (CASCADE)"
+    hypotheses ||--o{ decisions : "hypothesis_id"
+    hypotheses ||--o{ hypotheses : "parent_id"
+    decisions ||--o{ decisions : "previous_decision_id"
+
+    goals {
+        INTEGER id PK
+        TEXT name
+        TEXT type "purchase|application|…"
+        BOOLEAN is_archived
+    }
+    raw_responses {
+        INTEGER id PK
+        TEXT endpoint
+        TEXT query_hash UK "UNIQUE(query_hash, date_from, date_to)"
+        TEXT date_from
+        TEXT date_to
+        TEXT payload_json
+        TEXT fetched_at
+    }
+    channel_stats {
+        TEXT date PK "часть составного PK"
+        TEXT channel PK
+        INTEGER visits
+        REAL conversion_rate
+        INTEGER goal_reaches
+    }
+    utm_stats {
+        TEXT date PK
+        TEXT utm_source PK
+        TEXT utm_medium PK
+        TEXT utm_campaign PK
+        INTEGER visits
+    }
+    geo_device_stats {
+        TEXT date PK
+        TEXT country PK
+        TEXT device PK
+        INTEGER visits
+    }
+    page_stats {
+        TEXT date PK
+        TEXT page PK
+        INTEGER visits
+    }
+    exit_page_stats {
+        TEXT date PK
+        TEXT page PK
+        INTEGER visits
+    }
+    hypotheses {
+        INTEGER id PK
+        TEXT title
+        TEXT status "draft|in_progress|green|yellow|red|expired"
+        INTEGER impact
+        INTEGER confidence
+        INTEGER ease
+        INTEGER ice_score "GENERATED: impact*confidence*ease"
+        INTEGER parent_id FK
+        TEXT source "manual|ai (014)"
+    }
+    decisions {
+        INTEGER id PK
+        TEXT number UK "DL-NNN"
+        INTEGER hypothesis_id FK
+        TEXT outcome "green|yellow|red"
+        INTEGER previous_decision_id FK
+    }
+    b2b_manual {
+        INTEGER id PK
+        TEXT company
+        INTEGER tickets
+        TEXT stage "lead|negotiation|invoiced|paid"
+        TEXT date_added
+    }
+    b2c_payments {
+        TEXT date PK
+        INTEGER payments
+        TEXT source "manual|csv (017)"
+    }
+    report_snapshots {
+        TEXT id PK "ulid"
+        TEXT generated_at
+        TEXT date_from
+        TEXT date_to
+        TEXT payload_json "включая AI-гипотезы"
+    }
+    sync_runs {
+        INTEGER id PK
+        TEXT status "running|ok|partial|failed"
+        TEXT date_from
+        TEXT date_to
+        TEXT started_at
+        TEXT finished_at
+    }
+    users {
+        INTEGER id PK
+        TEXT email UK "COLLATE NOCASE"
+        TEXT password_hash
+        TEXT role "admin|analyst"
+        TEXT locale "ru|en"
+        BOOLEAN is_active
+    }
+    sessions {
+        TEXT token_hash PK "sha256 токена"
+        INTEGER user_id FK
+        TEXT expires_at
+    }
+    audit_log {
+        INTEGER id PK
+        INTEGER user_id FK
+        TEXT action
+        TEXT target
+        TEXT at "индекс"
+    }
+    user_counters {
+        INTEGER user_id PK "часть PK, FK CASCADE"
+        INTEGER counter_id PK "часть PK"
+    }
+    app_settings {
+        TEXT key PK
+        TEXT value "секреты AES-256-GCM"
+        TEXT updated_at
+        TEXT updated_by
+    }
+    ai_providers {
+        TEXT id PK "openrouter|anthropic|yandexgpt|gigachat"
+        BOOLEAN enabled
+        INTEGER priority
+        TEXT model
+        TEXT secret_enc
+    }
+    ai_usage {
+        INTEGER id PK
+        TEXT provider
+        TEXT feature "report|assistant|test"
+        INTEGER input_tokens "012"
+        INTEGER output_tokens "012"
+        TEXT created_at
+    }
+    datalens_events {
+        INTEGER id PK
+        TEXT kind "confirmation|alert"
+        TEXT payload_json
+        TEXT at
+    }
+    notifications {
+        INTEGER id PK
+        TEXT audience "admin|all"
+        TEXT title
+        TEXT body
+        TEXT read_by "JSON"
+        TEXT at
+    }
+```
 
 ---
 
@@ -290,6 +460,16 @@ Metrika-клиент без перезапуска (`onSettingsChange`).
 ---
 
 ## Связи и инварианты
+
+### ER-схема
+
+Полная ER-диаграмма (все таблицы миграций 001–017 с ключевыми полями и связями) —
+в разделе [ER-диаграмма](#er-диаграмма) выше; здесь — связи и инварианты.
+
+Таблицы метрик и `b2b_manual` / `b2c_payments` связей FK не имеют — соединяются по `date`
+на уровне запросов. `_migrations` (PK `name`) — служебный трекинг применённых миграций.
+
+### Инварианты
 
 - `decisions.hypothesis_id` → `hypotheses.id` (FK, `foreign_keys=ON`).
 - `sessions.user_id` → `users.id` (FK ON DELETE CASCADE): удаление пользователя чистит его сессии.

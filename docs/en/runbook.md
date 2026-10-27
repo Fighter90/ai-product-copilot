@@ -83,3 +83,21 @@ pnpm build       # build (frontend artifact → code/frontend/dist)
 ## 7. Stopping
 
 `Ctrl+C` in the terminal running `run.sh` stops backend and frontend.
+
+## 8. Production server (dashboardcamp.ru)
+
+The app runs on a VPS: systemd (`pca-api` + `pca-sync`/`pca-backup`/`pca-monitor`
+timers), nginx + HTTPS (Let's Encrypt). Full guide —
+[`deploy/DEPLOY.md`](../../deploy/DEPLOY.md) (in Russian); key facts:
+
+- **SSH-key access only** (`~/.ssh/pca_deploy`): password login disabled, root is
+  key-only, ufw (22/80/443), fail2ban, unattended security upgrades (ANA-51).
+- **Security headers & CSP** — a single snippet, `deploy/nginx-security-headers.conf`
+  (ANA-52). If the inline `<script>` in `index.html` changes, recompute the CSP hash
+  (section 7.1 of `deploy/DEPLOY.md`), otherwise browsers will block the script.
+- **Redeploy** — `./deploy/deploy.sh` from the repo root: frontend is built locally,
+  rsync to the server, unit restarts, health-check. Downtime is just the `pca-api`
+  restart window (~1–2 s); in-flight requests are drained via graceful shutdown
+  (SIGTERM → `app.close()`).
+- **Docker alternative** (`Dockerfile` + `docker-compose.yml`) — section 9 of
+  `deploy/DEPLOY.md` and section 11 of `docs/deploy.md`; production itself runs on systemd.

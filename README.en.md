@@ -61,7 +61,9 @@ the report.
   (saw tickets → CTA → registration → cart → order) — queried directly from the Reporting API.
 - **Daily analytics** — channels, UTM, geo+devices, entry/exit pages, the "visit → application →
   payment" funnel, the 300 KPI with a "What if" simulator, 11 Explore presets.
-- **Reports** — an immutable snapshot → GOST-formatted DOCX/PDF with charts; AI analysis,
+- **Reports** — an immutable snapshot → GOST-formatted DOCX/PDF with charts; GOST-2 front matter
+  (a real TOC field, a list of figures, designations & terms, introduction, executive summary),
+  bordered tables, «Рисунок N» captions, a human-readable period on the cover; AI analysis,
   AI-generated hypotheses and an AI Decision Log.
 - **AI providers (4)** — OpenRouter, Anthropic, YandexGPT, GigaChat; a priority chain with
   fallback; keys encrypted with AES-256-GCM; a "Test connection" button; 30-day usage statistics.
@@ -208,6 +210,10 @@ Component, data-flow and authentication diagrams (Mermaid):
 [docs/en/data-model.md](docs/en/data-model.md).
 
 ## Documentation
+
+> 📖 **GitHub Wiki** ([ai-product-copilot/wiki](https://github.com/Fighter90/ai-product-copilot/wiki)):
+> Quickstart · Roles · AI providers · Metrika & goals · DataLens · Deploy · FAQ — EN + RU.
+> Sources live in [docs/wiki/](docs/wiki), published via `scripts/publish-wiki.sh`.
 
 | Document                                           | Audience               | Contents                                                      |
 | -------------------------------------------------- | ---------------------- | ------------------------------------------------------------- |

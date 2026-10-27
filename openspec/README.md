@@ -34,6 +34,12 @@
 Исторические спеки старого формата: `docs/specs/` (ссылки на них — см.
 [`docs/specs/README.md`](../docs/specs/README.md)).
 
+### Валидация
+
+`npx @fission-ai/openspec validate --all --strict` — структурная проверка спек и изменений
+(обязательны `## Purpose` / `## Requirements`, у каждого requirement — scenario WHEN/THEN).
+Шаг включён в CI (`.github/workflows/ci.yml`), локально запускайте перед PR.
+
 ## Жизненный цикл изменения
 
 `proposed` (proposal) → `approved` (+ tasks.md) → `implemented` (код влит) → перенесено в
@@ -46,11 +52,22 @@ openspec/
 ├── README.md            # этот файл
 ├── AGENTS.md            # краткие правила для AI-агентов
 ├── changes/             # активные и архивные изменения
-│   └── _template/       # шаблон: proposal.md + tasks.md
+│   ├── _template/       # шаблон: proposal.md + tasks.md + delta-спека (specs/capability/)
+│   ├── archive/         # завершённые изменения (после переноса в specs/)
+│   └── report-gost-v2/  # активное: отчёт по эталону заказчика (ГОСТ-2)
 └── specs/               # вечные спеки возможностей (текущее состояние системы)
-    ├── dual-goal-kpi/   # (мигрировано из docs/specs/001)
-    ├── product-overhaul/ # (мигрировано из docs/specs/002)
-    └── report-gost/     # (мигрировано из docs/specs/014)
+    ├── metrika-sync/    # синк Яндекс.Метрики → SQLite (по дням, идемпотентно)
+    ├── dashboard/       # кабинет: обзор, Live, аналитика, фильтры, темы
+    ├── reports/         # снапшот → DOCX/PDF по ГОСТ, AI-анализ
+    ├── hypotheses/      # гипотезы: ICE, статусы, Decision Log
+    ├── b2b/             # B2B-сделки (ручной ввод), сводка в снапшоте
+    ├── settings/        # app_settings, шифрование секретов, маскировка
+    ├── datalens/        # CSV-датасеты, экспорт, вебхук, уведомления
+    ├── llm/             # AI-провайдеры: цепочка, фолбэк, ai_usage
+    ├── auth/            # сессии, роли RBAC, аудит, пароли
+    ├── dual-goal-kpi/   # (архив: superseded, из docs/specs/001)
+    ├── product-overhaul/ # (архив: реализовано по фазам, из docs/specs/002)
+    └── report-gost/     # (архивная версия v1 + дельта report-gost-v2)
 ```
 
 ## Когда это обязательно

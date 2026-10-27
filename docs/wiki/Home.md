@@ -9,7 +9,17 @@
 Работает без облака: Метрика → SQLite → дашборд → DOCX/PDF. Текущая версия — **v3.1.0**
 ([CHANGELOG](../../CHANGELOG.md)).
 
-Страницы вики: [FAQ — частые вопросы](FAQ.md) · [Roadmap — статус и планы](Roadmap.md)
+Страницы вики: [Быстрый старт](Quickstart.md) · [Роли и права](Roles.md) ·
+[AI-провайдеры](AI-Providers.md) · [Метрика и цели](Metrika-and-Goals.md) ·
+[DataLens](DataLens.md) · [Деплой](Deploy.md) · [FAQ — частые вопросы](FAQ.md) ·
+[Roadmap — статус и планы](Roadmap.md)
+
+EN: [Home](en/Home) · [Quickstart](en/Quickstart) · [Roles](en/Roles) · [AI providers](en/AI-Providers) ·
+[Metrika and goals](en/Metrika-and-Goals) · [DataLens](en/DataLens) · [Deploy](en/Deploy) · [FAQ](en/FAQ)
+
+Исходники вики живут в репозитории (`docs/wiki/`) и публикуются в GitHub Wiki скриптом
+[`scripts/publish-wiki.sh`](https://github.com/Fighter90/ai-product-copilot/blob/main/scripts/publish-wiki.sh)
+(запускается вручную администратором).
 
 ## Основная документация
 

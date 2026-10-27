@@ -102,3 +102,39 @@ pnpm build       # сборка (артефакт frontend → code/frontend/dis
 ## 7. Остановка
 
 `Ctrl+C` в терминале с `run.sh` — завершает backend и frontend.
+
+## 8. Прод-сервер (dashboardcamp.ru)
+
+Приложение живёт на VPS: systemd (`pca-api` + таймеры `pca-sync`/`pca-backup`/
+`pca-monitor`), nginx + HTTPS (Let's Encrypt). Полная инструкция —
+[`deploy/DEPLOY.md`](../deploy/DEPLOY.md); главное:
+
+- **Доступ только по SSH-ключу** (`~/.ssh/pca_deploy`): вход по паролю отключён,
+  root — только по ключу, ufw (22/80/443), fail2ban, автообновления безопасности
+  (ANA-51; применение и чеки — раздел 8 в `deploy/DEPLOY.md`).
+- **Security-заголовки и CSP** — один сниппет `deploy/nginx-security-headers.conf`
+  (ANA-52). Если менялся инлайновый `<script>` в `index.html` — пересчитать CSP-хеш
+  (раздел 7.1 в `deploy/DEPLOY.md`), иначе браузер заблокирует скрипт.
+- **Передеплой** — `./deploy/deploy.sh` из корня репо: фронт собирается локально,
+  rsync на сервер, рестарт юнитов, health-check. Простой — только окно рестарта
+  `pca-api` (~1–2 с); in-flight запросы дожидаются ответа (graceful shutdown:
+  SIGTERM → `app.close()`).
+- **Docker-альтернатива** (`Dockerfile` + `docker-compose.yml`) — раздел 9
+  в `deploy/DEPLOY.md` и раздел 11 в `docs/deploy.md`; прод работает на systemd.
+
+## 8. Прод-сервер (dashboardcamp.ru)
+
+Приложение работает на VPS: systemd (`pca-api` + таймеры `pca-sync`/`pca-backup`/
+`pca-monitor`), nginx + HTTPS (Let's Encrypt). Полная инструкция —
+[`deploy/DEPLOY.md`](../deploy/DEPLOY.md); минимум, который стоит знать:
+
+- **Доступ — только по SSH-ключу** (`~/.ssh/pca_deploy`): вход по паролю отключён,
+  root — только по ключу, ufw (22/80/443), fail2ban, автообновления безопасности (ANA-51).
+- **Security-заголовки и CSP** — один сниппет `deploy/nginx-security-headers.conf`
+  (ANA-52). После изменения инлайнового `<script>` в `index.html` пересчитайте
+  CSP-хеш (раздел 8.3 `deploy/DEPLOY.md`), иначе браузер заблокирует скрипт.
+- **Повторный деплой** — `./deploy/deploy.sh` из корня репо: сборка фронта локально,
+  rsync, рестарт юнитов, health-check. Простой — только окно рестарта `pca-api`
+  (~1–2 с), in-flight запросы дослуживаются через graceful shutdown (SIGTERM → `app.close()`).
+- **Docker-вариант** (`Dockerfile` + `docker-compose.yml`) — раздел 9
+  `deploy/DEPLOY.md` и раздел 11 `docs/deploy.md`; прод при этом работает на systemd.

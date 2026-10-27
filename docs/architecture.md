@@ -117,6 +117,64 @@ sequenceDiagram
   API-->>U: сводка синхронизации
 ```
 
+### Отчёт (sequence)
+
+```mermaid
+sequenceDiagram
+  participant U as Аналитик (кабинет)
+  participant API as Fastify /api/report
+  participant SB as SnapshotBuilder
+  participant DB as SQLite
+  participant R as DOCX/PDF render
+  participant LLM as Цепочка AI (опц.)
+
+  U->>API: POST /report/snapshot {period}
+  API->>SB: build(period)
+  SB->>DB: метрики + b2b_manual + цели
+  SB-->>API: immutable snapshot (payload JSON)
+  API->>DB: INSERT report_snapshots (ulid)
+  opt AI-анализ (кнопка «AI-инсайты/гипотезы»)
+    U->>API: POST /report/insights | /report/hypotheses {snapshotId}
+    API->>LLM: snapshot-факты через chainAsAnthropicFetch
+    LLM-->>API: текст анализа (в payload снапшота, не в render)
+  end
+  U->>API: POST /report/generate {snapshotId, format}
+  API->>DB: чтение snapshot (тот же ulid)
+  API->>R: render из snapshot — без LLM и Date.now()
+  R-->>API: DOCX (docx) / PDF (Puppeteer + server-side графики)
+  U->>API: GET /report/download/:snapshotId/:format
+  API-->>U: файл; один snapshotId → байт-идентичный результат
+```
+
+### AI-фолбэк (sequence)
+
+```mermaid
+sequenceDiagram
+  participant C as Потребитель (отчёт / help/ask)
+  participant S as LlmService.complete
+  participant P1 as Провайдер #1 (min priority)
+  participant P2 as Провайдер #2
+  participant DB as SQLite ai_usage
+
+  C->>S: prompt {purpose}
+  loop по включённым провайдерам в порядке priority
+    S->>P1: запрос (ключ из ai_providers.secret_enc)
+    alt успех
+      P1-->>S: текст
+      S->>DB: INSERT ai_usage (ok=1, объём, мс)
+      S-->>C: ответ (provider, model)
+    else ошибка / таймаут / нет ключа
+      P1--xS: ошибка
+      S->>DB: INSERT ai_usage (ok=0, error)
+      Note over S,P2: следующий провайдер цепочки
+      S->>P2: запрос
+    end
+  end
+  alt все провайдеры недоступны
+    S--xC: ошибка AI_UNAVAILABLE (вызывающий код деградирует сам)
+  end
+```
+
 ## Аутентификация и RBAC
 
 - Пароли — **scrypt** (per-user salt, `security/crypto.ts`); в БД только `password_hash`.
@@ -204,6 +262,30 @@ sequenceDiagram
 - Потребители AI: отчёт (AI-анализ, AI-гипотезы, AI Decision Log) и RAG-ассистент по справке
   (`POST /api/help/ask` — ответ только из чанков статей `docs/help/<lang>`).
 
+### RAG-ассистент (sequence)
+
+```mermaid
+sequenceDiagram
+  participant U as Пользователь/гость
+  participant API as POST /api/help/ask
+  participant IDX as Bm25Index (чанки статей)
+  participant L as Цепочка LLM
+  participant DB as SQLite
+
+  U->>API: {question, lang}
+  API->>API: rate-limit (гость 5 / пользователь 20 за 10 мин)
+  API->>IDX: search(question, top-k)
+  IDX-->>API: релевантные чанки статей docs/help
+  alt провайдер настроен
+    API->>L: чанки + инструкция «отвечай только по фрагментам»
+    L-->>API: ответ (язык = язык интерфейса)
+  else провайдеров нет — режим «только поиск»
+    Note over API: ответ не генерируется
+  end
+  API-->>U: ответ + ссылки на статьи-источники (или найденные фрагменты)
+  API->>DB: ai_usage (purpose=help.ask)
+```
+
 ## Публичные интеграции
 
 Часть API доступна без сессии; защита — лимиты на двух уровнях: в приложении и в nginx.
@@ -219,6 +301,28 @@ sequenceDiagram
 
 **Публичные эндпоинты:** `/api/health`, `/api/auth/login|logout`, `/api/help/*`
 (включая `POST /api/help/ask` — ассистент отвечает и гостю), `/api/integrations/datalens/webhook/*`.
+
+### DataLens webhook (sequence)
+
+```mermaid
+sequenceDiagram
+  participant DL as Яндекс DataLens
+  participant N as nginx (rate-limit)
+  participant API as POST /api/integrations/datalens/webhook/:token
+  participant DB as SQLite
+
+  DL->>N: webhook (код подтверждения / алерт)
+  N->>API: прокси (публичный путь, токен в URL)
+  API->>API: сравнение token с DATALENS_WEBHOOK_TOKEN
+  alt токен неверный
+    API-->>DL: 403
+  else токен совпал
+    API->>DB: INSERT datalens_events (kind, code, payload)
+    API->>DB: INSERT notifications (audience=admin)
+    API-->>DL: 200 OK
+    Note over DB: хвост 500 событий; колокольчик кабинета
+  end
+```
 
 **Rate-limits** (`deploy/nginx-ratelimit.conf` → `/etc/nginx/conf.d/pca-ratelimit.conf`;
 превышение — 503, дефолт `limit_req_status`):
@@ -257,3 +361,34 @@ sequenceDiagram
 - Live-страницы не кэшируются в SQLite — реальное время ценой прямого запроса к Метрике.
 - Версия в футере кабинета — `__APP_VERSION__` из корневого `package.json` + короткий git-sha
   (`vite.config.ts`), дублируется в `/api/health`.
+
+## Деплой
+
+Схема сервера (Ubuntu; детали и шаги — `docs/deploy.md`, скрипты — `deploy/`):
+
+```mermaid
+flowchart TD
+  subgraph Internet
+    U[Браузер пользователя] -- HTTPS :443 --> NX
+    DL[Яндекс DataLens] -- "webhook POST" --> NX
+  end
+
+  subgraph Server [Ubuntu + nginx + systemd]
+    NX[nginx<br/>TLS certbot · security-headers<br/>rate-limit: login 10 r/m, api 120 r/m]
+    NX -- "static /" --> DIST[dist/ фронтенда<br/>React build]
+    NX -- "proxy /api → 127.0.0.1:4000" --> SVC
+    SVC["systemd productcamp.service<br/>node (Fastify :4000)"]
+    DB[("data/productcamp.sqlite<br/>WAL · бэкапы runbook")]
+    ENV[(".env сервера:<br/>APP_SECRET, ADMIN_*,<br/>COOKIE_SECURE=1")]
+  end
+
+  YM[Яндекс.Метрика API] -. OAuth-токен из app_settings .-> SVC
+  SVC --> DB
+  ENV --> SVC
+  REL["deploy/deploy.sh<br/>(git pull → build → restart)"] -.-> SVC & DIST
+```
+
+Ключевое: TLS терминируется в nginx (`certbot --nginx`), `COOKIE_SECURE=1` — сессии только по
+HTTPS; API слушает только `127.0.0.1`; секреты (`APP_SECRET`) обязателен — без него шифрование
+`ai_providers.secret_enc`/`app_settings` не поднимается; `.env` не в git (значения —
+`docs/deploy.md`), бэкап SQLite — по runbook.

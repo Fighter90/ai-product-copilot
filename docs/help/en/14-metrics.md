@@ -79,6 +79,21 @@ _Bounce rate and duration sit next to visits per channel — read them together,
 
 **Common misreading**: comparing reaches of two different goals directly; a depth goal will always outcount a purchase goal. Compare conversion instead.
 
+## Application ≠ order ≠ payment
+
+- **Definition**: Metrika only ever sees **applications** (form goals) and **orders** — the purchase goal fires when a cart order is created (contacts left, sent to checkout). A **payment** is confirmed money, which Metrika does not see.
+- **How "Paid" is computed**: Paid = B2C payments (entered per day manually or imported from CSV by an admin/analyst on the "Funnel & B2B" page) + tickets of B2B deals in the "paid" stage. The Overview KPI target and forecast count exactly these; purchase-goal reaches are shown separately as "Orders".
+- **Common misreading**: treating orders as payments — in Logs API data the purchase goal fires together with `reg_step1`, i.e. an order creation, not money.
+
+## Test traffic
+
+- **Definition**: robots, visits with the `env=test` parameter (the pc-goals script), the `file://` sandbox, plus test pages and UTMs from the admin list (`TEST_TRAFFIC_PATTERNS` setting). Excluded from the sync by default; robots are cut off by the counter setting.
+- **Where to see it**: the "Show test traffic" toggle in the filters (admins only). Tilda virtual pageviews (`/tilda/popup/…`, `/tilda/click/…`) are events, not pages: they are grouped into a single `/tilda/*` row and never count as entry pages.
+
+## Demo data
+
+- **Definition**: a made-up dataset from `pnpm seed` (the last 30 days) for exploring the cabinet. Every demo row is flagged and is removed automatically by the first successful Metrika sync; while any remain, a "Demo data" banner is shown.
+
 ## UTM coverage
 
 - **Definition**: the share of visits that arrived with UTM tags (`utm_source` present).
@@ -96,16 +111,18 @@ _Bounce rate and duration sit next to visits per channel — read them together,
 
 ## Quick reference
 
-| Metric       | Denominator | Healthy direction | Watch out for                    |
-| ------------ | ----------- | ----------------- | -------------------------------- |
-| Visits       | —           | up                | bot spikes                       |
-| Visitors     | period      | up                | summing daily values             |
-| Bounce rate  | visits      | down              | unweighted averaging             |
-| Page depth   | visit       | moderate          | treating high as good            |
-| Duration     | visit       | moderate          | cross-channel comparison         |
-| Conversion   | visits      | up                | small samples, multi-reach goals |
-| Goal reaches | —           | up                | comparing different goal types   |
-| UTM coverage | visits      | context           | expecting 100%                   |
+| Metric       | Denominator            | Healthy direction | Watch out for                    |
+| ------------ | ---------------------- | ----------------- | -------------------------------- |
+| Visits       | —                      | up                | bot spikes                       |
+| Visitors     | period                 | up                | summing daily values             |
+| Bounce rate  | visits                 | down              | unweighted averaging             |
+| Page depth   | visit                  | moderate          | treating high as good            |
+| Duration     | visit                  | moderate          | cross-channel comparison         |
+| Conversion   | visits                 | up                | small samples, multi-reach goals |
+| Goal reaches | —                      | up                | comparing different goal types   |
+| Orders       | —                      | context           | an order is not a payment        |
+| Paid         | B2C (manual/CSV) + B2B | volume            | Metrika never sees payments      |
+| UTM coverage | visits                 | context           | expecting 100%                   |
 
 ## Use cases
 

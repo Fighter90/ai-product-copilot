@@ -291,3 +291,91 @@ frontend, shared). Конкурентность: устаревший запус
 Установка в другом проекте: `.npmrc` →
 `@fighter90:registry=https://npm.pkg.github.com` + `//npm.pkg.github.com/:_authToken=<GH PAT with read:packages>`,
 затем `npm i @fighter90/shared@3.x`.
+
+## 11. Docker (ANA-14)
+
+Альтернатива systemd-схеме выше — один контейнер с бэкендом (Fastify через `tsx`),
+chromium для PDF и собранным фронтендом внутри. Прод (dashboardcamp.ru) живёт на
+systemd-схеме; Docker — для локального «как на проде» прогона и переезда, если VDS
+поменяется на что-то контейнерное.
+
+```bash
+docker build -t pca .
+cp .env.example .env           # заполнить APP_SECRET (+ токены при необходимости)
+docker compose up -d           # сервис `app`, порт 4000, volume pca-data → /app/data
+curl -s http://127.0.0.1:4000/api/health | jq
+```
+
+Файлы:
+
+| Файл                 | Назначение                                                                                                                                                            |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Dockerfile`         | 2 стадии: `build` (полный `pnpm install` + `vite build` фронта) → `prod` (prod-зависимости, глобальный `tsx`, chromium, `/app/frontend-dist`, `/app/docs/help`)       |
+| `docker-compose.yml` | сервис `app`: `env_file: .env`, volume `pca-data:/app/data` (SQLite переживает пересоздание), `stop_grace_period: 30s` (graceful shutdown), healthcheck `/api/health` |
+| `.dockerignore`      | `.env`/ключи/`node_modules`/`data` не попадают в контекст сборки и образ                                                                                              |
+
+Особенности:
+
+- **Секреты** — только через `.env` рядом с compose (`APP_SECRET` в production
+  обязателен, см. раздел 3). В образ ничего не вшито.
+- **Graceful shutdown**: SIGTERM → `fastify.close()` в `code/backend/src/server.ts`
+  (in-flight LLM-отчёты дожидаются ответа, жёсткий exit через 10 с).
+- **PDF**: `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium` задан в образе — chromium
+  ставится apt-ом, puppeteer-core ничего не скачивает.
+- **Сеть**: наружу контейнер не публикуется сам — тот же nginx из раздела 5
+  (`proxy_pass http://127.0.0.1:4000`); либо `ports: ["127.0.0.1:4000:4000"]`.
+- **Сеть сборки**: если Docker-VM не видит `registry.npmjs.org` напрямую (VPN только
+  на хосте) — зеркало через build-args:
+  `docker build --build-arg COREPACK_NPM_REGISTRY=https://registry.npmmirror.com --build-arg NPM_CONFIG_REGISTRY=https://registry.npmmirror.com -t pca .`
+- **Отличие от systemd-схемы**: таймеры `pca-sync`/`pca-backup`/`pca-monitor`
+  (разделы 5, 8) в контейнере не существуют — синк запускается
+  `docker exec pca-app tsx code/backend/src/db/cli-sync.ts`, бэкап — по volume.
+
+## 12. Security-заголовки и SSH-харденинг (ANA-52, ANA-51)
+
+Коротко; прод-процедуры и чеки — в `deploy/DEPLOY.md` (разделы 7 и 8).
+
+- **Заголовки**: один файл `deploy/nginx-security-headers.conf` (HSTS,
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`,
+  CSP). Подключается `include`-ом в трёх местах `deploy/nginx-pca.conf` — server,
+  `location /assets/`, `location = /index.html` (nginx наследует `add_header` только
+  при полном отсутствии своих на уровне; у этих двух location есть `Cache-Control`).
+  CSP разрешает: `'self'`, SHA-256-хеш инлайнового скрипта `index.html`, Google Fonts
+  (`style`/`font-src`), `'unsafe-inline'` для style-атрибутов, `data:` в `img-src`.
+  Смена инлайнового скрипта → пересчитать хеш (команда в `deploy/DEPLOY.md` §7.1) и
+  обновить сниппет. Проверка — Playwright (Chrome) по локальному серверу с теми же
+  заголовками: 0 CSP-нарушений на `/`, `/login`, `/help`, `/app/*`.
+- **SSH-харденинг**: `deploy/harden-ssh.sh` (идемпотентный, запуск НА СЕРВЕРЕ) —
+  `PasswordAuthentication no`, `PermitRootLogin prohibit-password` (drop-in
+  `00-pca-hardening.conf`: в sshd действует первое значение, «00-» читается раньше
+  `50-cloud-init.conf`), ufw 22/80/443 + enable, fail2ban (sshd, systemd-backend,
+  bantime 1h), unattended-upgrades. До запуска — проверить вход по ключу в новом окне,
+  после — `ssh -v -o PreferredAuthentications=none … | grep 'can continue'` → `publickey`.
+
+## 11. Docker-образ (ANA-14, альтернатива systemd-сценарию выше)
+
+Всё из разделов 2–8 ставится нативно (systemd + nginx). Если нужен контейнер
+(другой хост, изоляция), в репозитории есть готовый набор:
+
+| Файл                 | Что внутри                                                                                                                                                                                                             |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Dockerfile`         | multi-stage `node:22-bookworm-slim`: build (полный `pnpm install` + Vite-сборка фронта) → prod (только `--prod`-зависимости, backend через `tsx`, `chromium` + шрифты для PDF, собранный фронт в `/app/frontend-dist`) |
+| `docker-compose.yml` | сервис `app`: порт 4000, volume `pca-data:/app/data` (SQLite переживает пересоздание), `env_file: .env`, healthcheck `/api/health`, `stop_grace_period: 30s` (SIGTERM → fastify close)                                 |
+| `.dockerignore`      | `.env`/`*.pem`/`*.key`, `node_modules`, `data/*.sqlite`, git — в образ не попадают                                                                                                                                     |
+
+```bash
+docker build -t pca .                        # при VPN/зеркале: --build-arg NPM_CONFIG_REGISTRY=… (см. шапку Dockerfile)
+docker compose up -d
+curl -s http://127.0.0.1:4000/api/health
+```
+
+Нюансы:
+
+- Секреты — только через `.env` (в образ не запекаются); `DB_PATH=/app/data/productcamp.sqlite`
+  уже прописан в compose.
+- Контейнер закрывает только API `:4000`. Статику SPA наружу отдаёт reverse-proxy —
+  и security-заголовки/CSP ставит он (эталон — `deploy/nginx-security-headers.conf`
+  и `deploy/DEPLOY.md` раздел 8; внутри образа nginx нет).
+- Статус сборки см. `deploy/DEPLOY.md` раздел 9 (на 2026-10-27 схема compose и
+  структура Dockerfile проверены; полный `docker build` не прогнан из-за забитого
+  диска машины сборщика — не проблема Dockerfile).
