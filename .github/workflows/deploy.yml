@@ -74,11 +74,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ID=$(gh api "repos/${{ github.repository }}/deployments" \
-            -f ref="${{ github.sha }}" \
+            -F ref="${{ github.sha }}" \
             -f task=deploy \
             -f environment=production \
-            -f auto_merge=false \
-            -f required_contexts='[]' \
+            -F auto_merge=false \
+            -F 'required_contexts[]' \
             --jq '.id')
           echo "id=$ID" >> "$GITHUB_OUTPUT"
           gh api "repos/${{ github.repository }}/deployments/$ID/statuses" \
