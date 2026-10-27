@@ -11,10 +11,11 @@ test.describe('B2B-сделки in the cabinet', () => {
     await installMocks(page);
     await page.goto('/b2b');
     await expect(page).toHaveURL(/\/app\/b2b$/);
-    // The table is collapsed to the first rows — expand to see every deal.
+    // Collapsed by default — expand, then assert the rows (exact: the «Удалить <company>» cell
+    // also contains the company name in its accessible name).
     await page.getByRole('button', { name: /Развернуть полную таблицу/ }).click();
-    await expect(page.getByRole('cell', { name: 'BigCorp' })).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'MidMarket' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'BigCorp', exact: true })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'MidMarket', exact: true })).toBeVisible();
   });
 
   test('nav shows the B2B page and the deal stage can be changed', async ({ page }) => {
@@ -23,6 +24,8 @@ test.describe('B2B-сделки in the cabinet', () => {
     await expect(page.getByRole('link', { name: 'B2B-сделки' })).toBeVisible();
     await page.getByRole('link', { name: 'B2B-сделки' }).click();
     await expect(page).toHaveURL(/\/app\/b2b$/);
+    // Rows render only in the expanded table.
+    await page.getByRole('button', { name: /Развернуть полную таблицу/ }).click();
 
     const stage = page.getByLabel('Этап MidMarket');
     await stage.selectOption('paid');

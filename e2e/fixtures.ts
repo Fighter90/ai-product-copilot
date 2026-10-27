@@ -260,7 +260,9 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
   });
 
   // Hypothesis detail — status change (PATCH …/status) and delete (DELETE), for the kanban.
-  await page.route('**/api/hypotheses/*', async (r) => {
+  // `**` (not `*`): the status URL has two trailing segments (/100/status) and a single `*`
+  // does not match across `/` — the PATCH then went unmocked and the kanban card never moved.
+  await page.route('**/api/hypotheses/**', async (r) => {
     const parts = r.request().url().split('?')[0]!.split('/').filter(Boolean);
     const method = r.request().method();
     const id = Number(
@@ -315,7 +317,17 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
         decisions: [],
         b2bSummary: { totalTickets: 0, paidTickets: 0, dealsCount: 0, deals: [], byStage: [] },
         funnel: { visits: 2647, b2cApplications: 30, b2bPipelineTickets: 0, b2bPaidTickets: 20 },
-        breakdowns: { utm: UTM, geoDevice: GEO_DEVICE, entryPages: PAGES, exitPages: EXIT_PAGES },
+        // Breakdown rows are the report shapes (UtmBreakdownRow etc.), NOT the raw UtmStat/…
+        // API rows — the section builders read `source`/`medium`, not `utmSource`/`utmMedium`.
+        breakdowns: {
+          utm: [{ source: 'vk', medium: 'cpc', campaign: 'spring', visits: 240, goalReaches: 9 }],
+          geoDevice: [
+            { country: 'Россия', device: 'mobile', visits: 520, goalReaches: 22 },
+            { country: 'Россия', device: 'desktop', visits: 280, goalReaches: 16 },
+          ],
+          entryPages: [{ page: '/lp', visits: 380, bounceRate: 0.18, goalReaches: 14 }],
+          exitPages: [{ page: '/checkout', visits: 120, bounceRate: 0.55, goalReaches: 6 }],
+        },
       },
       201,
     ),
@@ -393,6 +405,30 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
   // --- Cabinet v3 endpoints (ANA-66/72/73): pages fetch these on mount; without mocks the
   // catch-all of some specs ([]) answers where an object is expected and the render crashes.
   await page.route('**/api/notifications', (r) => json(r, []));
+  // The report page enables the AI actions only with ≥1 AVAILABLE provider (v3.availableProviders
+  // → GET /api/ai/available, ANA-33); the admin list lives at /api/admin/ai/providers.
+  await page.route('**/ai/available', (r) =>
+    json(r, [{ id: 'anthropic', name: 'Anthropic', model: 'claude-opus-5-5' }]),
+  );
+  // NOTE: the real admin path is /api/admin/ai/providers — a '**/api/ai/providers' glob misses it.
+  await page.route('**/ai/providers', (r) =>
+    json(r, [
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        enabled: true,
+        priority: 1,
+        model: 'claude-opus-5-5',
+        models: ['claude-opus-5-5'],
+        secretLabel: 'API-ключ',
+        secretMask: 'sk-ant-****',
+        hasSecret: true,
+        extras: [],
+        docs: '',
+        lastTest: { at: '2025-01-01T00:00:00.000Z', ok: true, message: 'ok' },
+      },
+    ]),
+  );
   await page.route('**/api/demo/status', (r) => json(r, { demo: false, counts: {} }));
   await page.route('**/api/sync/status', (r) =>
     json(r, {
@@ -435,16 +471,34 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
       cells: [],
     }),
   );
+  // Live pc-goals funnel (ANA-21 stages on /app/funnel): the page reads `stages` — an array
+  // from a catch-all (or a proxy 500) would crash the render. Well-shaped LiveFunnel instead.
+  await page.route('**/api/live/funnel*', (r) =>
+    json(r, {
+      from: '2025-01-01',
+      to: '2025-01-14',
+      updatedAt: '2025-01-14T00:00:00.000Z',
+      stages: [
+        { key: 'visits', ru: 'Визит', en: 'Visit', value: 800, goalId: null, source: 'visits', fromPrevious: null, fromFirst: 100 },
+        { key: 'reg_open', ru: 'Открыл регистрацию', en: 'Opened registration', value: 120, goalId: 1, source: 'goal', fromPrevious: 15, fromFirst: 15 },
+        { key: 'payment', ru: 'Оплата', en: 'Payment', value: 4, goalId: 2, source: 'manual', fromPrevious: 3, fromFirst: 0.5 },
+      ],
+      tickets: [],
+    }),
+  );
 
   // Cabinet session: LAST registered route wins, so a spec can still override /api/auth/me.
   const user = opts.user === undefined ? CABINET_USER : opts.user;
   await page.route('**/api/auth/me', (r) => json(r, { user }));
 
-  // Deterministic RU interface + skip the first-visit onboarding. Specs may override the locale
-  // with their own addInitScript AFTER installMocks (init scripts run in registration order).
+  // Deterministic RU interface + skip the first-visit onboarding and the role tour (pca.tour.v1.*
+  // — see lib/onboarding.ts, components/onboarding/tour.ts). Specs may override the locale with
+  // their own addInitScript AFTER installMocks (init scripts run in registration order).
   await page.addInitScript(() => {
     localStorage.setItem('pca.onboarded', '1');
     localStorage.setItem('pca.locale', 'ru');
+    localStorage.setItem('pca.tour.v1.analyst', 'done');
+    localStorage.setItem('pca.tour.v1.admin', 'done');
   });
 
   return state;

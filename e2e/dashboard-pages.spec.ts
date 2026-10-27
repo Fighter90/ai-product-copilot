@@ -54,6 +54,25 @@ async function mockCabinet(page: Page, locale: 'ru' | 'en' = 'ru'): Promise<void
       body: JSON.stringify({ user: USER }),
     }),
   );
+  // Live pc-goals funnel (ANA-21 stages): an array from the catch-all would crash the page —
+  // give it a well-shaped LiveFunnel (visits → reg steps → payment).
+  await page.route('**/api/live/funnel?*', (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        from: '2025-01-01',
+        to: '2025-01-14',
+        updatedAt: NOW,
+        stages: [
+          { key: 'visits', ru: 'Визит', en: 'Visit', value: 800, goalId: null, source: 'visits', fromPrevious: null, fromFirst: 100 },
+          { key: 'reg_open', ru: 'Открыл регистрацию', en: 'Opened registration', value: 120, goalId: 1, source: 'goal', fromPrevious: 15, fromFirst: 15 },
+          { key: 'payment', ru: 'Оплата', en: 'Payment', value: 4, goalId: 2, source: 'manual', fromPrevious: 3, fromFirst: 0.5 },
+        ],
+        tickets: [],
+      }),
+    }),
+  );
   await page.route('**/api/live/goals?*', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(LIVE_GOALS) }),
   );

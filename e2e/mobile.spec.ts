@@ -48,8 +48,9 @@ test.describe('Mobile (iPhone 14) — no horizontal scroll on any page', () => {
     await installMocks(page, { user: ADMIN });
     await page.goto('/app');
     // Desktop nav links are hidden on mobile; the hamburger toggles the drawer (aria-label="menu").
+    // The bottom tab bar also has an «Отчёт» link — scope to the drawer.
     await page.getByRole('button', { name: 'menu' }).click();
-    const reportLink = page.getByRole('link', { name: 'Отчёт' });
+    const reportLink = page.getByTestId('mobile-drawer-panel').getByRole('link', { name: 'Отчёт' });
     await expect(reportLink).toBeVisible();
     await reportLink.click();
     await expect(page).toHaveURL(/\/app\/report$/);

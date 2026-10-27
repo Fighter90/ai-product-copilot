@@ -37,7 +37,12 @@ test('dashboard shell renders nav and every page is reachable', async ({ page })
   await expect(page.getByText(/Отчётов пока нет|Всего отчётов/)).toBeVisible();
 
   await page.getByRole('link', { name: 'B2B-сделки' }).click();
-  await expect(page.getByRole('cell', { name: 'BigCorp' })).toBeVisible();
+  // The table is collapsed — expand it, then check the deals (cell names are substring-matched,
+  // so scope with exact: the delete button's aria-label also contains the company name).
+  await page.getByRole('button', { name: /Развернуть полную таблицу/ }).click();
+  await expect(page.getByRole('cell', { name: 'BigCorp', exact: true })).toBeVisible();
+  // The expanded table is a modal dialog — close it, or it blocks the rest of the journey.
+  await page.getByRole('dialog').getByRole('button', { name: 'Закрыть' }).click();
 
   await page.getByRole('link', { name: 'Маркетинг' }).click();
   await expect(page.getByText('Контент-маркетинг', { exact: true })).toBeVisible();

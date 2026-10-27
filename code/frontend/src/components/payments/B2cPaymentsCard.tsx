@@ -182,7 +182,7 @@ export function B2cPaymentsCard(): JSX.Element {
         role="region"
         aria-label={t('dh.payments.title' as DictKey)}
       >
-        <table className="w-full min-w-[28rem] text-sm">
+        <table className="w-full sm:min-w-[28rem] text-sm">
           <thead>
             <tr className="text-left text-slate-500">
               <th className="py-1">{t('dh.payments.date' as DictKey)}</th>
