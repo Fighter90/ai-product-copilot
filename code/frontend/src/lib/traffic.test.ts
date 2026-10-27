@@ -151,7 +151,7 @@ describe('channelBarOption', () => {
 describe('channelVisitsVsReachesOption', () => {
   it('builds a two-series (visits + applications) grouped bar with a legend', () => {
     const rows = channelRows([stat({ channel: 'podcast', visits: 10, goalReaches: 3 })]);
-    const o = channelVisitsVsReachesOption(rows) as {
+    const o = channelVisitsVsReachesOption(rows, { visits: 'Визиты', reaches: 'Заявки' }) as {
       legend: { data: string[] };
       xAxis: { data: string[] };
       series: { name: string; data: number[] }[];

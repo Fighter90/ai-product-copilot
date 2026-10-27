@@ -7,35 +7,42 @@ export interface OverviewKpi {
   readonly target: number;
   readonly applications: number;
   readonly b2bPaid: number;
-  /** Total confirmed payments toward the target: B2B paid + (purchase-goal reaches if goalIsPaid). */
+  /** ANA-19: manually entered / CSV-imported paid B2C tickets for the period. */
+  readonly b2cPaid: number;
+  /** Total confirmed payments toward the target: B2C paid + B2B paid. */
   readonly paid: number;
   readonly gap: number;
 }
 
 /**
- * KPI strip: target (admin «Цель по оплатам», default 300), B2C applications, B2B paid, total paid,
- * gap.
+ * KPI strip: target (admin «Цель по оплатам», default 300), B2C applications/orders, B2B paid,
+ * B2C paid, total paid, gap.
  *
- * Payments = B2B paid **+ purchase-goal reaches** when the primary goal is a purchase goal
- * (`goalIsPaid`) — its reaches ARE payments. For a plain application goal only B2B paid counts
- * (заявка ≠ оплата). Gap = target − paid (clamped at 0). This mirrors the Goals page and the report
- * snapshot, so the «Обзор» KPI strip agrees with «Цели» and the DOCX/PDF (no 300-vs-248 mismatch).
+ * ANA-19 «заявка ≠ оплата»: Metrika goals only ever see applications/orders, so «Оплачено»
+ * counts CONFIRMED money only — B2C payments entered manually / imported from CSV plus B2B
+ * deals in the «paid» stage (`paid = b2cPaid + b2bPaid`). Goal reaches are never payments,
+ * whatever goal type the primary goal is. Gap = target − paid (clamped at 0). The payments
+ * summary comes from GET /api/payments/summary (the same figure the report shows).
  */
 export function summarizeChannels(
   stats: ChannelStat[],
   deals: B2bDeal[] = [],
   goalIsPaid = false,
   target: number = KPI_TARGET_PAID_TICKETS,
+  b2cPaid = 0,
 ): OverviewKpi {
   // applications comes from the single factsource (periodTotals) so the KPI strip, Funnel and Goals
   // headline "Заявки B2C" numbers are guaranteed identical.
   const { applications } = periodTotals(stats);
   const b2bPaid = deals.filter((d) => d.stage === 'paid').reduce((acc, d) => acc + d.tickets, 0);
-  const paid = b2bPaid + (goalIsPaid ? applications : 0);
+  const paid = b2cPaid + b2bPaid;
+  void goalIsPaid;
+  // kept for call compatibility; goal type no longer changes «Оплачено» (ANA-19)
   return {
     target,
     applications,
     b2bPaid,
+    b2cPaid,
     paid,
     gap: Math.max(0, target - paid),
   };

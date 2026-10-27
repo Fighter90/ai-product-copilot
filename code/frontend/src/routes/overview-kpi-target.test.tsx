@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { cleanup, screen, waitFor } from '@testing-library/react';
 import type { ChannelStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
+import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 vi.mock('../lib/api', () => ({
   api: {
@@ -13,6 +14,7 @@ vi.mock('../lib/api', () => ({
     exitPages: vi.fn(),
     b2b: vi.fn(),
     kpiTarget: vi.fn(),
+    paymentsSummary: vi.fn(),
   },
 }));
 import { api } from '../lib/api';
@@ -62,5 +64,19 @@ describe('Overview KPI target («Цель по оплатам»)', () => {
     renderWithProviders(<Overview />);
     await waitFor(() => expect(screen.getByTestId('kpi-strip').textContent).toContain('450'));
     expect(api.kpiTarget).toHaveBeenCalled();
+  });
+});
+
+describe('Overview KPI target (en locale)', () => {
+  afterEach(() => setTestLocale('ru'));
+
+  it('renders the KPI strip with an admin target in English', () => {
+    setTestLocale('en');
+    const { container } = renderWithProviders(
+      <OverviewView status="success" stats={[sample]} kpiTarget={120} />,
+    );
+    const strip = screen.getByTestId('kpi-strip');
+    expect(strip.textContent).toContain('120');
+    expectNoCyrillic(container);
   });
 });

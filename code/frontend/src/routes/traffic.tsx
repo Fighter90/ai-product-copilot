@@ -24,6 +24,7 @@ import { Tooltip } from '../components/Tooltip';
 import { ChartCaption } from '../components/charts/ChartCaption';
 import { EmptyState } from '../components/EmptyState';
 import { filterBySegment, filterUtmBySegment } from '../lib/segment-filter';
+import { applyTestTrafficFilter, isTestChannelRow } from '../lib/test-traffic';
 import { buildHypothesisUrl } from '../lib/hypothesis-prefill';
 
 type TFn = ReturnType<typeof useT>['t'];
@@ -192,10 +193,16 @@ export function TrafficView({
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="mb-2 text-lg font-semibold">{t('an.tr.visitsVsApps')}</h2>
         <EChart
-          option={localizeChart(channelVisitsVsReachesOption(rows), {
-            series: [t('an.col.visits'), t('an.col.applications')],
-            category: channelLabel,
-          })}
+          option={localizeChart(
+            channelVisitsVsReachesOption(rows, {
+              visits: t('an.col.visits'),
+              reaches: t('an.col.applications'),
+            }),
+            {
+              series: [t('an.col.visits'), t('an.col.applications')],
+              category: channelLabel,
+            },
+          )}
         />
         <ChartCaption
           correct={t('cap.tr.vs.correct')}
@@ -327,7 +334,7 @@ export function TrafficView({
 
 /** Data wrapper: channel + UTM queries combined into one status. */
 export function Traffic(): JSX.Element {
-  const { from, to, segment } = useFilters();
+  const { from, to, segment, includeTest } = useFilters();
   const channels = useQuery({
     queryKey: ['channels', from, to],
     queryFn: () => api.channels({ from, to }),
@@ -335,10 +342,12 @@ export function Traffic(): JSX.Element {
   const utm = useQuery({ queryKey: ['utm', from, to], queryFn: () => api.utm({ from, to }) });
   const status = combineStatus(channels.status, utm.status);
 
-  // Apply segment filter
+  // Apply segment filter; ANA-22 hides the test/service rows unless «Показать тестовый трафик».
   const allChannels = channels.data ?? [];
-  const filteredChannels = filterBySegment(allChannels, segment);
-  const filteredUtm = filterUtmBySegment(utm.data ?? [], segment, allChannels);
+  const visibleChannels = applyTestTrafficFilter(allChannels, includeTest, isTestChannelRow);
+  const visibleUtm = applyTestTrafficFilter(utm.data ?? [], includeTest, isTestChannelRow);
+  const filteredChannels = filterBySegment(visibleChannels, segment);
+  const filteredUtm = filterUtmBySegment(visibleUtm, segment, visibleChannels);
 
   return <TrafficView status={status} stats={filteredChannels} utm={filteredUtm} />;
 }

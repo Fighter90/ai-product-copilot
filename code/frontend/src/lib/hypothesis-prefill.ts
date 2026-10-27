@@ -3,9 +3,9 @@
  * optional — deep-links from Overview/Traffic carry whatever context is available (segment +
  * evidence at minimum).
  *
- * ANA-24: the deep link now targets the v3 report page (/app/report) directly — the legacy
- * /hypotheses route was double-redirected and dropped the query string, so the prefill was lost.
- * The report page stores the seed in sessionStorage and shows it in an editable draft card.
+ * ANA-24: the deep link opens the hypotheses workspace editor (/app/hypotheses) with the seed in
+ * the query string. The workspace parses it, prefills the editor and the saved hypothesis lands in
+ * the kanban — no detour through the report page, nothing lost on redirects.
  */
 export interface HypothesisSeed {
   /** ЦА / сегмент канала (e.g. «Подкаст»). */
@@ -26,8 +26,8 @@ const SEED_KEYS = ['segment', 'trouble', 'action', 'barrier', 'evidence'] as con
 const STORAGE_KEY = 'pca.hypothesis-prefill';
 
 /**
- * Build a deep-link to the v3 report page prefilled with seed context. Empty/undefined fields are
- * omitted; values are URL-encoded. Pure and deterministic.
+ * Build a deep-link to the hypotheses workspace editor, prefilled with seed context. Empty/
+ * undefined fields are omitted; values are URL-encoded. Pure and deterministic.
  */
 export function buildHypothesisUrl(seed: HypothesisSeed): string {
   const params = new URLSearchParams();
@@ -36,7 +36,7 @@ export function buildHypothesisUrl(seed: HypothesisSeed): string {
     if (value !== undefined && value !== '') params.set(key, value);
   }
   const qs = params.toString();
-  return qs === '' ? '/app/report' : `/app/report?${qs}`;
+  return qs === '' ? '/app/hypotheses' : `/app/hypotheses?${qs}`;
 }
 
 /**

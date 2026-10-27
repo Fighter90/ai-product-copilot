@@ -17,6 +17,8 @@ const STAGE_KEYS: Record<B2bStage, DictKey> = {
 export interface B2bHandlers {
   onAdd: (deal: NewB2bDeal) => void;
   onStageChange: (input: { id: number; stage: B2bStage }) => void;
+  /** ANA-50: commit an edited deal amount (null clears it). */
+  onAmountChange: (input: { id: number; amountRub: number | null }) => void;
   onRemove: (id: number) => void;
 }
 
@@ -25,12 +27,15 @@ export function B2bView({
   deals,
   onAdd,
   onStageChange,
+  onAmountChange,
   onRemove,
 }: { deals: B2bDeal[] } & B2bHandlers): JSX.Element {
   const { t } = useT();
   const summary = pipelineSummary(deals);
   const [company, setCompany] = useState('');
   const [tickets, setTickets] = useState('');
+  // ANA-50: сумма сделки в ₽ — optional, the goals page and B2B summary report it as «Сумма».
+  const [amount, setAmount] = useState('');
   const [stage, setStage] = useState<B2bStage>('lead');
   const [tableOpen, setTableOpen] = useState(false);
 
@@ -47,10 +52,12 @@ export function B2bView({
       company,
       tickets: Number(tickets),
       stage,
+      ...(amount ? { amountRub: Number(amount) } : {}),
       dateAdded: new Date().toISOString().slice(0, 10),
     });
     setCompany('');
     setTickets('');
+    setAmount('');
   };
 
   return (
@@ -92,6 +99,18 @@ export function B2bView({
             value={tickets}
             onChange={(e) => setTickets(e.target.value)}
             className="block w-24 rounded border border-slate-300 px-2 py-1"
+          />
+        </label>
+        <label className="text-sm">
+          {t('b2b.col.amount')}
+          <input
+            aria-label={t('b2b.col.amount')}
+            type="number"
+            min={0}
+            placeholder="₽"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="block w-32 rounded border border-slate-300 px-2 py-1"
           />
         </label>
         <label className="text-sm">
@@ -142,6 +161,7 @@ export function B2bView({
                 <tr className="text-left text-slate-500">
                   <th className="py-1">{t('b2b.col.company')}</th>
                   <th>{t('b2b.col.tickets')}</th>
+                  <th>{t('b2b.col.amount')}</th>
                   <th>{t('b2b.col.stage')}</th>
                   <th></th>
                 </tr>
@@ -151,6 +171,27 @@ export function B2bView({
                   <tr key={d.id} className="border-t border-slate-100">
                     <td className="py-1">{d.company}</td>
                     <td>{formatInt(d.tickets)}</td>
+                    <td className="whitespace-nowrap tabular-nums">
+                      {/* ANA-50: the amount is editable inline — commits on blur/Enter, empty
+                          input clears it. Keeps older «—» deals fillable without leaving the page. */}
+                      <input
+                        type="number"
+                        min={0}
+                        placeholder="₽"
+                        aria-label={t('b2b.amountOf', { company: d.company })}
+                        defaultValue={d.amountRub ?? ''}
+                        onBlur={(e) => {
+                          const raw = e.target.value.trim();
+                          const next = raw === '' ? null : Number(raw);
+                          if (next === (d.amountRub ?? null) || Number.isNaN(next)) return;
+                          onAmountChange({ id: d.id, amountRub: next });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur();
+                        }}
+                        className="w-28 rounded border border-slate-300 px-1 py-0.5 text-right"
+                      />
+                    </td>
                     <td>
                       <select
                         aria-label={t('b2b.stageOf', { company: d.company })}
@@ -197,6 +238,7 @@ export function B2b(): JSX.Element {
   const q = useQuery({ queryKey: ['b2b'], queryFn: () => api.b2b() });
   const addMut = useMutation({ mutationFn: api.createB2b, onSuccess: invalidate });
   const stageMut = useMutation({ mutationFn: api.updateB2bStage, onSuccess: invalidate });
+  const amountMut = useMutation({ mutationFn: api.updateB2bAmount, onSuccess: invalidate });
   const removeMut = useMutation({ mutationFn: api.removeB2b, onSuccess: invalidate });
 
   return (
@@ -204,6 +246,7 @@ export function B2b(): JSX.Element {
       deals={q.data ?? []}
       onAdd={addMut.mutate}
       onStageChange={stageMut.mutate}
+      onAmountChange={amountMut.mutate}
       onRemove={removeMut.mutate}
     />
   );

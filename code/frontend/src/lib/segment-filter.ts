@@ -1,31 +1,24 @@
 import type { ChannelStat, UtmStat, GeoDeviceStat, PageStat } from '@pca/shared';
+import { B2C_TRAFFIC_SOURCE_IDS, trafficSourceId, type TrafficSourceId } from '@pca/shared';
 import type { Segment } from '../store/filters';
 
-/** B2C-only channel names (from Metrika classification). */
-const B2C_CHANNELS = new Set([
-  'Direct traffic',
-  'Search engine traffic',
-  'Internal traffic',
-  'Link traffic',
-  'Social networks traffic',
-  'Mailing traffic',
-  'Messenger traffic',
-  'Recommendation systems traffic',
-]);
-
-/** B2B-specific channel names (if any exist in your Metrika setup). */
-const B2B_CHANNELS = new Set<string>([
-  // Add B2B-specific channels here if you have them classified separately
-]);
-
-/** Check if a channel belongs to the given segment. */
-function channelMatchesSegment(channel: string, segment: Segment): boolean {
-  /* c8 ignore next -- never called with b2c_b2b (filterBySegment short-circuits) */
+/**
+ * Segment (ANA-17): classification goes through `ym:s:lastTrafficSource` ids via
+ * `trafficSourceId`, never through display names. ProductCamp's B2B sales are manual deals
+ * (`b2b_manual`) — Metrika never tags a visit as B2B — so:
+ *  - «B2C» keeps only rows classified as a Metrika source (`B2C_TRAFFIC_SOURCE_IDS`);
+ *  - «B2B» keeps only rows that do NOT classify into a Metrika source — i.e. the manual
+ *    pipeline rows (`b2b_manual`, future artificial channels); the screens combine them with
+ *    the B2B deals dataset for KPI and funnel;
+ *  - «B2C+B2B» returns both sources unchanged (no double counting: deal rows are excluded
+ *    from the B2C classification by construction).
+ */
+export function channelMatchesSegment(channel: string, segment: Segment): boolean {
   if (segment === 'b2c_b2b') return true;
-  if (segment === 'b2c') return B2C_CHANNELS.has(channel);
-  /* c8 ignore next -- b2b branch: B2B_CHANNELS is empty, result always false */
-  if (segment === 'b2b') return B2B_CHANNELS.has(channel);
-  /* c8 ignore next 2 -- exhaustive: Segment has only 3 values, all handled above */
+  const id: TrafficSourceId | undefined = trafficSourceId(channel);
+  if (segment === 'b2c') return id !== undefined && B2C_TRAFFIC_SOURCE_IDS.has(id);
+  /* istanbul ignore else -- exhaustive: Segment has only 3 values */
+  if (segment === 'b2b') return id === undefined;
   return true;
 }
 

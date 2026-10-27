@@ -1,8 +1,40 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FilterBar } from './FilterBar';
 import { useFilters } from '../store/filters';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
+
+// The bar reads the session role for the «Догрузить N дней» action (ANA-49); the harness
+// renders FilterBar without the real AuthProvider, so the hook is mocked here.
+vi.mock('../auth/AuthContext', () => ({
+  useAuth: () => ({
+    user: null,
+    loading: false,
+    unavailable: false,
+    isAdmin: true,
+    login: async () => {
+      throw new Error('not used in FilterBar tests');
+    },
+    logout: async () => {},
+    refresh: () => {},
+  }),
+}));
+
+// Coverage probe (ANA-49): answer deterministically with a range that fully covers any test
+// period (starts before the default 14-day window) so the backfill prompt stays hidden here.
+vi.mock('../lib/api', () => ({
+  http: async (path: string) => {
+    if (path === '/metrics/coverage') {
+      return {
+        from: new Date(Date.now() - 15 * 86_400_000).toISOString().slice(0, 10),
+        to: new Date(Date.now()).toISOString().slice(0, 10),
+        days: 15,
+      };
+    }
+    throw new Error(`unexpected fetch in FilterBar tests: ${path}`);
+  },
+  api: { sync: async () => ({}) },
+}));
 
 const initial = useFilters.getState();
 beforeEach(() => useFilters.setState(initial, true));
@@ -13,14 +45,16 @@ const isoOffset = (days: number): string =>
   new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 const today = isoOffset(0);
 
+// WCAG 2.5.3 Label in Name: accessible names now start with the visible label
+// («7д — Показать …»), so the helpers match by regex.
 const datesToggle = () =>
-  screen.getByRole('button', { name: 'Выбрать произвольный период (макс. 365 дней)' });
+  screen.getByRole('button', { name: /Выбрать произвольный период \(макс\. 365 дней\)/ });
 const presetBtn = (days: number) =>
   screen.getByRole('button', {
     name:
       days === 365
-        ? 'Показать данные за последний год'
-        : `Показать данные за последние ${days} дней`,
+        ? /Показать данные за последний год/
+        : new RegExp(`Показать данные за последние ${days} дней`),
   });
 const applyBtn = () => screen.getByRole('button', { name: 'Применить' });
 
@@ -204,7 +238,8 @@ describe('FilterBar', () => {
 
   it('opens the mobile filter sheet and closes it via «Готово»', () => {
     render(<FilterBar />);
-    const trigger = screen.getByRole('button', { name: 'Фильтры' });
+    // ANA-49: the collapsed trigger carries the current period, hence the regex.
+    const trigger = screen.getByRole('button', { name: /Фильтры/ });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(trigger).toHaveAttribute('aria-controls', 'filter-controls');
     fireEvent.click(trigger);
@@ -215,9 +250,9 @@ describe('FilterBar', () => {
 
   it('closes the mobile filter sheet via the backdrop', () => {
     render(<FilterBar />);
-    fireEvent.click(screen.getByRole('button', { name: 'Фильтры' }));
+    fireEvent.click(screen.getByRole('button', { name: /Фильтры/ }));
     fireEvent.click(screen.getByLabelText('Закрыть фильтры'));
-    expect(screen.getByRole('button', { name: 'Фильтры' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /Фильтры/ })).toHaveAttribute(
       'aria-expanded',
       'false',
     );

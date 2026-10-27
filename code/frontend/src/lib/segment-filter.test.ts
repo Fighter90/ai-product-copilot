@@ -38,6 +38,44 @@ const makeUtm = (
   conversionRate: goalReaches / visits,
 });
 
+describe('segment classification by Metrika lastTrafficSource ids (ANA-17)', () => {
+  it('b2c keeps every Metrika source incl. en names AND ru/legacy aliases', () => {
+    const channels = [
+      makeChannel('Ad traffic'),
+      makeChannel('Direct traffic'),
+      makeChannel('Search engine traffic'),
+      makeChannel('Link traffic'),
+      makeChannel('Social network traffic'), // Метрика: singular, не «Social networks traffic»
+      makeChannel('Recommendation system traffic'),
+      makeChannel('Cached page traffic'),
+      makeChannel('Mailing traffic'),
+      makeChannel('Messenger traffic'),
+      makeChannel('Internal traffic'),
+      makeChannel('Переходы из поисковых систем'), // ru alias → resolves to 'organic'
+      makeChannel('Unknown custom channel'),
+    ];
+    const result = filterBySegment(channels, 'b2c');
+    expect(result).toHaveLength(11);
+    expect(result.map((c) => c.channel)).not.toContain('Unknown custom channel');
+  });
+
+  it('b2b keeps only rows NOT classified as Metrika sources (b2b_manual)', () => {
+    const channels = [
+      makeChannel('Direct traffic', 100, 10),
+      makeChannel('Search engine traffic', 80, 8),
+      makeChannel('b2b_manual', 34, 20),
+    ];
+    const result = filterBySegment(channels, 'b2b');
+    expect(result).toHaveLength(1);
+    expect(result[0]!.channel).toBe('b2b_manual');
+  });
+
+  it('b2c_b2b returns both sources unchanged', () => {
+    const channels = [makeChannel('Direct traffic'), makeChannel('b2b_manual')];
+    expect(filterBySegment(channels, 'b2c_b2b')).toHaveLength(2);
+  });
+});
+
 describe('filterBySegment', () => {
   it('returns all channels for b2c_b2b segment', () => {
     const channels = [makeChannel('Direct traffic'), makeChannel('Search engine traffic')];

@@ -13,6 +13,12 @@ export interface WhatIfInput {
   readonly extraVisitsPct: number;
   /** Hypothetical conversion-rate uplift, in percent (e.g. 10 = CR×1.1). */
   readonly crUpliftPct: number;
+  /**
+   * ANA-50: конверсия заказ→оплата (0..1) — доля B2C-заявок, превращающихся в оплаты.
+   * Default 1 keeps the old «каждая заявка = оплата» estimate; a real value is either entered
+   * by the user or taken from the fact via {@link orderToPayFromFact}.
+   */
+  readonly orderToPayRate?: number;
 }
 
 export interface WhatIfResult {
@@ -22,6 +28,7 @@ export interface WhatIfResult {
    * Projected paid tickets. NOTE: this is an estimate, не факт — we treat each projected B2C
    * application as a potential paid ticket on top of B2B paid, because Метрика does not track
    * the заявка→оплата step. Use it as a directional «что если», not a forecast.
+   * With `orderToPayRate` the applications are scaled by the заказ→оплата conversion first.
    */
   readonly projectedPayments: number;
   /** Remaining gap to the target after the projection, floored at 0. */
@@ -39,21 +46,34 @@ export interface WhatIfResult {
  *   newVisits = visits × (1 + extraVisitsPct/100).
  *   newCR = clampRatio(baseCR × (1 + crUpliftPct/100)) — capped at 100%.
  *   projectedApplications = round(newVisits × newCR).
- *   projectedPayments = b2bPaid + projectedApplications (см. WhatIfResult.projectedPayments — это
- *     оценка, не факт: Метрика не покрывает шаг заявка→оплата).
+ *   projectedPayments = b2bPaid + round(projectedApplications × orderToPayRate) (см.
+ *     WhatIfResult.projectedPayments — это оценка, не факт: Метрика не покрывает шаг
+ *     заявка→оплата; конверсия заказ→оплата вводится или берётся из факта).
  *   gapAfter = max(0, target − projectedPayments).
  *   addedVsNow = projectedApplications − applications.
  */
 export function simulatePayments(input: WhatIfInput): WhatIfResult {
-  const { visits, applications, b2bPaid, target, extraVisitsPct, crUpliftPct } = input;
+  const { visits, applications, b2bPaid, target, extraVisitsPct, crUpliftPct, orderToPayRate } =
+    input;
 
   const baseCr = visits === 0 ? 0 : applications / visits;
   const newVisits = visits * (1 + extraVisitsPct / 100);
   const newCr = clampRatio(baseCr * (1 + crUpliftPct / 100));
   const projectedApplications = Math.round(newVisits * newCr);
-  const projectedPayments = b2bPaid + projectedApplications;
+  const payRate = orderToPayRate === undefined ? 1 : clampRatio(orderToPayRate);
+  const projectedPayments = b2bPaid + Math.round(projectedApplications * payRate);
   const gapAfter = Math.max(0, target - projectedPayments);
   const addedVsNow = projectedApplications - applications;
 
   return { projectedApplications, projectedPayments, gapAfter, addedVsNow };
+}
+
+/**
+ * ANA-50: конверсия заказ→оплата из факта — оплаченные / заявки за тот же период.
+ * No fact yet (no payments or no orders) → null (the UI falls back to a user-entered value);
+ * the result is clamped to 0..1 (data glitches cannot make conversion exceed 100%).
+ */
+export function orderToPayFromFact(payments: number, orders: number): number | null {
+  if (payments <= 0 || orders <= 0) return null;
+  return clampRatio(payments / orders);
 }

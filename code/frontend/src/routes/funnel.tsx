@@ -2,9 +2,17 @@ import { useQuery } from '@tanstack/react-query';
 import type { ChannelStat, B2bDeal, GeoDeviceStat, PageStat } from '@pca/shared';
 import { periodTotals } from '@pca/shared';
 import { api } from '../lib/api';
+import { v3, type LiveFunnel } from '../lib/api-v3';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
 import { combineStatus, type QueryStatus } from '../lib/query-status';
+import {
+  buildFunnel,
+  buildSummaryFunnel,
+  funnelOption,
+  hasFunnelData,
+  valuesFromStages,
+} from '../lib/funnel';
 import { EChart } from '../components/charts/EChart';
 import { ChartCaption } from '../components/charts/ChartCaption';
 import { EmptyState } from '../components/EmptyState';
@@ -13,6 +21,7 @@ import { funnelByChannelOption } from '../lib/funnel-by-channel';
 import { byCountry, audienceBarOption } from '../lib/audience';
 import { localizeChart } from '../lib/chart-i18n';
 import { InsightBadge } from '../components/InsightBadge';
+import { B2cPaymentsCard } from '../components/payments/B2cPaymentsCard';
 import { useT, channelName, type DictKey } from '../i18n';
 import type { Locale } from '../store/prefs';
 
@@ -55,50 +64,6 @@ function channelCrOption(channels: ChannelStat[], t: TFn, locale: Locale): objec
           position: 'right',
           formatter: (v: { value: number }) => formatPercent(v.value),
         },
-      },
-    ],
-  };
-}
-
-/** ECharts funnel option */
-function funnelChartOption(
-  visits: number,
-  reaches: number,
-  b2bTickets: number,
-  b2bPaid: number,
-  t: TFn,
-): object {
-  return {
-    tooltip: {
-      trigger: 'item',
-      formatter: (p: { name: string; value: number }) => `${p.name}: ${formatInt(p.value)}`,
-    },
-    series: [
-      {
-        name: t('an.fn.funnel'),
-        type: 'funnel',
-        width: '80%',
-        left: '10%',
-        top: 20,
-        bottom: 20,
-        min: 0,
-        max: visits,
-        minSize: '0%',
-        maxSize: '100%',
-        sort: 'descending',
-        gap: 4,
-        label: {
-          show: true,
-          position: 'inside',
-          formatter: (p: { name: string; value: number }) => `${p.name}\n${formatInt(p.value)}`,
-          fontSize: 11,
-        },
-        data: [
-          { name: t('an.col.visits'), value: visits, itemStyle: { color: '#6366f1' } },
-          { name: t('an.fn.b2cApps'), value: reaches, itemStyle: { color: '#8b5cf6' } },
-          { name: 'B2B pipeline', value: b2bTickets, itemStyle: { color: '#f59e0b' } },
-          { name: t('an.fn.b2bPaid'), value: b2bPaid, itemStyle: { color: '#22c55e' } },
-        ],
       },
     ],
   };
@@ -163,12 +128,15 @@ export function FunnelView({
   deals,
   geoDevice,
   pages,
+  live = null,
 }: {
   status: QueryStatus;
   stats: ChannelStat[];
   deals: B2bDeal[];
   geoDevice: GeoDeviceStat[];
   pages: PageStat[];
+  /** Live pc-goals funnel (GET /api/live/funnel); null when unavailable → cached totals. */
+  live?: LiveFunnel | null;
 }): JSX.Element {
   const { t, locale } = useT();
   if (status === 'pending') return <p className="text-slate-500">{t('common.loading')}</p>;
@@ -204,6 +172,30 @@ export function FunnelView({
   // Page insights
   const highBouncePages = pages.filter((p) => p.bounceRate > 0.4 && p.visits > 30);
   const lowCrPages = pages.filter((p) => p.conversionRate < 0.005 && p.visits > 50);
+
+  // ANA-21: per-issue pc-goals funnel (Визиты → reg_open → cart_open → reg_step1 → Оплата) when
+  // the live funnel is available; «Оплата» falls back to manually entered B2B deals paid in the
+  // period. Without live data the chart falls back to the cached SQLite totals.
+  const stages = live
+    ? buildFunnel(valuesFromStages(live.stages), {
+        paymentFallback: b2bPaid,
+        labels: {
+          visits: t('an.col.visits'),
+          reg_open: t('an.fn.stage.regOpen'),
+          cart_open: t('an.fn.stage.cartOpen'),
+          reg_step1: t('an.fn.stage.regStep1'),
+          payment: t('an.fn.stage.payment'),
+        },
+      })
+    : buildSummaryFunnel(
+        { visits, applications: reaches, b2bTickets, b2bPaid },
+        {
+          visits: t('an.col.visits'),
+          applications: t('an.fn.b2cApps'),
+          b2bPipeline: 'B2B pipeline',
+          b2bPaid: t('an.fn.b2bPaid'),
+        },
+      );
 
   return (
     <section className="space-y-6">
@@ -262,7 +254,33 @@ export function FunnelView({
       {/* Funnel chart */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-2 text-lg font-semibold">{t('an.fn.conversionFunnel')}</h3>
-        <EChart option={funnelChartOption(visits, reaches, b2bTickets, b2bPaid, t)} />
+        {hasFunnelData(stages) ? (
+          <>
+            <EChart option={funnelOption(stages, t('an.fn.funnel.prevShort'))} />
+            {/* Text mirror of the funnel: every stage with its absolute and % of the previous
+                one, readable without the canvas (screen readers, copy-paste). */}
+            <ol
+              className="mt-3 space-y-1 text-sm text-slate-600"
+              aria-label={t('an.fn.funnel.stageList')}
+            >
+              {stages.map((s, i) => (
+                <li key={s.key} className="flex items-center justify-between gap-2">
+                  <span>{s.label}</span>
+                  <span className="font-medium">
+                    {formatInt(s.value)}
+                    {i > 0 && (
+                      <span className="ml-1 font-normal text-slate-500">
+                        · {formatPercent(s.fromPrev)} {t('an.fn.funnel.prevShort')}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </>
+        ) : (
+          <EmptyState />
+        )}
         <ChartCaption
           correct={t('cap.fn.funnel.correct')}
           caveat={t('cap.fn.funnel.caveat')}
@@ -292,10 +310,16 @@ export function FunnelView({
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-2 text-lg font-semibold">{t('an.fn.byChannel')}</h3>
         <EChart
-          option={localizeChart(funnelByChannelOption(stats), {
-            series: [t('an.col.visits'), t('an.col.applications')],
-            category: (c) => channelName(c, locale),
-          })}
+          option={localizeChart(
+            funnelByChannelOption(stats, {
+              visits: t('an.col.visits'),
+              reaches: t('an.col.applications'),
+            }),
+            {
+              series: [t('an.col.visits'), t('an.col.applications')],
+              category: (c) => channelName(c, locale),
+            },
+          )}
         />
         <ChartCaption
           correct={t('cap.fn.byCh.correct')}
@@ -453,16 +477,30 @@ export function Funnel(): JSX.Element {
     queryKey: ['pages', from, to],
     queryFn: () => api.pages({ from, to }),
   });
+  // ANA-21: the per-issue stages (reg_open → cart_open → reg_step1 → Оплата) come from the live
+  // pc-goals funnel; a failure (no token, quota) degrades softly to the cached SQLite totals.
+  const liveQ = useQuery({
+    queryKey: ['live-funnel', from, to],
+    queryFn: () => v3.liveFunnel({ from, to }),
+    retry: false,
+    staleTime: 60_000,
+  });
 
   const status = combineStatus(channelsQ.status, dealsQ.status, geoQ.status, pagesQ.status);
 
   return (
-    <FunnelView
-      status={status}
-      stats={channelsQ.data ?? []}
-      deals={dealsQ.data ?? []}
-      geoDevice={geoQ.data ?? []}
-      pages={pagesQ.data ?? []}
-    />
+    <div className="space-y-6">
+      <FunnelView
+        status={status}
+        stats={channelsQ.data ?? []}
+        deals={dealsQ.data ?? []}
+        geoDevice={geoQ.data ?? []}
+        pages={pagesQ.data ?? []}
+        live={liveQ.data ?? null}
+      />
+      {/* ANA-19: manual B2C payments — the confirmed-money input lives next to the B2B pipeline.
+          These rows feed the "Paid" figure (= B2C paid + B2B paid) in the Overview KPI strip. */}
+      <B2cPaymentsCard />
+    </div>
   );
 }

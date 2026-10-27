@@ -11,6 +11,7 @@ vi.mock('../../lib/api-v3', () => ({
     liveSummary: vi.fn(),
     liveFunnel: vi.fn(),
     liveGoals: vi.fn(),
+    goalRoles: vi.fn(),
     liveGoal: vi.fn(),
     liveTable: vi.fn(),
   },
@@ -65,6 +66,7 @@ const FUNNEL: LiveFunnel = {
       en: 'Visit',
       value: 800,
       goalId: null,
+      source: 'visits',
       fromPrevious: null,
       fromFirst: null,
     },
@@ -74,12 +76,22 @@ const FUNNEL: LiveFunnel = {
       en: 'Order',
       value: 20,
       goalId: 1,
+      source: 'goal',
       fromPrevious: 0.025,
       fromFirst: 0.025,
     },
   ],
   tickets: [{ type: 'standard', pick: 10, buy: 5, checkout: 2 }],
-  roles: [{ key: 'speaker', ru: 'Спикер', en: 'Speaker', value: 3 }],
+  roleFunnels: [
+    {
+      key: 'speaker',
+      ru: 'Спикер',
+      en: 'Speaker',
+      steps: [
+        { key: 'apply', ru: 'Заявка', en: 'Apply', value: 3, goalId: null, fromPrevious: null },
+      ],
+    },
+  ],
   missing: [],
 };
 
@@ -120,6 +132,11 @@ beforeEach(() => {
   } as Awaited<ReturnType<typeof v3.liveSummary>>);
   vi.mocked(v3.liveFunnel).mockResolvedValue(FUNNEL);
   vi.mocked(v3.liveGoals).mockResolvedValue(GOALS);
+  vi.mocked(v3.goalRoles).mockResolvedValue({
+    roles: [
+      { code: 'G-03', event: 'reg_step1', ru: 'Регистрация', en: 'Registration', group: 'funnel' },
+    ],
+  });
   vi.mocked(v3.liveGoal).mockResolvedValue(DETAIL);
   vi.mocked(v3.liveTable).mockResolvedValue(TABLE);
 });
@@ -129,6 +146,8 @@ describe('Goals page — «Архивные цели» filter', () => {
   it('hides archived goals until the global checkbox is on', async () => {
     renderWithProviders(<Goals />);
     expect(await screen.findByText('Ticket purchase')).toBeInTheDocument();
+    // ANA-34: the funnel-role column joins the pc-goals reference by the JS event.
+    expect(screen.getByText('Регистрация')).toBeInTheDocument();
     expect(screen.queryByText('Old landing form')).not.toBeInTheDocument();
     expect(screen.getByRole('note')).toHaveTextContent('Скрыто архивных целей: 1');
 

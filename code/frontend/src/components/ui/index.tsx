@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Info, Moon, Sun, X } from 'lucide-react';
 import { usePrefs } from '../../store/prefs';
 import { useT, fmtNum } from '../../i18n';
+import { FRONTEND_BUILD, buildLabel } from '../../lib/build-info';
 
 /** Page title block with optional actions. */
 export function PageHeader({
@@ -304,21 +305,18 @@ export function LangToggle({
   );
 }
 
-/** Product version (root package.json) + git SHA, injected at build time. */
+/** «v3.1.0 · a1b2c3d · 25.10.2026» — version, git SHA and build date injected at build time. */
 export function VersionBadge({ className = '' }: { className?: string }): JSX.Element {
-  const v = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
-  const sha = typeof __APP_SHA__ === 'string' ? __APP_SHA__ : '';
-  const built = typeof __APP_BUILT__ === 'string' ? __APP_BUILT__ : '';
   return (
     <a
       href="https://github.com/Fighter90/ai-product-copilot/blob/main/CHANGELOG.md"
       target="_blank"
       rel="noreferrer"
+      data-testid="version-badge"
       className={`font-mono text-[11px] text-muted hover:text-accent ${className}`}
-      title={`build ${built}`}
+      title={`build ${FRONTEND_BUILD.sha} · ${FRONTEND_BUILD.date}`}
     >
-      v{v}
-      {sha ? ` · ${sha}` : ''}
+      {buildLabel(FRONTEND_BUILD)}
     </a>
   );
 }

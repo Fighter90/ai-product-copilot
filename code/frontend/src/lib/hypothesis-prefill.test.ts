@@ -10,13 +10,13 @@ import {
 } from './hypothesis-prefill';
 
 describe('buildHypothesisUrl', () => {
-  it('targets the v3 report page (legacy /hypotheses dropped the query on redirect — ANA-24)', () => {
-    expect(buildHypothesisUrl({})).toBe('/app/report');
+  it('targets the hypotheses workspace editor (ANA-24: prefill must survive to the form)', () => {
+    expect(buildHypothesisUrl({})).toBe('/app/hypotheses');
   });
 
   it('omits empty-string fields', () => {
     expect(buildHypothesisUrl({ segment: '', evidence: 'CR 0.7%' })).toBe(
-      '/app/report?evidence=CR+0.7%25',
+      '/app/hypotheses?evidence=CR+0.7%25',
     );
   });
 

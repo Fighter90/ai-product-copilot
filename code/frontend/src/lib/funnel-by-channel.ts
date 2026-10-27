@@ -31,15 +31,18 @@ export function channelFunnelRows(channels: ChannelStat[]): ChannelFunnelRow[] {
 }
 
 /**
- * ECharts grouped-bar option: «Визиты» vs «Заявки» per channel (top {@link FUNNEL_BY_CHANNEL_TOP}),
- * with a legend + integer tooltip — the funnel-by-channel view that answers «какой канал ведёт
- * посетителя дальше по воронке».
+ * ECharts grouped-bar option: «visits» vs «applications» per channel (top
+ * {@link FUNNEL_BY_CHANNEL_TOP}), with a legend + integer tooltip — the funnel-by-channel view
+ * that answers «which channel moves the visitor down the funnel». Labels come from the caller.
  */
-export function funnelByChannelOption(channels: ChannelStat[]): object {
+export function funnelByChannelOption(
+  channels: ChannelStat[],
+  labels: { visits: string; reaches: string },
+): object {
   const rows = channelFunnelRows(channels);
   return {
     tooltip: { trigger: 'axis', ...intTooltip },
-    legend: { data: ['Визиты', 'Заявки'] },
+    legend: { data: [labels.visits, labels.reaches] },
     grid: { left: 48, right: 16, top: 32, bottom: 48 },
     xAxis: {
       type: 'category',
@@ -48,8 +51,8 @@ export function funnelByChannelOption(channels: ChannelStat[]): object {
     },
     yAxis: { type: 'value' },
     series: [
-      { name: 'Визиты', type: 'bar', data: rows.map((r) => r.visits) },
-      { name: 'Заявки', type: 'bar', data: rows.map((r) => r.reaches) },
+      { name: labels.visits, type: 'bar', data: rows.map((r) => r.visits) },
+      { name: labels.reaches, type: 'bar', data: rows.map((r) => r.reaches) },
     ],
   };
 }

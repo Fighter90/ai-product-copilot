@@ -5,6 +5,7 @@ import { Combobox } from '@headlessui/react';
 import { api } from '../lib/api';
 import { errorMessage } from '../lib/error-message';
 import { useFilters } from '../store/filters';
+import { useT, type DictKey } from '../i18n';
 import { B2b } from './b2b';
 
 interface GoalOption {
@@ -13,7 +14,7 @@ interface GoalOption {
   readonly group: 'auto' | 'active' | 'archived';
 }
 
-/** Searchable GOAL_ID combobox with Активные/Архивные groups (FINAL §9.2). */
+/** Searchable GOAL_ID combobox with Active/Archived groups (FINAL §9.2). */
 function GoalCombobox({
   value,
   onChange,
@@ -25,9 +26,10 @@ function GoalCombobox({
   goals: Goal[] | undefined;
   archivedGoals: Goal[] | undefined;
 }): JSX.Element {
+  const { t } = useT();
   const [query, setQuery] = useState('');
   const options: GoalOption[] = [
-    { value: '0', label: '0 — Авто-определение', group: 'auto' },
+    { value: '0', label: t('i18n.set.goalAuto'), group: 'auto' },
     ...(goals ?? [])
       .filter((g) => !g.isArchived)
       .map((g) => ({
@@ -37,7 +39,7 @@ function GoalCombobox({
       })),
     ...(archivedGoals ?? []).map((g) => ({
       value: String(g.id),
-      label: `${g.id} — ${g.name} (архив)`,
+      label: `${g.id} — ${g.name} ${t('i18n.set.goalArchived')}`,
       group: 'archived' as const,
     })),
   ];
@@ -45,8 +47,8 @@ function GoalCombobox({
     ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
     : options;
   const groups: Array<['active' | 'archived', string]> = [
-    ['active', 'Активные'],
-    ['archived', 'Архивные'],
+    ['active', t('i18n.set.groupActive')],
+    ['archived', t('i18n.set.groupArchived')],
   ];
   const selectedLabel = options.find((o) => o.value === value)?.label ?? value;
 
@@ -57,7 +59,7 @@ function GoalCombobox({
           className="block w-full rounded border border-slate-300 px-3 py-2 text-sm"
           displayValue={() => selectedLabel}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Поиск цели…"
+          placeholder={t('i18n.set.goalSearchPh')}
         />
         <Combobox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded border border-slate-200 bg-white py-1 text-sm shadow-lg">
           {filtered
@@ -90,7 +92,7 @@ function GoalCombobox({
             );
           })}
           {filtered.length === 0 ? (
-            <div className="px-3 py-1.5 text-slate-500">Ничего не найдено</div>
+            <div className="px-3 py-1.5 text-slate-500">{t('i18n.set.goalNone')}</div>
           ) : null}
         </Combobox.Options>
       </div>
@@ -118,12 +120,16 @@ function emptyForm(): SettingsForm {
   };
 }
 
-/** Progress bar with detailed step descriptions for Metrika sync */
-function SyncProgress({ progress, stage }: { progress: number; stage: string }): JSX.Element {
+/** Progress bar with detailed step descriptions for Metrika sync. */
+function SyncProgress({ progress, stageKey }: { progress: number; stageKey: string }): JSX.Element {
+  const { t } = useT();
+  const stage = SYNC_STAGES.find((s) => s.key === stageKey);
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between text-sm">
-        <span className="font-medium text-indigo-700">{stage}</span>
+        <span className="font-medium text-indigo-700">
+          {stage ? t(`i18n.set.sync.${stage.key}.label` as DictKey) : ''}
+        </span>
         <span className="font-mono text-indigo-600">{progress}%</span>
       </div>
       <div className="h-3 overflow-hidden rounded-full bg-indigo-100">
@@ -133,65 +139,24 @@ function SyncProgress({ progress, stage }: { progress: number; stage: string }):
         />
       </div>
       <div className="rounded bg-indigo-50 px-3 py-2 text-xs text-indigo-600">
-        {SYNC_STAGES.find((s) => s.label === stage)?.description ?? ''}
+        {stage ? t(`i18n.set.sync.${stage.key}.desc` as DictKey) : ''}
       </div>
     </div>
   );
 }
 
-const SYNC_STAGES = [
-  {
-    label: 'Подключение к Яндекс.Метрике',
-    description: 'Проверяем OAuth-токен и устанавливаем соединение с API Метрики...',
-    pct: 5,
-  },
-  {
-    label: 'Получение списка целей',
-    description: 'Загружаем все настроенные цели счётчика для определения KPI...',
-    pct: 15,
-  },
-  {
-    label: 'Загрузка данных по каналам',
-    description:
-      'Парсим визиты, заявки и конверсии по каждому каналу трафика (Direct, Search, Social и др.)...',
-    pct: 30,
-  },
-  {
-    label: 'Загрузка UTM-разбивки',
-    description: 'Собираем детальную статистику по UTM-меткам: source, medium, campaign...',
-    pct: 45,
-  },
-  {
-    label: 'Загрузка гео и устройств',
-    description:
-      'Загружаем разбивку по странам, регионам и типам устройств (смартфоны, ПК, планшеты)...',
-    pct: 55,
-  },
-  {
-    label: 'Загрузка страниц входа',
-    description: 'Парсим статистику по посадочным страницам: визиты, отказы, конверсии...',
-    pct: 65,
-  },
-  {
-    label: 'Загрузка страниц выхода',
-    description: 'Загружаем данные по страницам выхода для анализа точек отвала...',
-    pct: 75,
-  },
-  {
-    label: 'Сохранение в базу данных',
-    description: 'Записываем все полученные данные в SQLite для быстрого доступа...',
-    pct: 85,
-  },
-  {
-    label: 'Обновление отчётов',
-    description: 'Перегенерация снапшотов и переиндексация данных...',
-    pct: 95,
-  },
-  {
-    label: 'Готово!',
-    description: 'Все данные обновлены. Страницы дашборда будут автоматически refreshed.',
-    pct: 100,
-  },
+/** Sync steps are dict-driven: `key` selects the i18n.set.sync.<key>.{label,desc} pair. */
+const SYNC_STAGES: ReadonlyArray<{ key: string; pct: number }> = [
+  { key: 'connect', pct: 5 },
+  { key: 'goals', pct: 15 },
+  { key: 'channels', pct: 30 },
+  { key: 'utm', pct: 45 },
+  { key: 'geo', pct: 55 },
+  { key: 'entry', pct: 65 },
+  { key: 'exit', pct: 75 },
+  { key: 'db', pct: 85 },
+  { key: 'reports', pct: 95 },
+  { key: 'done', pct: 100 },
 ];
 
 /** Pure presentational Settings view. */
@@ -234,6 +199,7 @@ export function SettingsView({
   /** Period the «Обновить данные» button syncs (from the global filter). */
   syncPeriod?: { from: string; to: string };
 }): JSX.Element {
+  const { t } = useT();
   const [form, setForm] = useState<SettingsForm>(settings ?? emptyForm());
   const [syncProgress, setSyncProgress] = useState(0);
   const [syncStage, setSyncStage] = useState('');
@@ -262,7 +228,7 @@ export function SettingsView({
       return;
     }
 
-    setSyncStage(SYNC_STAGES[0]?.label ?? '');
+    setSyncStage(SYNC_STAGES[0]?.key ?? '');
     setSyncProgress(0);
 
     let stageIdx = 0;
@@ -272,12 +238,12 @@ export function SettingsView({
       stageIdx++;
       if (stageIdx >= SYNC_STAGES.length) {
         setSyncProgress(100);
-        setSyncStage(SYNC_STAGES[SYNC_STAGES.length - 1]?.label ?? '');
+        setSyncStage(SYNC_STAGES[SYNC_STAGES.length - 1]?.key ?? '');
       } else {
         const stage = SYNC_STAGES[stageIdx];
         if (stage) {
           setSyncProgress(stage.pct);
-          setSyncStage(stage.label);
+          setSyncStage(stage.key);
         }
       }
     }, stepDuration);
@@ -287,11 +253,11 @@ export function SettingsView({
     };
   }, [isRefreshing]);
 
-  if (status === 'pending') return <p className="text-slate-500">Загрузка…</p>;
+  if (status === 'pending') return <p className="text-slate-500">{t('common.loading')}</p>;
   if (status === 'error')
     return (
       <p role="alert" className="text-red-700">
-        Не удалось загрузить настройки.
+        {t('i18n.set.loadError')}
       </p>
     );
 
@@ -308,17 +274,17 @@ export function SettingsView({
 
   return (
     <section className="space-y-6">
-      <h2 className="text-lg font-semibold">Настройки</h2>
+      <h2 className="text-lg font-semibold">{t('i18n.set.title')}</h2>
 
       {/* Current counter ID display */}
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-        <h3 className="text-sm font-semibold text-slate-700">Текущий счётчик</h3>
+        <h3 className="text-sm font-semibold text-slate-700">{t('i18n.set.currentCounter')}</h3>
         <p className="mt-1 text-lg font-mono text-indigo-600">
-          {displayCounterId || 'Не установлен'}
+          {displayCounterId || t('i18n.set.notSet')}
         </p>
         <p className="text-xs text-slate-500">
-          ID счётчика Яндекс.Метрики, из которого загружаются данные.
-          {healthCounterId && ` (из сервера: ${healthCounterId})`}
+          {t('i18n.set.counterHelp')}
+          {healthCounterId && ` ${t('i18n.set.fromServer', { id: healthCounterId })}`}
         </p>
       </div>
 
@@ -346,69 +312,74 @@ export function SettingsView({
           disabled={isRefreshing}
           className="w-full rounded-lg bg-indigo-600 px-6 py-3 text-lg font-semibold text-white disabled:opacity-50 hover:bg-indigo-700"
         >
-          {isRefreshing ? '⏳ Обновление из Метрики…' : '🔄 Обновить данные из Метрики'}
+          {isRefreshing ? t('i18n.set.refreshBusy') : t('i18n.set.refreshIdle')}
         </button>
 
         {isRefreshing && (
           <div className="mt-4">
-            <SyncProgress progress={syncProgress} stage={syncStage} />
+            <SyncProgress progress={syncProgress} stageKey={syncStage} />
           </div>
         )}
 
         {refreshResult && !isRefreshing ? (
           <div className="mt-3 space-y-1">
             <p className="text-sm text-green-700">
-              ✅ Обновлено за {refreshResult.days} дн.: {refreshResult.goals} целей,{' '}
-              {refreshResult.channelRows} строк каналов.
+              {t('i18n.set.refreshDone', {
+                days: refreshResult.days,
+                goals: refreshResult.goals,
+                rows: refreshResult.channelRows,
+              })}
             </p>
             <ul className="text-xs text-indigo-600">
-              <li>• Каналы трафика: загружены</li>
-              <li>• UTM-метки: загружены</li>
-              <li>• Гео и устройства: загружены</li>
-              <li>• Страницы входа/выхода: загружены</li>
-              <li>• База данных: обновлена</li>
+              <li>{t('i18n.set.doneChannels')}</li>
+              <li>{t('i18n.set.doneUtm')}</li>
+              <li>{t('i18n.set.doneGeo')}</li>
+              <li>{t('i18n.set.donePages')}</li>
+              <li>{t('i18n.set.doneDb')}</li>
             </ul>
           </div>
         ) : null}
         <p className="mt-2 text-xs text-indigo-600">
           {syncPeriod
-            ? `Период из текущего фильтра (${syncPeriod.from} — ${syncPeriod.to}) → SQLite → перегенерация отчётов`
-            : 'Период из текущего фильтра → SQLite → перегенерация отчётов'}
+            ? t('i18n.set.periodWith', { from: syncPeriod.from, to: syncPeriod.to })
+            : t('i18n.set.periodPlain')}
         </p>
       </div>
 
       <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <Field
-          label="OAuth-токен Яндекс.Метрики"
+          label={t('i18n.set.f.token')}
           value={form.YANDEX_OAUTH_TOKEN}
           onChange={(v) => set('YANDEX_OAUTH_TOKEN', v)}
           placeholder="y0_..."
           type="password"
-          hint="Токен с правом metrika:read"
+          hint={t('i18n.set.f.tokenHint')}
         />
         <Field
           label="Client ID"
           value={form.YANDEX_CLIENT_ID}
           onChange={(v) => set('YANDEX_CLIENT_ID', v)}
-          placeholder="ID OAuth-приложения"
+          placeholder={t('i18n.set.f.clientIdPh')}
         />
         <Field
           label="Client Secret"
           value={form.YANDEX_CLIENT_SECRET}
           onChange={(v) => set('YANDEX_CLIENT_SECRET', v)}
-          placeholder="Секрет OAuth-приложения"
+          placeholder={t('i18n.set.f.clientSecretPh')}
           type="password"
         />
         <Field
-          label="Счётчик Метрики (COUNTER_ID)"
+          label={t('i18n.set.f.counter')}
           value={form.COUNTER_ID}
           onChange={(v) => set('COUNTER_ID', v)}
           placeholder="12345678"
           type="number"
-          hint={`0 = демо-режим (seed-данные). Текущий: ${displayCounterId || 'не установлен'}`}
+          hint={t('i18n.set.f.counterHint', {
+            id: displayCounterId || t('i18n.set.notSet'),
+          })}
         />
         <div>
-          <label className="block text-sm font-medium text-slate-700">Цель KPI (GOAL_ID)</label>
+          <label className="block text-sm font-medium text-slate-700">{t('i18n.set.f.goal')}</label>
           <GoalCombobox
             value={form.GOAL_ID}
             onChange={(v) => set('GOAL_ID', v)}
@@ -416,8 +387,10 @@ export function SettingsView({
             archivedGoals={archivedGoals}
           />
           <p className="mt-0.5 text-xs text-slate-500">
-            0 = определить автоматически, выберите ID — зафиксировать цель. Всего:{' '}
-            {goals?.length ?? 0} активных, {archivedGoals?.length ?? 0} архивных.
+            {t('i18n.set.f.goalHint', {
+              active: goals?.length ?? 0,
+              archived: archivedGoals?.length ?? 0,
+            })}
           </p>
         </div>
         <Field
@@ -428,8 +401,8 @@ export function SettingsView({
           type="password"
           hint={
             apiKeyMask && !form.ANTHROPIC_API_KEY
-              ? `Текущий ключ: ${apiKeyMask}. Оставьте поле пустым, чтобы не менять.`
-              : 'Для AI-анализа и генерации гипотез (можно пропустить)'
+              ? t('i18n.set.f.keyHintSet', { mask: apiKeyMask })
+              : t('i18n.set.f.keyHintNone')
           }
         />
       </div>
@@ -440,30 +413,25 @@ export function SettingsView({
           onClick={() => onSave(form)}
           className="rounded bg-indigo-600 px-4 py-2 text-sm text-white"
         >
-          Сохранить
+          {t('common.save')}
         </button>
         <button
           type="button"
           onClick={onClear}
           className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
         >
-          Очистить данные
+          {t('i18n.set.clear')}
         </button>
       </div>
 
-      <p className="text-xs text-slate-500">
-        После сохранения перезапустите сервер ({'`'}./run.sh{'`'}), чтобы настройки применились.
-      </p>
+      <p className="text-xs text-slate-500">{t('i18n.set.restartNote')}</p>
 
       {b2bSlot ? (
         <details className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <summary className="cursor-pointer text-sm font-semibold text-slate-700">
-            B2B-пайплайн (ручной ввод сделок)
+            {t('i18n.set.b2bTitle')}
           </summary>
-          <p className="mt-1 text-xs text-slate-500">
-            Метрика не покрывает B2B-продажи. Оплаченные (paid) сделки засчитываются в прогресс к
-            цели 300 платных билетов и в воронку.
-          </p>
+          <p className="mt-1 text-xs text-slate-500">{t('i18n.set.b2bNote')}</p>
           <div className="mt-3">{b2bSlot}</div>
         </details>
       ) : null}

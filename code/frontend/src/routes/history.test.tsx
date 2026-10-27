@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
@@ -9,7 +9,15 @@ vi.mock('../lib/api', () => ({
   },
 }));
 import { api } from '../lib/api';
-import { HistoryView, History, formatSnapshotName, shortSnapshotId } from './history';
+import {
+  HistoryView,
+  History,
+  formatSnapshotName,
+  shortSnapshotId,
+  periodOverlaps,
+  authorMatches,
+  type SnapshotRow,
+} from './history';
 
 describe('formatSnapshotName / shortSnapshotId', () => {
   it('formats same-year period as «Отчёт dd.MM–dd.MM.yyyy»', () => {
@@ -26,6 +34,27 @@ describe('formatSnapshotName / shortSnapshotId', () => {
 
   it('shortens the id with an ellipsis', () => {
     expect(shortSnapshotId('a1b2c3d4e5f6')).toBe('a1b2c3d4…');
+  });
+});
+
+describe('periodOverlaps (ANA-39: фильтр истории по периоду)', () => {
+  const s = { id: 'x', generatedAt: '', dateFrom: '2026-10-01', dateTo: '2026-10-15' };
+
+  it('keeps a snapshot whose period intersects the window', () => {
+    expect(periodOverlaps(s, '2026-10-10', '2026-10-20')).toBe(true);
+    expect(periodOverlaps(s, '2026-09-01', '2026-10-02')).toBe(true);
+    expect(periodOverlaps(s, '2026-10-01', '2026-10-15')).toBe(true); // exact
+  });
+
+  it('drops a snapshot entirely before or after the window', () => {
+    expect(periodOverlaps(s, '2026-10-16', '2026-10-31')).toBe(false);
+    expect(periodOverlaps(s, '2026-09-01', '2026-09-30')).toBe(false);
+  });
+
+  it('treats an empty bound as unfiltered on that side', () => {
+    expect(periodOverlaps(s, '', '2026-10-10')).toBe(true);
+    expect(periodOverlaps(s, '2026-10-10', '')).toBe(true);
+    expect(periodOverlaps(s, '', '')).toBe(true);
   });
 });
 
@@ -67,6 +96,72 @@ describe('HistoryView', () => {
       '/app/report?snapshot=snap-1',
     );
     expect(screen.getByText('Всего отчётов: 1')).toBeInTheDocument();
+  });
+});
+
+describe('authorMatches (ANA-39: фильтр истории по автору)', () => {
+  const s: Pick<SnapshotRow, 'author'> = { author: 'a@x.ru' };
+
+  it('keeps snapshots by the exact author email', () => {
+    expect(authorMatches(s, 'a@x.ru')).toBe(true);
+    expect(authorMatches(s, 'b@x.ru')).toBe(false);
+  });
+
+  it('empty filter keeps everything, including authorless (legacy) snapshots', () => {
+    expect(authorMatches(s, '')).toBe(true);
+    expect(authorMatches({}, 'a@x.ru')).toBe(false);
+    expect(authorMatches({}, '')).toBe(true);
+  });
+});
+
+describe('HistoryView — author filter (ANA-39)', () => {
+  const snapshots = [
+    {
+      id: 'snap-1',
+      generatedAt: '2025-01-01T00:00:00Z',
+      dateFrom: '2025-01-01',
+      dateTo: '2025-01-07',
+      author: 'a@x.ru',
+    },
+    {
+      id: 'snap-2',
+      generatedAt: '2025-01-08T00:00:00Z',
+      dateFrom: '2025-01-08',
+      dateTo: '2025-01-14',
+      author: 'b@x.ru',
+    },
+  ];
+
+  it('shows the author select once any snapshot has an author, and filters by it', () => {
+    renderWithProviders(<HistoryView status="success" snapshots={snapshots} />);
+    const select = screen.getByRole('combobox', { name: 'Автор' });
+    expect(select).toBeInTheDocument();
+    expect(screen.getByText('Всего отчётов: 2')).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: 'a@x.ru' } });
+    expect(screen.getByText('показано 1 из 2')).toBeInTheDocument();
+    // Scope to the table region — the compare panel lists both snapshots by design.
+    const table = within(screen.getByRole('region', { name: 'История отчётов' }));
+    expect(table.getByText('Отчёт 01.01–07.01.2025')).toBeInTheDocument();
+    expect(table.queryByText('Отчёт 08.01–14.01.2025')).not.toBeInTheDocument();
+  });
+
+  it('hides the author select when no snapshot has an author (legacy mode)', () => {
+    renderWithProviders(
+      <HistoryView
+        status="success"
+        snapshots={[
+          {
+            id: 'snap-1',
+            generatedAt: '2025-01-01T00:00:00Z',
+            dateFrom: '2025-01-01',
+            dateTo: '2025-01-07',
+          },
+        ]}
+      />,
+    );
+    expect(screen.queryByRole('combobox', { name: 'Автор' })).not.toBeInTheDocument();
+    // Authorless rows render an em dash in the author column.
+    expect(screen.getByText('—')).toBeInTheDocument();
   });
 });
 

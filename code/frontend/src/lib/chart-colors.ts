@@ -18,6 +18,7 @@ const CHANNEL_PALETTE = {
 const CHANNEL_FALLBACK = '#64748B';
 
 /** Keyword → palette key. Order matters; first match wins. */
+// i18n: ignore-start — keywords match raw Metrika channel names (source data, not UI).
 const CHANNEL_RULES: ReadonlyArray<readonly [readonly string[], keyof typeof CHANNEL_PALETTE]> = [
   [['direct', 'прям'], 'direct'],
   [['search', 'поиск'], 'search'],
@@ -29,6 +30,7 @@ const CHANNEL_RULES: ReadonlyArray<readonly [readonly string[], keyof typeof CHA
   [['link', 'ссыл'], 'link'],
   [['ad traffic', 'реклам'], 'ad'],
 ];
+// i18n: ignore-end
 
 export function channelColor(channel: string): string {
   const n = channel.toLowerCase();

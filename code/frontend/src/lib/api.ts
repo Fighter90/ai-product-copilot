@@ -1,20 +1,30 @@
 import type {
   B2bDeal,
   B2bStage,
+  B2cPayment,
   ChannelStat,
   Decision,
+  DemoStatus,
   GeneratedHypotheses,
   Goal,
   Hypothesis,
+  MarketingCell,
+  MarketingGrid,
+  MarketingSyncSummary,
   NewB2bDeal,
+  NewB2cPayment,
   NewDecision,
   NewHypothesis,
   ReportSnapshot,
+  SyncRunStatus,
   UtmStat,
   GeoDeviceStat,
   PageStat,
   RawResponse,
+  AiGenerationInfo,
 } from '@pca/shared';
+import { translate } from '../i18n';
+import type { Locale } from '../store/prefs';
 
 const BASE = '/api';
 
@@ -49,6 +59,8 @@ export interface SnapshotSummary {
   generatedAt: string;
   dateFrom: string;
   dateTo: string;
+  /** ANA-39: who built the snapshot (user email in cabinet mode; null in legacy mode). */
+  author?: string | null;
 }
 
 export interface SettingsStatus {
@@ -66,23 +78,14 @@ export interface SettingsStatus {
  */
 export function readableError(status: number, body: string): string {
   if (!/^\s*</.test(body)) return body;
-  const en = typeof window !== 'undefined' && window.localStorage?.getItem('pca.locale') === 'en';
-  if (status === 504) {
-    return en
-      ? 'The server did not respond in time (504). Please retry in a minute.'
-      : 'Сервер не ответил вовремя (504). Повторите через минуту.';
-  }
-  if (status === 429) {
-    return en
-      ? 'Too many requests (429). Wait a few seconds and retry.'
-      : 'Слишком много запросов (429). Подождите несколько секунд и повторите.';
-  }
-  if (status === 502 || status === 503) {
-    return en
-      ? `The server is temporarily unavailable (${status}) — an update may be in progress.`
-      : `Сервер временно недоступен (${status}) — возможно, идёт обновление.`;
-  }
-  return en ? `Server error (${status}).` : `Ошибка сервера (${status}).`;
+  const locale: Locale =
+    typeof window !== 'undefined' && window.localStorage?.getItem('pca.locale') === 'en'
+      ? 'en'
+      : 'ru';
+  if (status === 504) return translate(locale, 'i18n.api.err504');
+  if (status === 429) return translate(locale, 'i18n.api.err429');
+  if (status === 502 || status === 503) return translate(locale, 'i18n.api.err502', { status });
+  return translate(locale, 'i18n.api.errGeneric', { status });
 }
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
@@ -136,22 +139,70 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ stage: input.stage, datePaid: input.datePaid }),
     }),
+  /** ANA-50: set/clear the deal amount in ₽ (null clears). */
+  updateB2bAmount: (input: { id: number; amountRub: number | null }) =>
+    http<B2bDeal>(`/b2b/${input.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ amountRub: input.amountRub }),
+    }),
   removeB2b: (id: number) => http<void>(`/b2b/${id}`, { method: 'DELETE' }),
+  /** ANA-18: demo-data presence — drives the yellow «Демо-данные» banner on every screen. */
+  demoStatus: () => http<DemoStatus>('/demo/status'),
+  /** ANA-15: the latest sync run (status + per-step errors) for the admin sync-status UI. */
+  syncStatus: () => http<SyncRunStatus>('/sync/status'),
+  /** ANA-19: manual B2C payments (paid tickets per day, entered or CSV-imported). */
+  b2cPayments: (range?: { from: string; to: string }) =>
+    http<B2cPayment[]>(`/payments/b2c${range ? `?from=${range.from}&to=${range.to}` : ''}`),
+  saveB2cPayment: (input: NewB2cPayment) =>
+    http<B2cPayment>('/payments/b2c', { method: 'PUT', body: JSON.stringify(input) }),
+  removeB2cPayment: (date: string) => http<void>(`/payments/b2c/${date}`, { method: 'DELETE' }),
+  importB2cPayments: (csv: string) =>
+    http<{ imported: number; skipped: number; errors: Array<{ line: number; message: string }> }>(
+      '/payments/b2c/import',
+      { method: 'POST', body: JSON.stringify({ csv }) },
+    ),
+  /** ANA-19: «Оплачено» = B2C paid + B2B paid. */
+  paymentsSummary: (range?: { from: string; to: string }) =>
+    http<{ b2cPaid: number; b2bPaid: number; paid: number; days: number }>(
+      `/payments/summary${range ? `?from=${range.from}&to=${range.to}` : ''}`,
+    ),
+  /** ANA-73: the weekly marketing grid (Google Sheet «стата» replacement). */
+  marketingWeekly: () => http<MarketingGrid>('/marketing/weekly'),
+  saveMarketingCell: (input: {
+    weekStart: string;
+    metricKey: string;
+    value: number;
+    note?: string;
+  }) => http<MarketingCell>('/marketing/weekly', { method: 'PUT', body: JSON.stringify(input) }),
+  removeMarketingCell: (weekStart: string, metricKey: string) =>
+    http<void>(`/marketing/weekly/${weekStart}/${metricKey}`, { method: 'DELETE' }),
+  /** Admin: optional Metrika backfill of the window, then recompute the syncable cells. */
+  marketingSync: (window?: { from: string; to: string }) =>
+    http<MarketingSyncSummary>('/marketing/weekly/sync', {
+      method: 'POST',
+      body: JSON.stringify(window ?? {}),
+    }),
   buildSnapshot: (body: { from: string; to: string }) =>
     http<ReportSnapshot>('/report/snapshot', { method: 'POST', body: JSON.stringify(body) }),
   /** Get an existing snapshot by ID (from History page). */
   getSnapshot: (id: string) => http<ReportSnapshot>(`/report/snapshot/${id}`),
   generateReport: (body: { snapshotId: string; format: 'docx' | 'pdf' }) =>
     http<{ filePath: string }>('/report/generate', { method: 'POST', body: JSON.stringify(body) }),
-  generateInsights: (snapshotId: string) =>
-    http<{ narrative: string }>('/report/insights', {
+  generateInsights: (snapshotId: string, providerId?: string) =>
+    http<{ narrative: string; generatedBy?: AiGenerationInfo }>('/report/insights', {
       method: 'POST',
-      body: JSON.stringify({ snapshotId }),
+      body: JSON.stringify({
+        snapshotId,
+        ...(providerId && providerId !== 'auto' ? { providerId } : {}),
+      }),
     }),
-  generateHypotheses: (snapshotId: string) =>
+  generateHypotheses: (snapshotId: string, providerId?: string) =>
     http<{ hypotheses: GeneratedHypotheses }>('/report/hypotheses', {
       method: 'POST',
-      body: JSON.stringify({ snapshotId }),
+      body: JSON.stringify({
+        snapshotId,
+        ...(providerId && providerId !== 'auto' ? { providerId } : {}),
+      }),
     }),
   sync: (body: { from: string; to: string; goalId?: number }) =>
     http<SyncSummary>('/sync', { method: 'POST', body: JSON.stringify(body) }),

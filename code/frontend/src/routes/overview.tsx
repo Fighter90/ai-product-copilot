@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { channelName, useT, type DictKey } from '../i18n';
+import { channelName, translate, useT, type DictKey } from '../i18n';
 import type { Locale } from '../store/prefs';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -10,6 +10,7 @@ import { formatInt, formatPercent } from '../lib/format';
 import { displayPath } from '../lib/url-path';
 import { EmptyState } from '../components/EmptyState';
 import { channelMixOption, summarizeChannels, weakSpots } from '../lib/overview';
+import { applyTestTrafficFilter, isTestChannelRow, isTestPage } from '../lib/test-traffic';
 import { useKpiTarget } from '../lib/kpi-target';
 import { utmCoverage } from '../lib/traffic';
 import { dailySeries, trendsOption } from '../lib/trends';
@@ -62,7 +63,7 @@ function computeChannelInsights(stats: ChannelStat[], locale: Locale): JSX.Eleme
       <InsightBadge
         key="cr-good"
         type="good"
-        text={`Общий CR ${formatPercent(overallCR)} — выше 5% (хорошо)`}
+        text={translate(locale, 'i18n.ov.ins.crGood', { cr: formatPercent(overallCR) })}
       />,
     );
   } else if (overallCR < 0.02) {
@@ -70,7 +71,7 @@ function computeChannelInsights(stats: ChannelStat[], locale: Locale): JSX.Eleme
       <InsightBadge
         key="cr-bad"
         type="warning"
-        text={`Общий CR ${formatPercent(overallCR)} — ниже 2% (проблема)`}
+        text={translate(locale, 'i18n.ov.ins.crBad', { cr: formatPercent(overallCR) })}
       />,
     );
   }
@@ -90,7 +91,10 @@ function computeChannelInsights(stats: ChannelStat[], locale: Locale): JSX.Eleme
         <InsightBadge
           key={`good-${channel}`}
           type="good"
-          text={`${channel}: CR ${formatPercent(cr)} — значительно выше среднего (масштабировать)`}
+          text={translate(locale, 'i18n.ov.ins.chGood', {
+            channel,
+            cr: formatPercent(cr),
+          })}
         />,
       );
     } else if (cr < overallCR * 0.5 && data.visits > 50) {
@@ -98,7 +102,10 @@ function computeChannelInsights(stats: ChannelStat[], locale: Locale): JSX.Eleme
         <InsightBadge
           key={`bad-${channel}`}
           type="warning"
-          text={`${channel}: CR ${formatPercent(cr)} — значительно ниже среднего (проверить качество)`}
+          text={translate(locale, 'i18n.ov.ins.chBad', {
+            channel,
+            cr: formatPercent(cr),
+          })}
         />,
       );
     }
@@ -108,7 +115,7 @@ function computeChannelInsights(stats: ChannelStat[], locale: Locale): JSX.Eleme
 }
 
 /** Compute UTM insights from the single coverage factsource (visit-weighted utmCoverage). */
-function computeUtmInsights(stats: ChannelStat[], utm: UtmStat[]): JSX.Element[] {
+function computeUtmInsights(stats: ChannelStat[], utm: UtmStat[], locale: Locale): JSX.Element[] {
   const insights: JSX.Element[] = [];
   if (stats.length === 0) return insights;
 
@@ -119,7 +126,7 @@ function computeUtmInsights(stats: ChannelStat[], utm: UtmStat[]): JSX.Element[]
       <InsightBadge
         key="utm-good"
         type="good"
-        text={`UTM покрытие ${coverage.toFixed(0)}% — хорошая атрибуция`}
+        text={translate(locale, 'i18n.ov.ins.utmGood', { pct: coverage.toFixed(0) })}
       />,
     );
   } else {
@@ -127,7 +134,7 @@ function computeUtmInsights(stats: ChannelStat[], utm: UtmStat[]): JSX.Element[]
       <InsightBadge
         key="utm-bad"
         type="warning"
-        text={`UTM покрытие ${coverage.toFixed(0)}% — часть трафика не атрибутирована`}
+        text={translate(locale, 'i18n.ov.ins.utmBad', { pct: coverage.toFixed(0) })}
       />,
     );
   }
@@ -136,7 +143,11 @@ function computeUtmInsights(stats: ChannelStat[], utm: UtmStat[]): JSX.Element[]
 }
 
 /** Compute page insights */
-function computePageInsights(pages: PageStat[] | undefined, type: 'entry' | 'exit'): JSX.Element[] {
+function computePageInsights(
+  pages: PageStat[] | undefined,
+  type: 'entry' | 'exit',
+  locale: Locale,
+): JSX.Element[] {
   const insights: JSX.Element[] = [];
   if (!pages || pages.length === 0) return insights;
 
@@ -147,7 +158,11 @@ function computePageInsights(pages: PageStat[] | undefined, type: 'entry' | 'exi
         <InsightBadge
           key={`bounce-${type}-${p.page}-${i}`}
           type="warning"
-          text={`Высокий bounce ${formatPercent(p.bounceRate)} на ${path} (${p.visits} визитов)`}
+          text={translate(locale, 'i18n.ov.ins.bounceHigh', {
+            cr: formatPercent(p.bounceRate),
+            path,
+            n: p.visits,
+          })}
         />,
       );
     } else if (p.bounceRate < 0.3 && p.visits > 50) {
@@ -155,7 +170,10 @@ function computePageInsights(pages: PageStat[] | undefined, type: 'entry' | 'exi
         <InsightBadge
           key={`good-${type}-${p.page}-${i}`}
           type="good"
-          text={`Низкий bounce ${formatPercent(p.bounceRate)} на ${path} — хорошо удерживает`}
+          text={translate(locale, 'i18n.ov.ins.bounceLow', {
+            cr: formatPercent(p.bounceRate),
+            path,
+          })}
         />,
       );
     }
@@ -165,7 +183,7 @@ function computePageInsights(pages: PageStat[] | undefined, type: 'entry' | 'exi
 }
 
 /** Compute geo insights */
-function computeGeoInsights(geoDevice: GeoDeviceStat[] | undefined): JSX.Element[] {
+function computeGeoInsights(geoDevice: GeoDeviceStat[] | undefined, locale: Locale): JSX.Element[] {
   const insights: JSX.Element[] = [];
   if (!geoDevice || geoDevice.length === 0) return insights;
 
@@ -182,7 +200,10 @@ function computeGeoInsights(geoDevice: GeoDeviceStat[] | undefined): JSX.Element
         <InsightBadge
           key={`geo-good-${country}`}
           type="good"
-          text={`${country}: CR ${formatPercent(cr)} — высокая конверсия`}
+          text={translate(locale, 'i18n.ov.ins.geoGood', {
+            country,
+            cr: formatPercent(cr),
+          })}
         />,
       );
     } else if (cr < 0.02 && data.visits > 100) {
@@ -190,7 +211,10 @@ function computeGeoInsights(geoDevice: GeoDeviceStat[] | undefined): JSX.Element
         <InsightBadge
           key={`geo-bad-${country}`}
           type="warning"
-          text={`${country}: CR ${formatPercent(cr)} — низкая конверсия при большом трафике`}
+          text={translate(locale, 'i18n.ov.ins.geoBad', {
+            country,
+            cr: formatPercent(cr),
+          })}
         />,
       );
     }
@@ -280,6 +304,7 @@ export function OverviewView({
   to,
   afterKpi,
   kpiTarget,
+  b2cPaid = 0,
 }: {
   status: QueryStatus;
   stats: ChannelStat[];
@@ -296,6 +321,8 @@ export function OverviewView({
   afterKpi?: ReactNode;
   /** Admin «Цель по оплатам» (paid tickets); defaults to 300. */
   kpiTarget?: number;
+  /** ANA-19: manually entered / CSV-imported paid B2C tickets for the period (payments summary). */
+  b2cPaid?: number;
 }): JSX.Element {
   const { t, locale } = useT();
   if (status === 'pending') return <p className="text-slate-500">{t('ov.loading')}</p>;
@@ -315,7 +342,7 @@ export function OverviewView({
     );
 
   const goalIsPaid = goalLabel?.isPaid ?? false;
-  const kpi = summarizeChannels(stats, b2bDeals ?? [], goalIsPaid, kpiTarget);
+  const kpi = summarizeChannels(stats, b2bDeals ?? [], goalIsPaid, kpiTarget, b2cPaid);
   const weak = weakSpots(stats);
   const daily = dailySeries(stats);
   const pace = goalPace({ points: daily, to, target: kpi.target, current: kpi.paid, goalIsPaid });
@@ -335,10 +362,10 @@ export function OverviewView({
 
   // Compute insights
   const channelInsights = computeChannelInsights(stats, locale);
-  const utmInsights = computeUtmInsights(stats, utm ?? []);
-  const entryInsights = computePageInsights(entryPages, 'entry');
-  const exitInsights = computePageInsights(exitPages, 'exit');
-  const geoInsights = computeGeoInsights(geoDevice);
+  const utmInsights = computeUtmInsights(stats, utm ?? [], locale);
+  const entryInsights = computePageInsights(entryPages, 'entry', locale);
+  const exitInsights = computePageInsights(exitPages, 'exit', locale);
+  const geoInsights = computeGeoInsights(geoDevice, locale);
 
   // Data-quality notices live in one collapsed block below the KPI strip (ANA-48).
   const qualityItems: Array<{ key: string; node: ReactNode }> = [];
@@ -409,7 +436,12 @@ export function OverviewView({
       {/* UTM breakdown */}
       {utm && utm.length > 0 && (
         <Card title={t('ov.card.utm', { pct: utmCoveragePct })}>
-          <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="UTM-разбивка">
+          <div
+            className="overflow-x-auto"
+            tabIndex={0}
+            role="region"
+            aria-label={t('i18n.ov.utmTableAria')}
+          >
             <table className="w-full min-w-[36rem] text-sm">
               <thead>
                 <tr className="text-left text-slate-500">
@@ -483,8 +515,11 @@ export function OverviewView({
                   <Link
                     to={buildHypothesisUrl({
                       segment: w.channel,
-                      trouble: 'низкая конверсия',
-                      evidence: `CR ${formatPercent(w.conversionRate)} при ${formatInt(w.visits)} визитах`,
+                      trouble: t('i18n.ov.weak.trouble'),
+                      evidence: t('i18n.ov.weak.evidence', {
+                        cr: formatPercent(w.conversionRate),
+                        n: formatInt(w.visits),
+                      }),
                     })}
                     className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
                   >
@@ -534,7 +569,7 @@ function OnboardingCard(): JSX.Element | null {
 
 /** Data wrapper: binds the channel query to the presentational view. */
 export function Overview(): JSX.Element {
-  const { from, to, segment } = useFilters();
+  const { from, to, segment, includeTest } = useFilters();
   const q = useQuery({
     queryKey: ['channels', from, to],
     queryFn: () => api.channels({ from, to }),
@@ -561,12 +596,20 @@ export function Overview(): JSX.Element {
     queryKey: ['b2b'],
     queryFn: () => api.b2b(),
   });
+  // ANA-19: «Оплачено» = B2C paid (manual/CSV) + B2B paid — the payments summary is the factsource.
+  const payments = useQuery({
+    queryKey: ['payments-summary', from, to],
+    queryFn: () => api.paymentsSummary({ from, to }),
+    retry: false,
+  });
   const kpiTarget = useKpiTarget();
 
-  // Apply segment filter
+  // Apply segment filter; ANA-22 hides the test/service rows unless «Показать тестовый трафик».
   const allChannels = q.data ?? [];
-  const filteredChannels = filterBySegment(allChannels, segment);
-  const filteredUtm = filterUtmBySegment(utm.data ?? [], segment, allChannels);
+  const visibleChannels = applyTestTrafficFilter(allChannels, includeTest, isTestChannelRow);
+  const visibleUtm = applyTestTrafficFilter(utm.data ?? [], includeTest, isTestChannelRow);
+  const filteredChannels = filterBySegment(visibleChannels, segment);
+  const filteredUtm = filterUtmBySegment(visibleUtm, segment, visibleChannels);
 
   return (
     <OverviewView
@@ -577,11 +620,16 @@ export function Overview(): JSX.Element {
       goalLabel={formatGoalLabel(goal.data)}
       geoDevice={geoDevice.data}
       utm={filteredUtm}
-      entryPages={entryPages.data}
-      exitPages={exitPages.data}
+      entryPages={applyTestTrafficFilter(entryPages.data ?? [], includeTest, (r) =>
+        isTestPage(r.page),
+      )}
+      exitPages={applyTestTrafficFilter(exitPages.data ?? [], includeTest, (r) =>
+        isTestPage(r.page),
+      )}
       to={to}
       afterKpi={<OnboardingCard />}
       kpiTarget={kpiTarget}
+      b2cPaid={payments.data?.b2cPaid ?? 0}
     />
   );
 }

@@ -1,8 +1,10 @@
 import { channelName, fmtNum, useT } from '../../i18n';
 import type { Locale } from '../../store/prefs';
 import { formatInt, formatPercent } from '../../lib/format';
+import { termHint } from '@pca/shared';
 import type { OverviewKpi, WeakSpot } from '../../lib/overview';
 import { Tooltip } from '../Tooltip';
+import { InfoHint } from '../InfoHint';
 import type { GoalPace, PaceStatus } from './goal-pace';
 import { ProgressRing } from './ProgressRing';
 
@@ -68,7 +70,24 @@ export function KpiStrip({
             ariaLabel={t('ov.hero.ringAria', { current: formatInt(kpi.paid), target })}
           />
           <div className="min-w-0 space-y-1">
-            <h2 className="text-sm font-semibold lg:text-base">{t('ov.hero.title', { target })}</h2>
+            <h2 className="text-sm font-semibold lg:text-base">
+              {t('ov.hero.title', { target })}{' '}
+              <InfoHint
+                label={t('dh.kpi.paidLabel')}
+                align="start"
+                text={
+                  <>
+                    <p>{termHint('paid', locale)}</p>
+                    <p className="mt-1">
+                      {t('dh.kpi.paidSplit', {
+                        b2c: formatInt(kpi.b2cPaid),
+                        b2b: formatInt(kpi.b2bPaid),
+                      })}
+                    </p>
+                  </>
+                }
+              />
+            </h2>
             <span
               data-testid="pace-status"
               className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_TONE[pace.status]}`}
@@ -114,16 +133,22 @@ export function KpiStrip({
         </div>
 
         <div className="grid grid-cols-2 gap-3" data-testid="kpi-tiles">
-          <Kpi label={t('kpi.ticketGoal')} value={target} />
+          <Kpi label={t('kpi.ticketGoal')} value={target} define={t('hint.metric.target')} />
           <Kpi
             label={goalIsPaid ? t('ov.kpi.orders') : t('ov.kpi.applications')}
             value={formatInt(kpi.applications)}
+            define={t('hint.metric.applications')}
             hint={showApplicationsCaveat ? t('ov.kpi.applicationsHint') : undefined}
           />
-          <Kpi label={t('ov.kpi.b2bPaid')} value={formatInt(kpi.b2bPaid)} />
+          <Kpi
+            label={t('ov.kpi.b2bPaid')}
+            value={formatInt(kpi.b2bPaid)}
+            define={t('hint.metric.b2bPaid')}
+          />
           <Kpi
             label={t('ov.kpi.gap')}
             value={formatInt(kpi.gap)}
+            define={t('hint.metric.gap')}
             hint={t('ov.kpi.gapHint', { paid: formatInt(kpi.paid), target })}
           />
         </div>
@@ -132,11 +157,23 @@ export function KpiStrip({
   );
 }
 
-function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }): JSX.Element {
+function Kpi({
+  label,
+  value,
+  hint,
+  define,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  /** Metric definition + formula + source, shown in the «i» popover (ANA-47). */
+  define?: string;
+}): JSX.Element {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm lg:p-3">
       <div className="text-[11px] uppercase leading-tight tracking-wide text-slate-500 sm:text-xs">
         {label}
+        {define && <InfoHint text={define} align="start" className="ml-1" />}
       </div>
       <div className="text-xl font-bold lg:text-2xl">{value}</div>
       {hint ? <div className="text-xs leading-tight text-amber-700">{hint}</div> : null}

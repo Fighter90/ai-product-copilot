@@ -50,7 +50,10 @@ describe('channelFunnelRows', () => {
 
 describe('funnelByChannelOption', () => {
   it('builds two named series (Визиты, Заявки) with a legend + integer tooltip', () => {
-    const o = funnelByChannelOption([stat({ channel: 'podcast', visits: 10, goalReaches: 3 })]) as {
+    const o = funnelByChannelOption([stat({ channel: 'podcast', visits: 10, goalReaches: 3 })], {
+      visits: 'Визиты',
+      reaches: 'Заявки',
+    }) as {
       legend: { data: string[] };
       tooltip: { valueFormatter: (v: number) => string };
       xAxis: { data: string[] };
@@ -65,7 +68,7 @@ describe('funnelByChannelOption', () => {
   });
 
   it('empty input → empty axis and series data', () => {
-    const o = funnelByChannelOption([]) as {
+    const o = funnelByChannelOption([], { visits: 'Визиты', reaches: 'Заявки' }) as {
       xAxis: { data: string[] };
       series: { data: number[] }[];
     };

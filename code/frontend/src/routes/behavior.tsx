@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { PageStat } from '@pca/shared';
+import { weightedBounce, type PageStat } from '@pca/shared';
 import { api } from '../lib/api';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
@@ -8,7 +8,9 @@ import { EChart } from '../components/charts/EChart';
 import { ChartCaption } from '../components/charts/ChartCaption';
 import { EmptyState } from '../components/EmptyState';
 import { combineStatus, type QueryStatus } from '../lib/query-status';
+import { applyTestTrafficFilter, isTestPage } from '../lib/test-traffic';
 import { InsightBadge } from '../components/InsightBadge';
+import { InfoHint } from '../components/InfoHint';
 import { useT } from '../i18n';
 
 type TFn = ReturnType<typeof useT>['t'];
@@ -290,8 +292,9 @@ export function BehaviorView({
   const totalEntryVisits = entryRows.reduce((a, r) => a + r.visits, 0);
   const totalEntryReaches = entryRows.reduce((a, r) => a + r.goalReaches, 0);
   const entryCR = totalEntryVisits > 0 ? totalEntryReaches / totalEntryVisits : 0;
-  const avgEntryBounce =
-    entryRows.length > 0 ? entryRows.reduce((a, r) => a + r.bounceRate, 0) / entryRows.length : 0;
+  // ANA-16: visit-weighted bounce via the shared aggregator — a plain row average lets a
+  // 1-visit page with 100% bounce move the headline as much as the home page.
+  const avgEntryBounce = weightedBounce(entryRows);
 
   // Find best and worst pages
   const bestPage =
@@ -316,12 +319,21 @@ export function BehaviorView({
           {entrySummary && <div className="mt-1 text-xs text-slate-500">{entrySummary}</div>}
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-xs text-slate-500">{t('an.visitsCount')}</div>
+          <div className="flex items-center gap-1 text-xs text-slate-500">
+            {t('an.visitsCount')}
+            {/* ANA-20: pages vs channels legitimately diverge — the source is stated and explained */}
+            <InfoHint text={t('dq.visitsSourceHint')} />
+          </div>
           <div className="text-2xl font-bold">{formatInt(totalEntryVisits)}</div>
-          <div className="mt-1 text-xs text-slate-500">CR {formatPercent(entryCR)}</div>
+          <div className="mt-1 text-xs text-slate-500">
+            {t('dq.visitsSource')} · CR {formatPercent(entryCR)}
+          </div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-xs text-slate-500">{t('an.beh.avgBounce')}</div>
+          <div className="flex items-center gap-1 text-xs text-slate-500">
+            {t('an.beh.avgBounce')}
+            <InfoHint text={t('dq.bounceWeightedHint')} />
+          </div>
           <div
             className={`text-2xl font-bold ${avgEntryBounce > 0.3 ? 'text-red-700' : avgEntryBounce > 0.2 ? 'text-amber-700' : 'text-green-700'}`}
           >
@@ -452,12 +464,20 @@ export function BehaviorView({
 
 /** Data wrapper: entry + exit page queries combined into one status. */
 export function Behavior(): JSX.Element {
-  const { from, to } = useFilters();
+  const { from, to, includeTest } = useFilters();
   const entry = useQuery({ queryKey: ['pages', from, to], queryFn: () => api.pages({ from, to }) });
   const exit = useQuery({
     queryKey: ['exit-pages', from, to],
     queryFn: () => api.exitPages({ from, to }),
   });
   const status = combineStatus(entry.status, exit.status);
-  return <BehaviorView status={status} entry={entry.data ?? []} exit={exit.data ?? []} />;
+  // ANA-22: test/service pages (file://, /test_1, Tilda test pages…) are hidden unless
+  // «Показать тестовый трафик» is on.
+  return (
+    <BehaviorView
+      status={status}
+      entry={applyTestTrafficFilter(entry.data ?? [], includeTest, (r) => isTestPage(r.page))}
+      exit={applyTestTrafficFilter(exit.data ?? [], includeTest, (r) => isTestPage(r.page))}
+    />
+  );
 }

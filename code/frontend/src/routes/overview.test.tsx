@@ -3,6 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import type { ChannelStat, GeoDeviceStat, PageStat, UtmStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { usePrefs } from '../store/prefs';
+import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 vi.mock('../lib/api', () => ({
   api: {
@@ -12,6 +13,7 @@ vi.mock('../lib/api', () => ({
     utm: vi.fn(),
     pages: vi.fn(),
     exitPages: vi.fn(),
+    paymentsSummary: vi.fn(),
   },
 }));
 import { api } from '../lib/api';
@@ -96,10 +98,11 @@ describe('OverviewView', () => {
     expect(screen.getAllByText('podcast').length).toBeGreaterThan(0);
     expect(screen.getByText(/100 визитов · CR/)).toBeInTheDocument();
     expect(screen.queryByText(/Нет слабых мест/)).not.toBeInTheDocument();
-    // Deep-link to a prefilled hypothesis from the weak spot (targets the v3 report page).
+    // Deep-link to a prefilled hypothesis from the weak spot (ANA-24: opens the hypotheses
+    // workspace editor, not the report page).
     expect(screen.getByRole('link', { name: /гипотеза/ })).toHaveAttribute(
       'href',
-      expect.stringContaining('/app/report?'),
+      expect.stringContaining('/app/hypotheses?'),
     );
   });
 });
@@ -222,6 +225,7 @@ describe('Overview (data wrapper)', () => {
     vi.mocked(api.utm).mockResolvedValue([]);
     vi.mocked(api.pages).mockResolvedValue([]);
     vi.mocked(api.exitPages).mockResolvedValue([]);
+    vi.mocked(api.paymentsSummary).mockResolvedValue({ b2cPaid: 0, b2bPaid: 0, paid: 0, days: 0 });
   });
 
   it('shows the auto-detected goal badge when /primary-goal resolves', async () => {
@@ -247,5 +251,60 @@ describe('Overview (data wrapper)', () => {
     renderWithProviders(<Overview />);
     expect(await screen.findByText('Цель (платных билетов)')).toBeInTheDocument();
     expect(screen.queryByText(/KPI-цель определена автоматически/)).not.toBeInTheDocument();
+  });
+});
+
+describe('OverviewView (en locale)', () => {
+  afterEach(() => setTestLocale('ru'));
+
+  it('renders the full page in English: KPI strip, charts, weak spots, data quality', () => {
+    setTestLocale('en');
+    const { container } = renderWithProviders(
+      <OverviewView
+        status="success"
+        to="2025-01-02"
+        stats={[
+          { ...sample, channel: 'Direct traffic', visits: 1000, goalReaches: 5 },
+          { ...sample, channel: 'vip', visits: 10, goalReaches: 9 },
+        ]}
+        primaryGoalName="Ecommerce: purchase"
+        utm={[
+          {
+            date: '2025-01-01',
+            utmSource: 'vk',
+            utmMedium: 'cpc',
+            utmCampaign: 'x',
+            visits: 1,
+            users: 1,
+            goalReaches: 0,
+            conversionRate: 0,
+          },
+        ]}
+        geoDevice={[{ ...geoSample, country: 'Germany' }]}
+        entryPages={[
+          {
+            date: '2025-01-01',
+            page: 'https://productcamp.ru/tickets',
+            visits: 10,
+            users: 9,
+            bounceRate: 0.1,
+            goalReaches: 1,
+            conversionRate: 0.1,
+          },
+        ]}
+        b2bDeals={[{ id: 1, company: 'A', tickets: 30, stage: 'paid', dateAdded: '2025-01-01' }]}
+      />,
+    );
+    expect(screen.getByText('On track for 300?')).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+
+  it('keeps loading and error states in English', () => {
+    setTestLocale('en');
+    const { rerender, container } = render(<OverviewView status="pending" stats={[]} />);
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    rerender(<OverviewView status="error" stats={[]} />);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expectNoCyrillic(container);
   });
 });

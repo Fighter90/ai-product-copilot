@@ -116,15 +116,42 @@ export function FunnelLive(): JSX.Element {
           {!d ? (
             <Skeleton className="h-64" />
           ) : (
-            <div className="grid grid-cols-2 gap-3">
-              {d.roles.map((r) => (
-                <div key={r.key} className="rounded-lg border border-line p-4">
-                  <div className="text-xs uppercase tracking-wide text-muted">
-                    {locale === 'ru' ? r.ru : r.en}
+            <div className="space-y-4">
+              {d.roleFunnels.map((f) => {
+                const stepMax = Math.max(1, ...f.steps.map((s) => s.value));
+                return (
+                  <div key={f.key} className="rounded-lg border border-line p-4">
+                    <div className="text-xs uppercase tracking-wide text-muted">
+                      {locale === 'ru' ? f.ru : f.en}
+                    </div>
+                    <ol className="mt-2 space-y-1.5">
+                      {f.steps.map((st, i) => (
+                        <li key={`${f.key}-${st.key}`}>
+                          <div className="flex items-baseline justify-between gap-3 text-sm">
+                            <span className="font-medium">
+                              {i + 1}. {locale === 'ru' ? st.ru : st.en}
+                            </span>
+                            <span className="tabular-nums">
+                              <b className="text-lg">{fmtNum(st.value, locale)}</b>
+                              {st.fromPrevious !== null && (
+                                <span className="ml-2 text-xs text-muted">
+                                  {fmtNum(st.fromPrevious * 100, locale, 1)}% {t('funnel.fromPrev')}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          <div className="h-6 overflow-hidden rounded-md bg-raised">
+                            <div
+                              className="h-full rounded-md bg-gradient-to-r from-accent to-accent/60 transition-[width] duration-700 ease-out"
+                              style={{ width: `${Math.max(4, (st.value / stepMax) * 100)}%` }}
+                            />
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
                   </div>
-                  <div className="mt-1 text-3xl font-bold">{fmtNum(r.value, locale)}</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Card>

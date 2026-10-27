@@ -26,33 +26,69 @@ describe('summarizeChannels', () => {
       { id: 2, company: 'B', tickets: 5, stage: 'lead', dateAdded: '2025-01-01' },
     ];
     const kpi = summarizeChannels([stat({ goalReaches: 5 }), stat({ goalReaches: 3 })], deals);
-    // applications (8) are NOT payments for a plain goal → paid = 10, gap = 300 - 10.
-    expect(kpi).toEqual({ target: 300, applications: 8, b2bPaid: 10, paid: 10, gap: 290 });
+    // applications (8) are NOT payments → paid = 10, gap = 300 - 10.
+    expect(kpi).toEqual({
+      target: 300,
+      applications: 8,
+      b2bPaid: 10,
+      b2cPaid: 0,
+      paid: 10,
+      gap: 290,
+    });
   });
 
-  it('defaults paid/gap to 0/300 when no B2B deals and not a purchase goal', () => {
+  it('defaults paid/gap to 0/300 when no payments are entered', () => {
     const kpi = summarizeChannels([stat({ goalReaches: 5 })], []);
-    expect(kpi).toEqual({ target: 300, applications: 5, b2bPaid: 0, paid: 0, gap: 300 });
+    expect(kpi).toEqual({
+      target: 300,
+      applications: 5,
+      b2bPaid: 0,
+      b2cPaid: 0,
+      paid: 0,
+      gap: 300,
+    });
   });
 
   it('uses the admin KPI target when passed (target + gap follow it)', () => {
     const kpi = summarizeChannels([stat({ goalReaches: 5 })], [], true, 120);
-    expect(kpi).toEqual({ target: 120, applications: 5, b2bPaid: 0, paid: 5, gap: 115 });
+    expect(kpi).toEqual({
+      target: 120,
+      applications: 5,
+      b2bPaid: 0,
+      b2cPaid: 0,
+      paid: 0,
+      gap: 120,
+    });
   });
 
-  it('purchase goal (goalIsPaid): goal reaches count as payments toward the target', () => {
-    // 52 purchase reaches + 0 B2B paid → paid 52, gap 248 (matches Goals page & snapshot).
+  it('ANA-19: goal reaches NEVER count as payments, even for a purchase goal', () => {
+    // A purchase goal's reaches are ORDERS (контакты оставлены, переход к оплате) — «Оплачено»
+    // counts confirmed money only.
     const kpi = summarizeChannels([stat({ goalReaches: 52 })], [], true);
-    expect(kpi).toEqual({ target: 300, applications: 52, b2bPaid: 0, paid: 52, gap: 248 });
+    expect(kpi).toEqual({
+      target: 300,
+      applications: 52,
+      b2bPaid: 0,
+      b2cPaid: 0,
+      paid: 0,
+      gap: 300,
+    });
   });
 
-  it('purchase goal: B2B paid + purchase reaches both count; gap clamps at 0', () => {
+  it('ANA-19: «Оплачено» = B2C paid (manual/CSV) + B2B paid; gap clamps at 0', () => {
     const deals: B2bDeal[] = [
       { id: 1, company: 'A', tickets: 280, stage: 'paid', dateAdded: '2025-01-01' },
     ];
-    const kpi = summarizeChannels([stat({ goalReaches: 50 })], deals, true);
-    // paid = 280 + 50 = 330 > 300 → gap clamped to 0.
-    expect(kpi).toEqual({ target: 300, applications: 50, b2bPaid: 280, paid: 330, gap: 0 });
+    const kpi = summarizeChannels([stat({ goalReaches: 50 })], deals, true, 300, 40);
+    // paid = 40 (B2C) + 280 (B2B) = 320 > 300 → gap clamped to 0; reaches (50) excluded.
+    expect(kpi).toEqual({
+      target: 300,
+      applications: 50,
+      b2bPaid: 280,
+      b2cPaid: 40,
+      paid: 320,
+      gap: 0,
+    });
   });
 });
 

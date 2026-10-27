@@ -12,17 +12,18 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { FilterBar } from './FilterBar';
+import { useT, type DictKey } from '../i18n';
 
-const NAV: ReadonlyArray<readonly [string, string, ComponentType<{ className?: string }>]> = [
-  ['/', 'Обзор', LayoutDashboard],
-  ['/traffic', 'Трафик', BarChart3],
-  ['/behavior', 'Поведение', MousePointerClick],
-  ['/funnel', 'Воронка', Filter],
-  ['/goals', 'Цели', Target],
-  ['/report', 'Отчёт', FileText],
-  ['/history', 'История', HistoryIcon],
-  ['/settings', 'Настройки', SettingsIcon],
-  ['/help', 'Справка', HelpCircle],
+const NAV: ReadonlyArray<readonly [string, DictKey, ComponentType<{ className?: string }>]> = [
+  ['/', 'nav.overview', LayoutDashboard],
+  ['/traffic', 'nav.traffic', BarChart3],
+  ['/behavior', 'nav.behavior', MousePointerClick],
+  ['/funnel', 'i18n.layout.funnel', Filter],
+  ['/goals', 'i18n.layout.goals', Target],
+  ['/report', 'nav.report', FileText],
+  ['/history', 'nav.history', HistoryIcon],
+  ['/settings', 'i18n.layout.settings', SettingsIcon],
+  ['/help', 'nav.help', HelpCircle],
 ];
 
 /** Pages where the FilterBar should be hidden. */
@@ -32,13 +33,14 @@ const NO_FILTER_PAGES = new Set(['/help', '/settings']);
 export function Layout(): JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
+  const { t } = useT();
   const showFilters = !NO_FILTER_PAGES.has(location.pathname);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       {/* Top nav bar */}
       <nav className="flex items-center justify-between bg-slate-900 px-4 py-3 text-sm text-slate-100 lg:px-6">
-        <span className="font-semibold">ProductCamp · Конверсии</span>
+        <span className="font-semibold">{t('i18n.layout.brand')}</span>
 
         {/* Desktop nav */}
         <div className="hidden items-center gap-3 lg:flex">
@@ -54,7 +56,7 @@ export function Layout(): JSX.Element {
               }
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
-              {label}
+              {t(label)}
             </NavLink>
           ))}
         </div>
@@ -64,7 +66,7 @@ export function Layout(): JSX.Element {
           type="button"
           onClick={() => setMenuOpen(!menuOpen)}
           className="rounded p-1 text-slate-300 hover:text-white lg:hidden"
-          aria-label={menuOpen ? 'Закрыть меню' : 'Открыть меню'}
+          aria-label={t(menuOpen ? 'i18n.layout.menuClose' : 'i18n.layout.menuOpen')}
         >
           {menuOpen ? (
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -106,7 +108,7 @@ export function Layout(): JSX.Element {
               }
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
-              {label}
+              {t(label)}
             </NavLink>
           ))}
         </div>

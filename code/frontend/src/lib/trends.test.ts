@@ -60,9 +60,10 @@ describe('weekOverWeek', () => {
 
 describe('trendsOption', () => {
   it('builds a two-line ECharts option (visits + reaches) over the dates', () => {
-    const option = trendsOption(
-      dailySeries([stat('2025-01-01', { visits: 10, goalReaches: 2 })]),
-    ) as {
+    const option = trendsOption(dailySeries([stat('2025-01-01', { visits: 10, goalReaches: 2 })]), {
+      visits: 'Визиты',
+      reaches: 'Заявки',
+    }) as {
       xAxis: { data: string[] };
       series: { name: string; data: number[] }[];
     };

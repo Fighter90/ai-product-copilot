@@ -7,6 +7,17 @@ import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 vi.mock('../lib/api', () => ({
   api: { buildSnapshot: vi.fn(), generateInsights: vi.fn() },
 }));
+vi.mock('../lib/api-v3', () => ({
+  // A provider is configured by default so the wrapper's AI button is enabled; the empty case
+  // (disabled + hint) is covered at the View level.
+  v3: {
+    availableProviders: vi
+      .fn()
+      .mockResolvedValue([
+        { id: 'yandexgpt', name: 'YandexGPT (AI Studio)', model: 'yandexgpt/latest' },
+      ]),
+  },
+}));
 vi.mock('../lib/download', () => ({
   downloadFile: vi.fn(),
   reportDownloadUrl: (id: string, format: string) => `/api/report/download/${id}/${format}`,
@@ -55,25 +66,44 @@ const baseProps = {
   narrative: undefined,
   insightsError: undefined,
   onInsights: vi.fn(),
+  // ANA-33: the wrapper feeds the enabled providers; tests override as needed.
+  providers: [{ id: 'yandexgpt', name: 'YandexGPT (AI Studio)', model: 'yandexgpt/latest' }],
+  providersPending: false,
+  aiGeneratedBy: undefined,
 };
 
 describe('ReportPreviewView', () => {
-  it('prompts to build, and the build button reflects pending state', () => {
+  it('prompts to build, and the single main button reflects pending state (ANA-39)', () => {
     const onBuild = vi.fn();
     const { rerender } = render(<ReportPreviewView {...baseProps} onBuild={onBuild} />);
-    expect(screen.getByText(/Нажмите «Сформировать срез данных»/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Сформировать срез данных' }));
+    expect(screen.getByText(/Нажмите «Собрать отчёт»/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
     expect(onBuild).toHaveBeenCalled();
 
     rerender(<ReportPreviewView {...baseProps} isPending />);
-    expect(screen.getByRole('button', { name: 'Формирую…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Собираю…' })).toBeDisabled();
+  });
+
+  it('shows a human-readable meta line and keeps the UUID only in the tooltip (ANA-39)', () => {
+    render(<ReportPreviewView {...baseProps} snapshot={snapshot} />);
+    // Not month-aligned → the shared reportPeriodLabel prints «01.01.2025 – 07.01.2025», no UUID.
+    const meta = screen.getByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/);
+    expect(meta).toHaveAttribute('title', 'Срез данных: snap-1');
+    // The visible meta text carries no UUID (the raw id may stay in technical hints only).
+    expect(meta.textContent).not.toContain('snap-1');
+  });
+
+  it('has one main build action — no separate «Перестроить отчёт» button (ANA-39)', () => {
+    const onBuild = vi.fn();
+    render(<ReportPreviewView {...baseProps} snapshot={snapshot} onBuild={onBuild} />);
+    expect(screen.queryByRole('button', { name: 'Перестроить отчёт' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
+    expect(onBuild).toHaveBeenCalled();
   });
 
   it('shows the snapshot summary and triggers DOCX + PDF export', () => {
     const onExport = vi.fn();
     render(<ReportPreviewView {...baseProps} snapshot={snapshot} onExport={onExport} />);
-    // Use getAllByText since "Срез данных: snap-1" appears in both header and full report
-    expect(screen.getAllByText(/Срез данных: snap-1/).length).toBeGreaterThanOrEqual(1);
     // No goalLabel on the fixture → KPI falls back to «Заявок B2C».
     expect(screen.getByText('Заявок B2C')).toBeInTheDocument();
     expect(screen.getByText(/не сгенерированы/)).toBeInTheDocument();
@@ -98,25 +128,51 @@ describe('ReportPreviewView', () => {
     expect(screen.queryByText('Заявок B2C')).not.toBeInTheDocument();
   });
 
-  it('rebuilds the report and reflects pending state', () => {
-    const onBuild = vi.fn();
-    const { rerender } = render(
-      <ReportPreviewView {...baseProps} snapshot={snapshot} onBuild={onBuild} />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Перестроить отчёт' }));
-    expect(onBuild).toHaveBeenCalled();
+  it('AI insights: the chosen provider rides along, «Авто» is the default (ANA-33)', () => {
+    const onInsights = vi.fn();
+    render(<ReportPreviewView {...baseProps} snapshot={snapshot} onInsights={onInsights} />);
+    const select = screen.getByRole('combobox', { name: 'AI-провайдер для генерации анализа' });
+    fireEvent.change(select, { target: { value: 'yandexgpt' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
+    expect(onInsights).toHaveBeenCalledWith('snap-1', 'yandexgpt');
 
-    rerender(<ReportPreviewView {...baseProps} snapshot={snapshot} isPending />);
-    expect(screen.getByRole('button', { name: 'Перестраиваю…' })).toBeDisabled();
+    fireEvent.change(select, { target: { value: 'auto' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
+    expect(onInsights).toHaveBeenLastCalledWith('snap-1', 'auto');
   });
 
-  it('triggers AI insights, shows pending progress, the narrative, and an error', () => {
+  it('AI button is disabled with a hint when no provider is configured (ANA-33)', () => {
+    render(<ReportPreviewView {...baseProps} snapshot={snapshot} providers={[]} />);
+    expect(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' })).toBeDisabled();
+    expect(screen.getByText(/AI-провайдеры не настроены/)).toBeInTheDocument();
+  });
+
+  it('shows «Сгенерировано: provider · model · date» next to the narrative (ANA-33)', () => {
+    render(
+      <ReportPreviewView
+        {...baseProps}
+        snapshot={snapshot}
+        narrative="Итог: рост."
+        aiGeneratedBy={{
+          provider: 'yandexgpt',
+          providerName: 'YandexGPT (AI Studio)',
+          model: 'yandexgpt/latest',
+          at: '2026-10-27T10:00:00.000Z',
+        }}
+      />,
+    );
+    expect(
+      screen.getByText(/Сгенерировано: YandexGPT \(AI Studio\) · yandexgpt\/latest/),
+    ).toBeInTheDocument();
+  });
+
+  it('AI insights pending progress, the narrative, and an error', () => {
     const onInsights = vi.fn();
     const { rerender } = render(
       <ReportPreviewView {...baseProps} snapshot={snapshot} onInsights={onInsights} />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
-    expect(onInsights).toHaveBeenCalledWith('snap-1');
+    expect(onInsights).toHaveBeenCalledWith('snap-1', 'auto');
 
     // When pending, show progress bar instead of disabled button
     rerender(<ReportPreviewView {...baseProps} snapshot={snapshot} insightsPending />);
@@ -163,11 +219,11 @@ describe('ReportPreviewView (EN locale)', () => {
   afterEach(() => setTestLocale('ru'));
 
   // The full report body comes from the shared Russian report document (identical to DOCX/PDF).
-  const ignore = ['article section'];
+  const ignore = ['article'];
 
   it('renders the empty state without Cyrillic', () => {
     const { container } = render(<ReportPreviewView {...baseProps} />);
-    expect(screen.getByRole('button', { name: 'Build data snapshot' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Build report' })).toBeInTheDocument();
     expectNoCyrillic(container);
   });
 
@@ -187,8 +243,9 @@ describe('ReportPreviewView (EN locale)', () => {
     expect(screen.getByText('Hypothesis draft')).toBeInTheDocument();
     expect(screen.getByText('Paid: 20 (1)')).toBeInTheDocument();
     expect(screen.getByText('B2C applications')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Rebuild report' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Build report' })).toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Full report' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Table of contents' })).toBeInTheDocument();
     expectNoCyrillic(container, { ignore });
 
     rerender(<ReportPreviewView {...baseProps} snapshot={snapshotWithData} insightsPending />);
@@ -219,9 +276,9 @@ describe('ReportPreview (wrapper)', () => {
 
   it('builds a snapshot then downloads the DOCX export', async () => {
     renderWithProviders(<ReportPreview />);
-    fireEvent.click(screen.getByRole('button', { name: 'Сформировать срез данных' }));
-    // Use findAllByText since "Срез данных: snap-1" appears in multiple places
-    expect((await screen.findAllByText(/Срез данных: snap-1/)).length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
+    // ANA-39: the human-readable period names the report; the UUID lives only in the tooltip.
+    expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Export DOCX' }));
     expect(downloadFile).toHaveBeenCalledWith('/api/report/download/snap-1/docx');
@@ -230,12 +287,13 @@ describe('ReportPreview (wrapper)', () => {
   it('generates an AI narrative for the snapshot', async () => {
     vi.mocked(api.generateInsights).mockResolvedValue({ narrative: 'AI: рост заявок' });
     renderWithProviders(<ReportPreview />);
-    fireEvent.click(screen.getByRole('button', { name: 'Сформировать срез данных' }));
-    expect((await screen.findAllByText(/Срез данных: snap-1/)).length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
+    expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
     expect(await screen.findByText(/AI: рост заявок/)).toBeInTheDocument();
-    expect(vi.mocked(api.generateInsights).mock.calls[0]?.[0]).toBe('snap-1');
+    // ANA-33: «Авто» is the default choice — no providerId is pinned in the request.
+    expect(vi.mocked(api.generateInsights).mock.calls[0]?.slice(0, 2)).toEqual(['snap-1', 'auto']);
   });
 });
 

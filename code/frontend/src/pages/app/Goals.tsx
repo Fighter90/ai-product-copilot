@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { v3, type LiveGoal } from '../../lib/api-v3';
+import { v3, type LiveGoal, type GoalRole } from '../../lib/api-v3';
 import { useT, fmtNum } from '../../i18n';
 import { DataGrid, type GridColumn } from '../../components/DataGrid';
 import { Card, ErrorBox, Hint, Kpi, PageHeader, Pill, Skeleton } from '../../components/ui';
@@ -23,6 +23,16 @@ export function Goals(): JSX.Element {
     queryFn: () => v3.liveGoals(p),
     refetchInterval: p.refetchInterval,
   });
+  // ANA-34: pc-goals reference — the funnel role of each JS-event goal, joined by `event`.
+  const rolesQ = useQuery({
+    queryKey: ['goal-roles'],
+    queryFn: () => v3.goalRoles(),
+    staleTime: Infinity,
+  });
+  const roleByEvent = useMemo(
+    () => new Map<string, GoalRole>((rolesQ.data?.roles ?? []).map((r) => [r.event, r])),
+    [rolesQ.data],
+  );
 
   const all = q.data?.goals ?? [];
   // The global «Архивные цели» checkbox: archived goals are hidden unless it is on.
@@ -67,6 +77,19 @@ export function Goals(): JSX.Element {
         ) : (
           <span className="text-muted">—</span>
         ),
+    },
+    {
+      id: 'role',
+      header: t('goals.col.role'),
+      accessor: (g) => roleByEvent.get(g.event ?? '')?.[locale === 'ru' ? 'ru' : 'en'] ?? '',
+      cell: (g) => {
+        const r = roleByEvent.get(g.event ?? '');
+        return r ? (
+          <Pill tone="accent">{locale === 'ru' ? r.ru : r.en}</Pill>
+        ) : (
+          <span className="text-muted">—</span>
+        );
+      },
     },
     {
       id: 'reaches',

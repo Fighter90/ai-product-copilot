@@ -4,6 +4,7 @@ import { useT } from '../../../i18n';
 import type { GoalPreview, GoalRefView } from '../../../lib/api-v3';
 
 /** Typed confirmation word required by the backend for any archive. */
+// i18n: ignore — protocol word validated server-side (z.literal('АРХИВ'))
 export const ARCHIVE_WORD = 'АРХИВ';
 
 /** Shows exactly the JSON that will be POSTed to Metrika; writes only on explicit confirm. */

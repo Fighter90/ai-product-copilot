@@ -8,10 +8,13 @@ export interface FiltersState {
   channels: string[];
   segment: Segment;
   showArchived: boolean;
+  /** ANA-22: show the test/service traffic the sync excludes by default. */
+  includeTest: boolean;
   setRange: (from: string, to: string) => void;
   toggleChannel: (channel: string) => void;
   setSegment: (segment: Segment) => void;
   toggleArchived: () => void;
+  toggleTest: () => void;
   preset: (days: number) => void;
 }
 
@@ -26,6 +29,7 @@ export const useFilters = create<FiltersState>((set) => ({
   channels: [],
   segment: 'b2c_b2b',
   showArchived: false,
+  includeTest: false, // ANA-22: test traffic is excluded unless explicitly shown
   setRange: (from, to) => set({ from, to }),
   toggleChannel: (channel) =>
     set((s) => ({
@@ -35,6 +39,7 @@ export const useFilters = create<FiltersState>((set) => ({
     })),
   setSegment: (segment) => set({ segment }),
   toggleArchived: () => set((s) => ({ showArchived: !s.showArchived })),
+  toggleTest: () => set((s) => ({ includeTest: !s.includeTest })),
   preset: (days) => set({ from: isoDaysAgo(days - 1), to: isoDaysAgo(0) }),
 }));
 

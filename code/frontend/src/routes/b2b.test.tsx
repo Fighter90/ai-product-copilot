@@ -9,7 +9,12 @@ const deals: B2bDeal[] = [
   { id: 2, company: 'SmallCo', tickets: 15, stage: 'lead', dateAdded: '2025-01-02' },
 ];
 
-const handlers = () => ({ onAdd: vi.fn(), onStageChange: vi.fn(), onRemove: vi.fn() });
+const handlers = () => ({
+  onAdd: vi.fn(),
+  onStageChange: vi.fn(),
+  onAmountChange: vi.fn(),
+  onRemove: vi.fn(),
+});
 
 describe('B2bView', () => {
   afterEach(() => setTestLocale('ru'));
@@ -48,5 +53,48 @@ describe('B2bView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete BigCorp' }));
     expect(h.onRemove).toHaveBeenCalledWith(1);
     expectNoCyrillic(document.body);
+  });
+
+  it('adds a deal with an amount and edits the amount inline (ANA-50)', () => {
+    const h = handlers();
+    const withAmounts: B2bDeal[] = [
+      {
+        id: 1,
+        company: 'BigCorp',
+        tickets: 20,
+        stage: 'paid',
+        dateAdded: '2025-01-01',
+        amountRub: 100000,
+      },
+      {
+        id: 2,
+        company: 'SmallCo',
+        tickets: 15,
+        stage: 'lead',
+        dateAdded: '2025-01-02',
+        amountRub: 200000,
+      },
+    ];
+    render(<B2bView deals={withAmounts} {...h} />);
+    // The create form accepts an optional ₽ amount.
+    fireEvent.change(screen.getByLabelText('Компания'), { target: { value: 'RichCo' } });
+    fireEvent.change(screen.getByLabelText('Билеты'), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText('Сумма, ₽'), { target: { value: '350000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить' }));
+    expect(h.onAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ company: 'RichCo', tickets: 7, amountRub: 350000 }),
+    );
+
+    // Inline edit in the full table: commits on blur, empty input clears (null).
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть полную таблицу (2)' }));
+    const amountInput = screen.getByLabelText('Сумма сделки: BigCorp');
+    fireEvent.change(amountInput, { target: { value: '500000' } });
+    fireEvent.blur(amountInput);
+    expect(h.onAmountChange).toHaveBeenCalledWith({ id: 1, amountRub: 500000 });
+
+    const clear = screen.getByLabelText('Сумма сделки: SmallCo');
+    fireEvent.change(clear, { target: { value: '' } });
+    fireEvent.blur(clear);
+    expect(h.onAmountChange).toHaveBeenCalledWith({ id: 2, amountRub: null });
   });
 });

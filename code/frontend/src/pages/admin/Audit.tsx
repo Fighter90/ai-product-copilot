@@ -15,26 +15,26 @@ export function Audit(): JSX.Element {
   const cols: GridColumn<AuditEntry>[] = [
     {
       id: 'at',
-      header: locale === 'ru' ? 'Когда' : 'When',
+      header: t('i18n.audit.col.when'),
       accessor: (r) => r.at,
       cell: (r) => fmtDate(r.at, locale, true),
       minWidth: 170,
     },
-    { id: 'user', header: locale === 'ru' ? 'Кто' : 'Who', accessor: (r) => r.userEmail ?? '—' },
+    { id: 'user', header: t('i18n.audit.col.who'), accessor: (r) => r.userEmail ?? '—' },
     {
       id: 'action',
-      header: locale === 'ru' ? 'Действие' : 'Action',
+      header: t('i18n.audit.col.action'),
       accessor: (r) => r.action,
       cell: (r) => <code className="text-xs">{r.action}</code>,
     },
     {
       id: 'target',
-      header: locale === 'ru' ? 'Объект' : 'Target',
+      header: t('i18n.audit.col.target'),
       accessor: (r) => r.target ?? '',
     },
     {
       id: 'details',
-      header: locale === 'ru' ? 'Детали' : 'Details',
+      header: t('i18n.audit.col.details'),
       accessor: (r) => r.details ?? '',
       cell: (r) => (
         <span className="font-mono text-[11px] text-muted">{(r.details ?? '').slice(0, 120)}</span>

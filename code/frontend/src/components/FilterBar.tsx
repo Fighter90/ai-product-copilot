@@ -1,9 +1,23 @@
 import { useFilters, isoDaysAgo, type Segment } from '../store/filters';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useT, fmtDate } from '../i18n';
+import { api, http } from '../lib/api';
+import { useAuth } from '../auth/AuthContext';
 
 const PRESETS = [7, 14, 30, 90, 365] as const;
 const MAX_DAYS = 365; // Maximum allowed period: 1 year
+
+/** GET /api/metrics/coverage (ANA-49): how far back the cached data reaches. */
+interface Coverage {
+  from: string | null;
+  to: string | null;
+  days: number;
+}
+
+/** Local (UTC) calendar day before `iso`, as YYYY-MM-DD. */
+function dayBefore(iso: string): string {
+  return new Date(Date.parse(iso) - 86_400_000).toISOString().slice(0, 10);
+}
 
 /** Calculate days between two dates. */
 function daysBetween(from: string, to: string): number {
@@ -28,14 +42,67 @@ function rangeError(from: string, to: string): 'empty' | 'order' | 'future' | 'm
 /** Sticky global filter header: period presets, custom date picker, segment toggle, archived toggle. */
 export function FilterBar(): JSX.Element {
   const { t, locale } = useT();
-  const { from, to, segment, showArchived, setRange, setSegment, toggleArchived, preset } =
-    useFilters();
+  const {
+    from,
+    to,
+    segment,
+    showArchived,
+    includeTest,
+    setRange,
+    setSegment,
+    toggleArchived,
+    toggleTest,
+    preset,
+  } = useFilters();
   const [showCustom, setShowCustom] = useState(false);
   const [customFrom, setCustomFrom] = useState(from);
   const [customTo, setCustomTo] = useState(to);
   const datesToggleRef = useRef<HTMLButtonElement>(null);
   // On <768px the controls collapse into a bottom-sheet toggled by «Фильтры».
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  // ANA-49: previous period of the same length — the comparison baseline for the KPI tiles.
+  const periodDays = daysBetween(from, to) + 1;
+  const prevTo = dayBefore(from);
+  const prevFrom = dayBefore(
+    new Date(Date.parse(from) - (periodDays - 1) * 86_400_000).toISOString().slice(0, 10),
+  );
+
+  // ANA-49: cached-data coverage → «Догрузить N дней» prompt when the selected period starts
+  // before the first synced day; admins trigger a range sync right from the prompt.
+  const { isAdmin } = useAuth();
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
+  const [backfill, setBackfill] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
+  useEffect(() => {
+    let alive = true;
+    http<Coverage>('/metrics/coverage')
+      .then((c) => {
+        if (alive && c && typeof c.from === 'string') setCoverage(c);
+      })
+      .catch(() => {}); // coverage is advisory — a failed probe just hides the prompt
+    return () => {
+      alive = false;
+    };
+  }, [backfill]);
+  const coverageFrom = typeof coverage?.from === 'string' ? coverage.from : null;
+  const missingDays = coverageFrom
+    ? Math.max(0, Math.round((Date.parse(coverageFrom) - Date.parse(from)) / 86_400_000))
+    : 0;
+  const needsBackfill = coverageFrom !== null && missingDays > 0;
+
+  const runBackfill = async (): Promise<void> => {
+    if (!coverageFrom) return;
+    setBackfill('running');
+    try {
+      // Sync the gap [from … day before the first cached day]; when the cache starts after
+      // the whole period, sync the selected range itself.
+      const gapEnd = dayBefore(coverageFrom);
+      await api.sync({ from, to: gapEnd >= from && gapEnd <= to ? gapEnd : to });
+      setBackfill('done'); // the [backfill] effect re-probes coverage
+    } catch {
+      setBackfill('failed');
+    }
+  };
 
   // Live validation (ANA-49): «Применить» stays disabled with a hint while the range is invalid.
   const error = rangeError(customFrom, customTo);
@@ -78,6 +145,10 @@ export function FilterBar(): JSX.Element {
       <span className="hidden font-mono text-sm text-slate-600 sm:block">
         {fmtDate(from, locale)} — {fmtDate(to, locale)}
       </span>
+      {/* ANA-49: comparison baseline shown next to the period */}
+      <span className="hidden text-xs text-slate-400 sm:block" title={t('dq.prevPeriodHint')}>
+        {t('dq.prevPeriodVs', { from: fmtDate(prevFrom, locale), to: fmtDate(prevTo, locale) })}
+      </span>
 
       {/* Mobile trigger: opens the controls as a bottom-sheet (<768px only) */}
       <button
@@ -88,6 +159,8 @@ export function FilterBar(): JSX.Element {
         className="ml-auto rounded border border-slate-300 px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-indigo-600 md:hidden"
       >
         {t('flt.open')}
+        {/* ANA-49: the collapsed filters still indicate the current period */}
+        <span className="ml-1 font-mono text-xs text-slate-500">{fmtDate(from, locale)}</span>
       </button>
 
       {/* Backdrop behind the mobile sheet */}
@@ -107,24 +180,66 @@ export function FilterBar(): JSX.Element {
           sheetOpen ? 'flex' : 'hidden'
         } fixed inset-x-0 bottom-0 z-30 max-h-[80vh] flex-col gap-2 overflow-y-auto rounded-t-2xl border-t border-slate-200 bg-white p-4 shadow-2xl md:static md:z-auto md:flex md:max-h-none md:flex-row md:flex-wrap md:items-center md:overflow-visible md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none`}
       >
-        {/* Preset buttons */}
-        {PRESETS.map((d) => (
-          <button
-            key={d}
-            type="button"
-            onClick={() => applyPreset(d)}
-            aria-pressed={isPresetActive(d)}
-            aria-label={d === 365 ? t('flt.presetYearHint') : t('flt.presetDaysHint', { d })}
-            title={d === 365 ? t('flt.presetYearHint') : t('flt.presetDaysHint', { d })}
-            className={`rounded border px-2 py-1 text-sm focus-visible:ring-2 focus-visible:ring-indigo-600 ${
-              isPresetActive(d)
-                ? 'border-indigo-500 bg-indigo-100 text-indigo-800'
-                : 'border-slate-300 hover:bg-slate-100'
-            }`}
+        {/* ANA-49: mobile sheet shows the current period and its comparison baseline */}
+        <p className="font-mono text-xs text-slate-500 md:hidden">
+          {fmtDate(from, locale)} — {fmtDate(to, locale)}{' '}
+          {t('dq.prevPeriodVs', { from: fmtDate(prevFrom, locale), to: fmtDate(prevTo, locale) })}
+        </p>
+
+        {/* ANA-49: «Догрузить N дней» when the cached data starts inside the selected period */}
+        {needsBackfill && coverageFrom && (
+          <div
+            role="status"
+            className="flex w-full flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800 md:w-auto"
           >
-            {d === 365 ? t('flt.presetYear') : t('flt.presetDays', { d })}
-          </button>
-        ))}
+            <span>
+              {t('dq.backfillNeeded', { date: fmtDate(coverageFrom, locale), n: missingDays })}
+            </span>
+            <button
+              type="button"
+              onClick={runBackfill}
+              disabled={!isAdmin || backfill === 'running'}
+              title={isAdmin ? undefined : t('dq.backfillAdminOnly')}
+              className="rounded bg-amber-600 px-2 py-0.5 text-xs text-white hover:bg-amber-700 focus-visible:ring-2 focus-visible:ring-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {backfill === 'running'
+                ? t('dq.backfillRunning')
+                : t('dq.backfillAction', { n: missingDays })}
+            </button>
+            {!isAdmin && <span className="sr-only">{t('dq.backfillAdminOnly')}</span>}
+            {backfill === 'done' && <span>{t('dq.backfillDone')}</span>}
+            {backfill === 'failed' && (
+              <span role="alert" className="text-red-700">
+                {t('dq.backfillFailed')}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Preset buttons */}
+        {PRESETS.map((d) => {
+          // WCAG 2.5.3 Label in Name: the accessible name must contain the visible
+          // «7д»/«1г» text, so the hint is appended to it instead of replacing it.
+          const presetLabel = d === 365 ? t('flt.presetYear') : t('flt.presetDays', { d });
+          const presetHint = d === 365 ? t('flt.presetYearHint') : t('flt.presetDaysHint', { d });
+          return (
+            <button
+              key={d}
+              type="button"
+              onClick={() => applyPreset(d)}
+              aria-pressed={isPresetActive(d)}
+              aria-label={`${presetLabel} — ${presetHint}`}
+              title={presetHint}
+              className={`rounded border px-2 py-1 text-sm focus-visible:ring-2 focus-visible:ring-indigo-600 ${
+                isPresetActive(d)
+                  ? 'border-indigo-500 bg-indigo-100 text-indigo-800'
+                  : 'border-slate-300 hover:bg-slate-100'
+              }`}
+            >
+              {presetLabel}
+            </button>
+          );
+        })}
 
         {/* Custom date picker toggle */}
         <button
@@ -132,7 +247,7 @@ export function FilterBar(): JSX.Element {
           type="button"
           onClick={() => setShowCustom(!showCustom)}
           aria-expanded={showCustom}
-          aria-label={t('flt.datesHint')}
+          aria-label={`${t('flt.dates')} — ${t('flt.datesHint')}`}
           title={t('flt.datesHint')}
           className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-indigo-600"
         >
@@ -245,6 +360,24 @@ export function FilterBar(): JSX.Element {
           {/* Tooltip (hover and keyboard focus) */}
           <div className="absolute left-0 top-full z-20 mt-1 hidden w-64 rounded border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow group-hover:block group-focus-within:block">
             <p>{t('filters.archivedGoalsHint')}</p>
+          </div>
+        </div>
+
+        {/* ANA-22: test/service traffic is excluded by default — the toggle brings it back */}
+        <div className="group relative">
+          <label className="flex cursor-pointer items-center gap-1 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={includeTest}
+              onChange={toggleTest}
+              aria-label={t('dh.flt.includeTest')}
+              className="focus-visible:ring-2 focus-visible:ring-indigo-600"
+            />
+            {t('dh.flt.includeTest')}
+          </label>
+          {/* Tooltip (hover and keyboard focus) */}
+          <div className="absolute left-0 top-full z-20 mt-1 hidden w-64 rounded border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow group-hover:block group-focus-within:block">
+            <p>{t('dh.flt.includeTestHint')}</p>
           </div>
         </div>
 

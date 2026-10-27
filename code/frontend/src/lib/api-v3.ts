@@ -14,6 +14,20 @@ export interface CabinetUser {
   lastLoginAt: string | null;
 }
 
+export interface CounterOption {
+  id: number;
+  name: string | null;
+  site: string | null;
+  configured: boolean;
+  source: 'settings' | 'metrika' | 'assigned';
+}
+
+export interface CounterOptionsView {
+  configured: number;
+  counters: CounterOption[];
+  metrikaError?: string;
+}
+
 export interface ProviderView {
   id: 'openrouter' | 'anthropic' | 'yandexgpt' | 'gigachat';
   name: string;
@@ -61,6 +75,15 @@ export interface LiveGoal {
   duplicateOf: number[];
 }
 
+/** One pc-goals reference entry (GET /api/metrics/goal-roles, ANA-34): the funnel role of a JS-event goal. */
+export interface GoalRole {
+  code: string;
+  event: string;
+  ru: string;
+  en: string;
+  group: 'funnel' | 'ticket' | 'role';
+}
+
 export interface LiveGoals {
   from: string;
   to: string;
@@ -101,12 +124,14 @@ export interface LiveFunnel {
   from: string;
   to: string;
   updatedAt: string;
+  /** «Визит» → goal steps → «Оплата»; `source` tells where the value comes from. */
   stages: Array<{
     key: string;
     ru: string;
     en: string;
     value: number;
     goalId: number | null;
+    source: 'visits' | 'goal' | 'manual' | 'none';
     fromPrevious: number | null;
     fromFirst: number | null;
   }>;
@@ -116,7 +141,20 @@ export interface LiveFunnel {
     buy: number;
     checkout: number;
   }>;
-  roles: Array<{ key: string; ru: string; en: string; value: number }>;
+  /** ANA-35: role application funnels (clevel / speaker / volunteer / partner). */
+  roleFunnels: Array<{
+    key: string;
+    ru: string;
+    en: string;
+    steps: Array<{
+      key: string;
+      ru: string;
+      en: string;
+      value: number;
+      goalId: number | null;
+      fromPrevious: number | null;
+    }>;
+  }>;
   missing: string[];
 }
 
@@ -200,7 +238,14 @@ export const v3 = {
     http<{ ok: true }>('/auth/password', { method: 'POST', ...json({ current, next }) }),
 
   users: () => http<CabinetUser[]>('/users'),
-  createUser: (u: { email: string; name: string; role: Role; password?: string }) =>
+  createUser: (u: {
+    email: string;
+    name: string;
+    role: Role;
+    password?: string;
+    /** ANA-29: counter access granted at invite time (analysts). */
+    counterIds?: number[];
+  }) =>
     http<{ user: CabinetUser; temporaryPassword: string }>('/users', {
       method: 'POST',
       ...json(u),
@@ -213,6 +258,15 @@ export const v3 = {
       ...json({}),
     }),
   audit: (limit = 200) => http<AuditEntry[]>(`/admin/audit?limit=${limit}`),
+
+  /** ANA-29: counters an admin can assign to analysts. */
+  adminCounters: () => http<CounterOptionsView>('/admin/counters'),
+  adminUserCounters: () => http<Record<string, number[]>>('/admin/user-counters'),
+  setUserCounters: (id: number, counterIds: number[]) =>
+    http<{ userId: number; counterIds: number[] }>(`/users/${id}/counters`, {
+      method: 'PUT',
+      ...json({ counterIds }),
+    }),
 
   providers: () => http<ProviderView[]>('/admin/ai/providers'),
   updateProvider: (
@@ -243,12 +297,17 @@ export const v3 = {
   rotateDatalensToken: () =>
     http<{ token: string }>('/settings/datalens-token', { method: 'POST', ...json({}) }),
   clearMetrikaData: () =>
-    http<{ ok: true }>('/data/metrika', { method: 'DELETE', ...json({ confirm: 'УДАЛИТЬ' }) }),
+    http<{ ok: true }>(
+      '/data/metrika',
+      // i18n: ignore — protocol word validated server-side (z.literal('УДАЛИТЬ'))
+      { method: 'DELETE', ...json({ confirm: 'УДАЛИТЬ' }) },
+    ),
 
   liveSummary: (p: { from?: string; to?: string; test?: boolean }) =>
     http<LiveSummary>(`/live/summary${q(p)}`),
   liveGoals: (p: { from?: string; to?: string; test?: boolean }) =>
     http<LiveGoals>(`/live/goals${q(p)}`),
+  goalRoles: () => http<{ roles: GoalRole[] }>('/metrics/goal-roles'),
   liveGoal: (id: number, p: { from?: string; to?: string; test?: boolean }) =>
     http<LiveGoalDetail>(`/live/goals/${id}${q(p)}`),
   liveFunnel: (p: { from?: string; to?: string; test?: boolean }) =>

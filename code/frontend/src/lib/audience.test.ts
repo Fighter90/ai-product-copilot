@@ -61,7 +61,10 @@ describe('audienceBarOption', () => {
 
 describe('deviceShareOption', () => {
   it('builds a donut of visit share by device', () => {
-    const o = deviceShareOption(byDevice([geo({ device: 'mobile', visits: 10 })])) as {
+    const o = deviceShareOption(
+      byDevice([geo({ device: 'mobile', visits: 10 })]),
+      'Доля устройств',
+    ) as {
       series: { type: string; data: { name: string; value: number }[] }[];
     };
     expect(o.series[0]?.type).toBe('pie');
@@ -71,6 +74,7 @@ describe('deviceShareOption', () => {
   it('includes a legend with device names', () => {
     const o = deviceShareOption(
       byDevice([geo({ device: 'mobile', visits: 10 }), geo({ device: 'desktop', visits: 5 })]),
+      'Доля устройств',
     ) as { legend: { data: string[] } };
     expect(o.legend.data).toContain('mobile');
     expect(o.legend.data).toContain('desktop');

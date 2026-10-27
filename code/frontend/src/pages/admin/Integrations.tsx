@@ -215,29 +215,15 @@ export function Integrations(): JSX.Element {
                 </button>
               </div>
             ) : (
-              <p className="text-sm text-muted">
-                {locale === 'ru' ? 'URL ещё не выпущен.' : 'No URL issued yet.'}
-              </p>
+              <p className="text-sm text-muted">{t('i18n.dl.noUrl')}</p>
             )}
             <button type="button" className="btn-primary" onClick={() => rotate.mutate()}>
               <RotateCw className="h-4 w-4" /> {t('admin.datalens.rotate')}
             </button>
             <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
-              <li>
-                {locale === 'ru'
-                  ? 'DataLens → Настройки → Уведомления → Вебхуки → «Добавить вебхук».'
-                  : 'DataLens → Settings → Notifications → Webhooks → “Add webhook”.'}
-              </li>
-              <li>
-                {locale === 'ru'
-                  ? 'Вставьте URL выше и нажмите «Получить код».'
-                  : 'Paste the URL above and click “Get code”.'}
-              </li>
-              <li>
-                {locale === 'ru'
-                  ? 'Код появится ниже через несколько секунд — введите его в DataLens.'
-                  : 'The code appears below within seconds — enter it in DataLens.'}
-              </li>
+              <li>{t('i18n.dl.step1')}</li>
+              <li>{t('i18n.dl.step2')}</li>
+              <li>{t('i18n.dl.step3')}</li>
             </ol>
           </div>
         )}

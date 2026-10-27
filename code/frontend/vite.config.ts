@@ -21,13 +21,19 @@ const sha = (() => {
   }
 })();
 
+// BUILD_DATE (ISO) may be pinned by the deploy for reproducible bundles; defaults to today (UTC).
+const buildDate = (process.env.BUILD_DATE ?? new Date().toISOString()).slice(0, 10);
+
 // The backend mounts everything under /api; proxy keeps the path so /api/health resolves.
 export default defineConfig({
   plugins: [react()],
   define: {
     __APP_VERSION__: JSON.stringify(version),
     __APP_SHA__: JSON.stringify(sha),
-    __APP_BUILT__: JSON.stringify(new Date().toISOString().slice(0, 10)),
+    __APP_BUILT__: JSON.stringify(buildDate),
+    // ANA-43: build stamp for the footer and the frontend↔backend build check (/api/health).
+    __BUILD_SHA__: JSON.stringify(sha),
+    __BUILD_DATE__: JSON.stringify(buildDate),
   },
   server: {
     port: FRONTEND_PORT,

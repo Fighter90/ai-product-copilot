@@ -15,6 +15,8 @@ import {
   History as HistoryIcon,
   KeyRound,
   LayoutDashboard,
+  Lightbulb,
+  ListChecks,
   LogOut,
   Menu,
   MousePointerClick,
@@ -27,6 +29,7 @@ import {
   Target,
   Users,
   Briefcase,
+  Megaphone,
   Workflow,
   X,
 } from 'lucide-react';
@@ -36,6 +39,12 @@ import { useAuth } from '../auth/AuthContext';
 import { useT, ago, type DictKey } from '../i18n';
 import { usePrefs } from '../store/prefs';
 import { v3 } from '../lib/api-v3';
+import { api } from '../lib/api';
+import { InfoHint } from './InfoHint';
+import { PageHelpLink } from './PageHelpLink';
+import { BuildMismatchBadge } from './BuildMismatchBadge';
+import { CabinetTour } from './onboarding/OnboardingTour';
+import { termHint } from '@pca/shared';
 import { BrandMark } from './BrandMark';
 import { ChangePasswordModal } from './ChangePasswordModal';
 
@@ -72,8 +81,11 @@ export const NAV: Array<{ section: DictKey; admin?: boolean; items: NavItem[] }>
     section: 'nav.section.work',
     items: [
       { to: '/app/report', key: 'nav.report', icon: FileText },
+      { to: '/app/hypotheses', key: 'nav.hypotheses', icon: Lightbulb },
+      { to: '/app/decisions', key: 'nav.decisions', icon: ListChecks },
       { to: '/app/history', key: 'nav.history', icon: HistoryIcon },
       { to: '/app/b2b', key: 'nav.b2b', icon: Briefcase },
+      { to: '/app/marketing', key: 'nav.marketing', icon: Megaphone },
       { to: '/app/datalens', key: 'nav.integrations', icon: PieChart },
     ],
   },
@@ -325,6 +337,40 @@ const MOBILE_TABS: NavItem[] = [
   { to: '/app/report', key: 'nav.report', icon: FileText },
 ];
 
+/**
+ * ANA-18: yellow «Демо-данные» banner shown on every cabinet screen while demo (seed) rows exist
+ * in the database (GET /api/demo/status). The first successful Metrika sync wipes them and the
+ * banner disappears. Renders nothing on error / before the first load.
+ */
+export function DemoBanner(): JSX.Element | null {
+  const { t, locale } = useT();
+  const q = useQuery({
+    queryKey: ['demo-status'],
+    queryFn: () => api.demoStatus(),
+    retry: false,
+    refetchInterval: 60_000, // disappear right after the first sync wipes the seed rows
+    refetchIntervalInBackground: false,
+  });
+  if (!q.data?.demo) return null;
+  return (
+    <div
+      data-testid="demo-banner"
+      role="status"
+      className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm text-amber-900 sm:px-6"
+    >
+      <span className="mr-1" aria-hidden="true">
+        🟡
+      </span>
+      <b>{t('dh.demo.bannerTitle')}</b> {t('dh.demo.bannerText')}{' '}
+      <InfoHint
+        label={t('dh.demo.bannerTitle')}
+        align="end"
+        text={<p>{termHint('demoData', locale)}</p>}
+      />
+    </div>
+  );
+}
+
 /** Cabinet shell: collapsible sidebar, top bar (filters, theme, language, bell, user), mobile tabs. */
 export function CabinetLayout(): JSX.Element {
   const { t } = useT();
@@ -444,6 +490,7 @@ export function CabinetLayout(): JSX.Element {
             <div className="min-w-0 flex-1 truncate text-sm text-muted">
               <span className="hidden sm:inline">{t('app.tagline')}</span>
             </div>
+            <PageHelpLink />
             <LangToggle onChange={(l) => void v3.updateMe({ locale: l }).catch(() => undefined)} />
             <ThemeToggle />
             <Bell2 />
@@ -461,6 +508,10 @@ export function CabinetLayout(): JSX.Element {
           {showFilters && <FilterBar />}
         </header>
 
+        {/* ANA-18: seed rows must never be mistaken for live Metrika data — a persistent
+            banner on every cabinet screen while any is_demo row exists. */}
+        <DemoBanner />
+
         <main
           key={location.pathname}
           className="mx-auto max-w-7xl px-4 pb-28 pt-6 animate-fade-in sm:px-6 lg:pb-12"
@@ -474,7 +525,10 @@ export function CabinetLayout(): JSX.Element {
 
         <footer className="hidden border-t border-line px-6 py-4 text-xs text-muted lg:flex lg:items-center lg:justify-between">
           <span>{t('footer.rights')}</span>
-          <VersionBadge />
+          <span className="flex items-center gap-2">
+            <BuildMismatchBadge />
+            <VersionBadge />
+          </span>
         </footer>
       </div>
 
@@ -505,6 +559,9 @@ export function CabinetLayout(): JSX.Element {
           {t('nav.more')}
         </button>
       </nav>
+
+      {/* ANA-47: role-specific onboarding tour, mounted once for the whole cabinet. */}
+      <CabinetTour />
     </div>
   );
 }

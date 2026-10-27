@@ -13,6 +13,7 @@ vi.mock('../lib/api', () => ({
   },
 }));
 import { api } from '../lib/api';
+import type { LiveFunnel } from '../lib/api-v3';
 import { FunnelView, Funnel } from './funnel';
 
 beforeAll(() => {
@@ -62,7 +63,8 @@ describe('FunnelView', () => {
   it('renders the funnel stages + chart on success', () => {
     render(<FunnelView status="success" stats={stats} deals={deals} geoDevice={[]} pages={[]} />);
     expect(screen.getByText('Визитов')).toBeInTheDocument();
-    expect(screen.getByText('Оплачено B2B')).toBeInTheDocument();
+    // The label appears on the KPI card and in the funnel stage list below the chart.
+    expect(screen.getAllByText('Оплачено B2B').length).toBeGreaterThanOrEqual(1);
     // Multiple charts now: funnel, channel CR, geo
     expect(screen.getAllByTestId('echart').length).toBeGreaterThanOrEqual(2);
   });
@@ -143,6 +145,101 @@ describe('FunnelView (en locale)', () => {
     );
     expect(screen.getByText(/No B2B deals/)).toBeInTheDocument();
     expect(screen.getByText(/No pages with a critical bounce rate/)).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+});
+
+describe('FunnelView — per-issue pc-goals funnel (ANA-21)', () => {
+  const live = {
+    from: '2025-01-01',
+    to: '2025-01-14',
+    updatedAt: '2025-01-15T00:00:00.000Z',
+    stages: [
+      { key: 'visits', ru: 'Визит', en: 'Visit', value: 2246, goalId: null, source: 'visits' },
+      {
+        key: 'reg_open',
+        ru: 'Открыл регистрацию',
+        en: 'Opened registration',
+        value: 300,
+        goalId: 1,
+        source: 'goal',
+      },
+      {
+        key: 'cart_open',
+        ru: 'Открыл корзину',
+        en: 'Opened cart',
+        value: 80,
+        goalId: 2,
+        source: 'goal',
+      },
+      {
+        key: 'reg_step1',
+        ru: 'Оставил контакты',
+        en: 'Left contacts',
+        value: 27,
+        goalId: 3,
+        source: 'goal',
+      },
+      { key: 'payment', ru: 'Оплата', en: 'Payment', value: 0, goalId: null, source: 'none' },
+    ],
+    tickets: [],
+    roles: [],
+  } as unknown as LiveFunnel;
+
+  it('renders every per-issue stage with absolute and % of the previous one', () => {
+    render(
+      <FunnelView
+        status="success"
+        stats={stats}
+        deals={deals}
+        geoDevice={[]}
+        pages={[]}
+        live={live}
+      />,
+    );
+    const list = screen.getByRole('list', { name: 'Ступени воронки' });
+    expect(list).toBeInTheDocument();
+    expect(screen.getByText('Открыли регистрацию')).toBeInTheDocument();
+    expect(screen.getByText('Открыли корзину')).toBeInTheDocument();
+    // «Оплата» falls back to the manually paid B2B deals (30 tickets in `deals`)
+    expect(screen.getByText('Оплата')).toBeInTheDocument();
+    expect(screen.getByText('300')).toBeInTheDocument();
+    expect(screen.getAllByText('30').length).toBeGreaterThan(0);
+  });
+
+  it('shows the empty state inside the block when no funnel stage carries data', () => {
+    const emptyLive = {
+      ...live,
+      stages: live.stages.map((s: { value: number }) => ({ ...s, value: 0 })),
+    } as never;
+    render(
+      <FunnelView
+        status="success"
+        stats={stats}
+        deals={[]}
+        geoDevice={[]}
+        pages={[]}
+        live={emptyLive}
+      />,
+    );
+    expect(screen.queryByRole('list', { name: 'Ступени воронки' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Нет данных за выбранный период/)).toBeInTheDocument();
+  });
+
+  it('renders stages in English when the locale is en', () => {
+    setTestLocale('en');
+    const { container } = render(
+      <FunnelView
+        status="success"
+        stats={stats}
+        deals={deals}
+        geoDevice={[]}
+        pages={[]}
+        live={live}
+      />,
+    );
+    expect(screen.getByRole('list', { name: 'Funnel stages' })).toBeInTheDocument();
+    expect(screen.getByText('Opened registration')).toBeInTheDocument();
     expectNoCyrillic(container);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../test/utils';
+import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 vi.mock('../lib/api', () => ({
   api: {
@@ -157,5 +158,54 @@ describe('Settings (data wrapper)', () => {
     // Click refresh
     fireEvent.click(screen.getByText(/Обновить данные из Метрики/));
     await waitFor(() => expect(api.sync).toHaveBeenCalled());
+  });
+});
+
+describe('SettingsView (en locale)', () => {
+  afterEach(() => setTestLocale('ru'));
+
+  it('renders the form, refresh and clear sections in English', () => {
+    setTestLocale('en');
+    const { container } = render(
+      <SettingsView
+        status="success"
+        settings={sampleSettings}
+        healthCounterId={12345678}
+        goals={[]}
+        archivedGoals={[]}
+        onSave={vi.fn()}
+        onClear={vi.fn()}
+        onRefresh={vi.fn()}
+        onSaveError={undefined}
+        onClearError={undefined}
+        onRefreshError={undefined}
+        isRefreshing={false}
+        refreshResult={undefined}
+      />,
+    );
+    expect(screen.getByText('Settings')).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+
+  it('shows the refresh result line in English', () => {
+    setTestLocale('en');
+    const { container } = render(
+      <SettingsView
+        status="success"
+        settings={sampleSettings}
+        healthCounterId={12345678}
+        goals={[]}
+        archivedGoals={[]}
+        onSave={vi.fn()}
+        onClear={vi.fn()}
+        onRefresh={vi.fn()}
+        onSaveError={undefined}
+        onClearError={undefined}
+        onRefreshError={undefined}
+        isRefreshing={false}
+        refreshResult={{ goals: 3, days: 14, channelRows: 50 }}
+      />,
+    );
+    expectNoCyrillic(container);
   });
 });

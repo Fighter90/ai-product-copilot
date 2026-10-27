@@ -4,6 +4,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { v3, type CabinetUser } from '../lib/api-v3';
 import { ApiError } from '../lib/api';
 import { usePrefs } from '../store/prefs';
+import { useT } from '../i18n';
 import { Forbidden } from '../pages/app/Forbidden';
 
 interface AuthState {
@@ -117,19 +118,13 @@ function Splash(): JSX.Element {
 }
 
 function ServerUnavailable({ onRetry }: { onRetry: () => void }): JSX.Element {
-  const ru = usePrefs((s) => s.locale) !== 'en';
+  const { t } = useT();
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas p-6 text-center">
-      <p className="text-lg font-semibold">
-        {ru ? 'Сервер временно недоступен' : 'The server is temporarily unavailable'}
-      </p>
-      <p className="max-w-md text-sm text-muted">
-        {ru
-          ? 'Сессия сохранена — повторите через несколько секунд (например, идёт обновление).'
-          : 'Your session is kept — retry in a few seconds (an update may be in progress).'}
-      </p>
+      <p className="text-lg font-semibold">{t('i18n.auth.unavailable.title')}</p>
+      <p className="max-w-md text-sm text-muted">{t('i18n.auth.unavailable.text')}</p>
       <button type="button" className="btn-primary px-4" onClick={onRetry}>
-        {ru ? 'Повторить' : 'Retry'}
+        {t('common.retry')}
       </button>
     </div>
   );

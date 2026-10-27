@@ -7,6 +7,7 @@ import { useT } from '../../i18n';
 import { mdToHtml } from '../../lib/md-to-html';
 import { PublicFooter, PublicHeader } from './PublicChrome';
 import { Skeleton } from '../../components/ui';
+import { RestartTourButton } from '../../components/onboarding/RestartTourButton';
 
 export interface TocItem {
   id: string;
@@ -255,6 +256,13 @@ export function HelpCenter(): JSX.Element {
             )}
             <div className="mt-12 max-w-3xl rounded-card border border-accent/30 bg-accent/5 p-4 text-sm">
               {t('help.askAssistant')}
+            </div>
+            <div className="mt-4 flex max-w-3xl flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-surface p-4 text-sm">
+              <div className="min-w-0">
+                <div className="font-medium">{t('hint.tour.restart')}</div>
+                <div className="text-muted">{t('hint.tour.restartDesc')}</div>
+              </div>
+              <RestartTourButton />
             </div>
           </article>
 

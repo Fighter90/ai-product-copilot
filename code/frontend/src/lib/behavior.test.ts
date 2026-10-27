@@ -39,7 +39,7 @@ describe('pageBarOption', () => {
       page({ page: 'https://productcamp.ru', visits: 40, goalReaches: 2 }), // host only → '/'
       page({ page: '/program', visits: 10, goalReaches: 1 }), // already a path
     ]);
-    const o = pageBarOption(rows, 'Входы') as {
+    const o = pageBarOption(rows, 'Входы', { visits: 'Визиты', reaches: 'Заявки' }) as {
       title: { text: string };
       yAxis: { data: string[] };
       series: { name: string; data: number[] }[];

@@ -1,4 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { translate, useT, type DictKey } from '../i18n';
+import { usePrefs } from '../store/prefs';
 
 interface Props {
   children: ReactNode;
@@ -12,12 +14,13 @@ interface State {
 
 /** Компактный fallback для lazy-маршрутов (спиннер). Экспортируется для CabinetLayout. */
 export function RouteFallback(): JSX.Element {
+  const { t } = useT();
   return (
     <div className="flex h-full min-h-[60vh] w-full items-center justify-center bg-canvas">
       <div
         className="h-8 w-8 animate-spin rounded-full border-2 border-line border-t-accent"
         role="status"
-        aria-label="Загрузка"
+        aria-label={t('i18n.err.loadingAria')}
       />
     </div>
   );
@@ -49,6 +52,8 @@ export class ErrorBoundary extends Component<Props, State> {
   override render(): ReactNode {
     const { error } = this.state;
     if (!error) return this.props.children;
+    // Class component: read the locale imperatively (parents re-render this boundary on switches).
+    const t = (key: DictKey): string => translate(usePrefs.getState().locale, key);
     return (
       <div
         role="alert"
@@ -60,12 +65,10 @@ export class ErrorBoundary extends Component<Props, State> {
       >
         <div className="text-3xl">😕</div>
         <h1 className="text-xl font-semibold">
-          {this.props.compact ? 'Не удалось загрузить раздел' : 'Что-то сломалось на экране'}
+          {this.props.compact ? t('i18n.err.boundary.titleChunk') : t('i18n.err.boundary.title')}
         </h1>
         <p className="max-w-md text-sm opacity-70">
-          {this.props.compact
-            ? 'Попробуйте повторить — обычно это разовый сбой загрузки.'
-            : 'Интерфейс восстановим перезагрузкой. Данные в порядке — ошибка только отображения.'}
+          {this.props.compact ? t('i18n.err.boundary.textChunk') : t('i18n.err.boundary.text')}
         </p>
         <pre className="max-w-lg overflow-auto rounded-lg bg-black/5 p-3 text-left text-xs opacity-70">
           {error.message}
@@ -75,7 +78,7 @@ export class ErrorBoundary extends Component<Props, State> {
           onClick={this.reset}
           className="rounded-lg bg-accent px-4 py-2 font-medium text-onaccent hover:opacity-90"
         >
-          Повторить
+          {t('common.retry')}
         </button>
       </div>
     );

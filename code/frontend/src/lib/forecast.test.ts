@@ -3,6 +3,7 @@ import {
   addDaysIso,
   diffDaysIso,
   paceInfo,
+  recentPaceInfo,
   scenarioPace,
   daysToTarget,
   forecastGoal,
@@ -332,5 +333,59 @@ describe('forecastChartOption', () => {
     expect(opt.series[0]!.data).toEqual([0]);
     expect(opt.series[1]!.data).toEqual([0, 0, 0, 0, 0]);
     expect(opt.yAxis.max).toBe(315); // ceil(300 × 1.05); Math.max(1,…) guard keeps zero-data sane
+  });
+});
+
+describe('recentPaceInfo (ANA-50: темп последних 7 дней)', () => {
+  it('averages only the tail of the window, ignoring an earlier slump', () => {
+    // 10 slow days (1/day) followed by 7 fast days (10/day) → recent pace = 10, not ~4.7.
+    const points = [...flatDays(10, '2026-01-01', 1000, 1), ...flatDays(7, '2026-01-11', 1000, 10)];
+    const r = recentPaceInfo(points);
+    expect(r.days).toBe(7);
+    expect(r.total).toBe(70);
+    expect(r.perDay).toBe(10);
+  });
+
+  it('uses whatever fact exists when the window is shorter than 7 days', () => {
+    const r = recentPaceInfo([p('2026-01-01', 1000, 3), p('2026-01-02', 1000, 5)]);
+    expect(r.days).toBe(2);
+    expect(r.perDay).toBe(4);
+  });
+
+  it('defaults to 7 days and tolerates empty input (zero pace)', () => {
+    expect(recentPaceInfo([]).perDay).toBe(0);
+    expect(recentPaceInfo(flatDays(9), 3).days).toBe(3);
+  });
+});
+
+describe('forecastGoal: recentPace + requiredPace (ANA-50)', () => {
+  it('reports the last-7-days pace and the required daily pace to the deadline', () => {
+    // 14-day window: 7 slow days (5/day) + 7 fast days (10/day), target 300.
+    const points = [...flatDays(7, '2026-01-01', 1000, 5), ...flatDays(7, '2026-01-08', 1000, 10)];
+    const fc = forecastGoal({
+      points,
+      to: '2026-01-14',
+      target: 300,
+      trafficPct: 0,
+      crUpliftPp: 0,
+    });
+    expect(fc.recentPace).toBe(10); // last 7 days only
+    expect(fc.pace).toBeCloseTo(7.5, 12); // whole window
+    // Deadline = to + 2×14 = 2026-02-11 → 28 days left; remaining 300−105=195 → 195/28.
+    expect(diffDaysIso('2026-01-14', fc.horizonDate)).toBe(28);
+    expect(fc.requiredPace).toBeCloseTo(195 / 28, 12);
+  });
+
+  it('requiredPace is null once the target is reached', () => {
+    const points = flatDays(7, '2026-01-01', 1000, 50); // 350 ≥ 300
+    const fc = forecastGoal({
+      points,
+      to: '2026-01-07',
+      target: 300,
+      trafficPct: 0,
+      crUpliftPp: 0,
+    });
+    expect(fc.reached).toBe(true);
+    expect(fc.requiredPace).toBeNull();
   });
 });

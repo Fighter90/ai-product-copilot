@@ -61,10 +61,10 @@ export function weekOverWeek(stats: ChannelStat[]): Wow {
   };
 }
 
-/** ECharts line option: daily visits + goal reaches over the period. */
+/** ECharts line option: daily visits + goal reaches over the period. Labels come from the caller (dict). */
 export function trendsOption(
   series: DailyPoint[],
-  labels: { visits: string; reaches: string } = { visits: 'Визиты', reaches: 'Заявки' },
+  labels: { visits: string; reaches: string },
 ): object {
   return {
     tooltip: { trigger: 'axis', ...intTooltip },

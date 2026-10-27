@@ -185,7 +185,18 @@ function WhatIfForecast({
                 : t('kpi.whatif.unreachable'),
             })}
             {' · '}
+            {t('kpi.whatif.recentPace', { pace: fmtNum(fc.recentPace, locale, 1) })}
+            {' · '}
             {t('kpi.whatif.onDeadline', { n: fmtNum(fc.projectedAtHorizon, locale, 0) })}
+            {fc.requiredPace !== null && (
+              <>
+                {' · '}
+                {t('kpi.whatif.requiredPace', {
+                  pace: fmtNum(fc.requiredPace, locale, 1),
+                  date: fmtDate(fc.horizonDate, locale),
+                })}
+              </>
+            )}
           </p>
 
           {/* Scenario sliders: traffic ±% and CR +п.п., recomputed live */}

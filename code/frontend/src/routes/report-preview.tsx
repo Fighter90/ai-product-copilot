@@ -1,6 +1,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { reportSections, type ReportSnapshot } from '@pca/shared';
+import {
+  aiGenerationLabel,
+  reportPeriodLabel,
+  reportSections,
+  type AiGenerationInfo,
+  type ReportSnapshot,
+} from '@pca/shared';
 import { api } from '../lib/api';
+import { v3 } from '../lib/api-v3';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
 import { errorMessage } from '../lib/error-message';
@@ -40,6 +47,8 @@ function Stat({
 /**
  * On-screen render of the full report — the exact same sections DOCX and PDF produce
  * (via the shared reportSections), so what you read here is byte-for-byte the exported content.
+ * ANA-39: a table of contents with anchor links + collapsible sections (`<details>`), so 30+
+ * sections are navigable instead of one wall of text. The first two sections start open.
  */
 export function ReportFullView({ snapshot }: { snapshot: ReportSnapshot }): JSX.Element {
   const { t } = useT();
@@ -50,18 +59,47 @@ export function ReportFullView({ snapshot }: { snapshot: ReportSnapshot }): JSX.
       className="max-h-[70vh] space-y-4 overflow-auto rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-sm"
     >
       <p className="text-xs text-slate-500">{t('rep.fullReportNote', { n: sections.length })}</p>
+      {/* ANA-39: оглавление — every heading is an anchor into the collapsible body */}
+      {sections.length > 1 && (
+        <nav
+          aria-label={t('fx.toc.title')}
+          className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600"
+        >
+          <div className="mb-1 font-semibold uppercase tracking-wide text-slate-400">
+            {t('fx.toc.title')}
+          </div>
+          <ol className="grid gap-x-4 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
+            {sections.map((sec, i) => (
+              <li key={`${sec.heading}-${i}`}>
+                <a href={`#rep-sec-${i}`} className="hover:text-indigo-700 hover:underline">
+                  {sec.heading}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )}
       {sections.map((sec, i) => (
-        <section key={`${sec.heading}-${i}`} className="space-y-1">
-          <h3 className="border-b border-slate-200 pb-1 font-semibold text-slate-800">
+        <details
+          key={`${sec.heading}-${i}`}
+          id={`rep-sec-${i}`}
+          // First two sections open ( Краткие итоги first), the rest collapsed — uncontrolled
+          // afterwards, so the reader expands what they need without fighting React state.
+          open={i < 2 ? true : undefined}
+          className="scroll-mt-4 rounded-md border border-slate-100"
+        >
+          <summary className="cursor-pointer select-none border-b border-slate-200 px-2 py-1.5 font-semibold text-slate-800 hover:bg-slate-50">
             {sec.heading}
-          </h3>
-          {/* Same markdown the DOCX/PDF builders consume — tables/lists render as such
-              (mdToHtml escapes first, so section text can't inject markup). */}
-          <div
-            className="report-md space-y-1 text-slate-600 [&_table]:my-2 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left"
-            dangerouslySetInnerHTML={{ __html: mdToHtml(sec.lines.join('\n')) }}
-          />
-        </section>
+          </summary>
+          <div className="space-y-1 p-2">
+            {/* Same markdown the DOCX/PDF builders consume — tables/lists render as such
+                (mdToHtml escapes first, so section text can't inject markup). */}
+            <div
+              className="report-md space-y-1 text-slate-600 [&_table]:my-2 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left"
+              dangerouslySetInnerHTML={{ __html: mdToHtml(sec.lines.join('\n')) }}
+            />
+          </div>
+        </details>
       ))}
     </article>
   );
@@ -107,7 +145,13 @@ export interface ReportPreviewProps {
   insightsPending: boolean;
   narrative: string | undefined;
   insightsError: string | undefined;
-  onInsights: (snapshotId: string) => void;
+  /** ANA-33: the selected provider rides along («auto» walks the admin-defined chain). */
+  onInsights: (snapshotId: string, providerId: string) => void;
+  /** ANA-33: providers currently usable (enabled + key set) from the admin API; [] = none. */
+  providers: Array<{ id: string; name: string; model: string }>;
+  providersPending?: boolean;
+  /** ANA-33: attribution of the freshest generation (mutation result) — wins over the snapshot's. */
+  aiGeneratedBy?: AiGenerationInfo;
   /** ANA-24: hypothesis draft prefilled from a «→ гипотеза» deep link (Overview/Traffic). */
   prefillSeed?: HypothesisSeed;
   onPrefillChange?: (next: HypothesisSeed) => void;
@@ -209,6 +253,9 @@ export function ReportPreviewView({
   narrative,
   insightsError,
   onInsights,
+  providers,
+  providersPending,
+  aiGeneratedBy,
   prefillSeed,
   onPrefillChange,
   onDiscardPrefill,
@@ -216,6 +263,8 @@ export function ReportPreviewView({
   const { t, locale } = useT();
   const [aiProgress, setAiProgress] = useState(0);
   const [aiStage, setAiStage] = useState<DictKey | null>(null);
+  const [providerId, setProviderId] = useState('auto');
+  const aiReady = providers.length > 0;
   const stageLabel = (stage: string): string => {
     const key = STAGE_KEYS[stage];
     return key ? t(key) : stage;
@@ -281,14 +330,18 @@ export function ReportPreviewView({
     <section className="space-y-4">
       <div className="flex items-center gap-3">
         <h2 className="text-lg font-semibold">{t('rep.title')}</h2>
-        <button
-          type="button"
-          onClick={onBuild}
-          disabled={isPending}
-          className="rounded bg-indigo-600 px-3 py-1 text-sm text-white disabled:opacity-40"
-        >
-          {isPending ? t('rep.building') : t('rep.build')}
-        </button>
+        {/* ANA-39: exactly one main action. Before the first snapshot this is it; afterwards the
+            primary "Build report" action in the snapshot card takes over (single button, one meaning). */}
+        {!snapshot && (
+          <button
+            type="button"
+            onClick={onBuild}
+            disabled={isPending}
+            className="rounded bg-indigo-600 px-3 py-1 text-sm text-white disabled:opacity-40"
+          >
+            {isPending ? t('rep.building') : t('rep.build')}
+          </button>
+        )}
       </div>
 
       {/* ANA-24: prefill from the «→ гипотеза» deep link lands in this editable draft. */}
@@ -300,11 +353,14 @@ export function ReportPreviewView({
 
       {snapshot ? (
         <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-500">
-            {t('rep.snapshotMeta', {
-              id: snapshot.id,
-              from: fmtDate(snapshot.period.from, locale),
-              to: fmtDate(snapshot.period.to, locale),
+          {/* ANA-39: no UUID in the UI — a human-readable period names the report; the raw id
+              stays available in the technical tooltip (the "i" hint icon). */}
+          <p
+            className="text-xs text-slate-500"
+            title={t('fx.snapshot.uuidTitle', { id: snapshot.id })}
+          >
+            {t('fx.snapshot.meta', {
+              period: reportPeriodLabel(snapshot.period),
               at: fmtDate(snapshot.generatedAt, locale, true),
             })}
           </p>
@@ -375,7 +431,12 @@ export function ReportPreviewView({
 
           {/* Data summary */}
           <ul className="text-sm text-slate-600">
-            <li>{t('rep.data.channels', { n: snapshot.channels.length })}</li>
+            {/* ANA-20: DISTINCT channels, not channel × day rows (the «Каналов: 82» bug) */}
+            <li>
+              {t('rep.data.channels', {
+                n: new Set(snapshot.channels.map((c) => c.channel)).size,
+              })}
+            </li>
             <li>
               {t('rep.data.hypotheses', {
                 value: snapshot.generatedHypotheses
@@ -389,32 +450,34 @@ export function ReportPreviewView({
             <li>{t('rep.data.decisions', { n: snapshot.decisions.length })}</li>
           </ul>
 
-          <div className="flex items-center gap-3">
+          {/* ANA-39: one main action — "Build report" creates a fresh snapshot in place
+              (the old "Build slice" + "Rebuild report" pair meant the same). */}
+          <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={onBuild}
               disabled={isPending}
-              className="rounded border border-slate-400 px-3 py-1 text-sm text-slate-700 disabled:opacity-40"
+              className="rounded bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40"
             >
-              {isPending ? t('rep.rebuilding') : t('rep.rebuild')}
+              {isPending ? t('rep.building') : t('rep.build')}
             </button>
             <button
               type="button"
               onClick={() => onExport(snapshot.id, 'docx')}
-              className="rounded border border-indigo-600 px-3 py-1 text-sm text-indigo-700"
+              className="rounded border border-indigo-600 px-3 py-1.5 text-sm text-indigo-700"
             >
               {t('rep.exportDocx')}
             </button>
             <button
               type="button"
               onClick={() => onExport(snapshot.id, 'pdf')}
-              className="rounded border border-rose-600 px-3 py-1 text-sm text-rose-700"
+              className="rounded border border-rose-600 px-3 py-1.5 text-sm text-rose-700"
             >
               {t('rep.exportPdf')}
             </button>
           </div>
 
-          {/* Optional AI narrative with progress bar */}
+          {/* Optional AI narrative with progress bar + provider choice (ANA-33) */}
           <div className="space-y-2 border-t border-slate-100 pt-3">
             {insightsPending ? (
               <div className="space-y-2">
@@ -422,21 +485,58 @@ export function ReportPreviewView({
                 <p className="text-xs text-violet-500">{t('rep.ai.pendingNote')}</p>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => onInsights(snapshot.id)}
-                disabled={!!narrative}
-                title={narrative ? t('rep.ai.alreadyTitle') : ''}
-                className="rounded bg-violet-600 px-3 py-1 text-sm text-white disabled:opacity-40"
-              >
-                {narrative ? t('rep.ai.done') : t('rep.ai.generate')}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onInsights(snapshot.id, providerId)}
+                  disabled={!aiReady || !!narrative}
+                  title={
+                    !aiReady ? t('fx.ai.noProviders') : narrative ? t('rep.ai.alreadyTitle') : ''
+                  }
+                  className="rounded bg-violet-600 px-3 py-1 text-sm text-white disabled:opacity-40"
+                >
+                  {narrative ? t('rep.ai.done') : t('rep.ai.generate')}
+                </button>
+                {/* Provider selector: «Авто» + only the enabled providers (admin API). */}
+                <label className="flex items-center gap-1 text-xs text-slate-600">
+                  <span>{t('fx.ai.provider')}</span>
+                  <select
+                    value={providerId}
+                    disabled={!aiReady}
+                    onChange={(e) => setProviderId(e.target.value)}
+                    aria-label={t('fx.ai.providerAria')}
+                    className="rounded border border-slate-300 px-1.5 py-1"
+                  >
+                    <option value="auto">{t('fx.ai.providerAuto')}</option>
+                    {providers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} · {p.model}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+            {!providersPending && !aiReady && (
+              <p className="text-xs text-amber-700">{t('fx.ai.noProviders')}</p>
             )}
             {insightsError ? (
               <p role="alert" className="text-xs text-red-700">
                 {t('rep.ai.unavailable', { error: insightsError })}
               </p>
             ) : null}
+            {/* ANA-33: «Сгенерировано: YandexGPT · yandexgpt/latest» — who actually answered. */}
+            {(() => {
+              const by = aiGeneratedBy ?? snapshot.aiGeneratedBy?.insights;
+              return narrative && by ? (
+                <p className="text-xs text-violet-700">
+                  {t('fx.ai.generatedBy', {
+                    label: aiGenerationLabel(by),
+                    at: fmtDate(by.at, locale, true),
+                  })}
+                </p>
+              ) : null;
+            })()}
             {narrative ? <AINarrativeView narrative={narrative} /> : null}
           </div>
 
@@ -455,7 +555,18 @@ export function ReportPreview(): JSX.Element {
   const location = useLocation();
   const navigate = useNavigate();
   const buildMut = useMutation({ mutationFn: api.buildSnapshot });
-  const insightsMut = useMutation({ mutationFn: api.generateInsights });
+  const insightsMut = useMutation({
+    mutationFn: (input: { snapshotId: string; providerId: string }) =>
+      api.generateInsights(input.snapshotId, input.providerId),
+  });
+
+  // ANA-33: usable AI providers (enabled + key set) — analysts read them from /ai/available.
+  const providersQ = useQuery({
+    queryKey: ['v3', 'available-providers'],
+    queryFn: () => v3.availableProviders(),
+    staleTime: 60_000,
+    retry: false,
+  });
 
   // Check for existing snapshot ID in URL (from History page)
   const searchParams = new URLSearchParams(location.search);
@@ -499,7 +610,10 @@ export function ReportPreview(): JSX.Element {
       insightsPending={insightsPending}
       narrative={narrative}
       insightsError={errorMessage(insightsMut.error)}
-      onInsights={(snapshotId) => insightsMut.mutate(snapshotId)}
+      onInsights={(snapshotId, providerId) => insightsMut.mutate({ snapshotId, providerId })}
+      providers={providersQ.data ?? []}
+      providersPending={providersQ.isPending}
+      aiGeneratedBy={insightsMut.data?.generatedBy}
       prefillSeed={prefill}
       onPrefillChange={(next) => {
         storeHypothesisSeed(next);

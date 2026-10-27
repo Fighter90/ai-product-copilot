@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { simulatePayments } from './what-if';
+import { simulatePayments, orderToPayFromFact } from './what-if';
 
 const base = {
   visits: 1000,
@@ -69,5 +69,38 @@ describe('simulatePayments', () => {
     });
     expect(r.gapAfter).toBe(0);
     expect(r.projectedPayments).toBeGreaterThan(300);
+  });
+
+  // ANA-50: конверсия заказ→оплата — параметр сценария.
+  it('scales projected payments by the order→payment conversion when given', () => {
+    const r = simulatePayments({ ...base, orderToPayRate: 0.5 });
+    // 100 applications × 0.5 = 50 paid + 20 b2b
+    expect(r.projectedApplications).toBe(100); // applications themselves are unaffected
+    expect(r.projectedPayments).toBe(70);
+    expect(r.gapAfter).toBe(230);
+  });
+
+  it('keeps the old every-application-is-a-payment estimate without the parameter', () => {
+    expect(simulatePayments(base).projectedPayments).toBe(120);
+  });
+
+  it('clamps an out-of-range conversion (>1) to 100%', () => {
+    const r = simulatePayments({ ...base, orderToPayRate: 1.5 });
+    expect(r.projectedPayments).toBe(120); // 1.5 clamped → 100 applications still count once
+  });
+});
+
+describe('orderToPayFromFact (ANA-50: конверсия из факта)', () => {
+  it('divides payments by orders for the same period', () => {
+    expect(orderToPayFromFact(12, 40)).toBeCloseTo(0.3, 12);
+  });
+
+  it('returns null without a fact yet (no payments or no orders)', () => {
+    expect(orderToPayFromFact(0, 40)).toBeNull();
+    expect(orderToPayFromFact(12, 0)).toBeNull();
+  });
+
+  it('clamps glitchy fact data to 0..1', () => {
+    expect(orderToPayFromFact(50, 20)).toBe(1);
   });
 });

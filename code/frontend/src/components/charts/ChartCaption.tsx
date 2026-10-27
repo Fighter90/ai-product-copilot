@@ -1,9 +1,11 @@
 import { useT } from '../../i18n';
+import { InfoHint } from '../InfoHint';
 
 /**
- * Caption block rendered under a chart: what the chart shows correctly, what to be
- * careful about (data caveats), and a recommendation. Keeps every chart self-explanatory
- * so a volunteer can read the dashboard without a brief.
+ * Chart explanation collapsed into a single «i» popover next to the chart title (ANA-47): what the
+ * chart shows correctly, a data caveat and a recommendation. These lines describe the chart, not
+ * the data, so they live behind the icon instead of a text block under every chart — only
+ * data-driven insights stay visible on the screen.
  */
 export interface ChartCaptionProps {
   /** What the chart correctly represents and where the numbers trace to. */
@@ -12,26 +14,35 @@ export interface ChartCaptionProps {
   readonly caveat?: string;
   /** A concrete next action for the reader. */
   readonly advice: string;
+  /** Popover alignment; use `end` for icons near the right edge of a card. */
+  readonly align?: 'center' | 'start' | 'end';
 }
 
-export function ChartCaption({ correct, caveat, advice }: ChartCaptionProps): JSX.Element {
+export function ChartCaption({ correct, caveat, advice, align }: ChartCaptionProps): JSX.Element {
   const { t } = useT();
   return (
-    <dl className="mt-3 space-y-1 rounded-md bg-slate-50 px-3 py-2 text-xs leading-relaxed">
-      <div className="flex gap-2">
-        <dt className="shrink-0 font-medium text-green-700">{`🟢 ${t('cap.correct')}`}</dt>
-        <dd className="text-slate-600">{correct}</dd>
-      </div>
-      {caveat ? (
-        <div className="flex gap-2">
-          <dt className="shrink-0 font-medium text-red-700">{`🔴 ${t('cap.caveat')}`}</dt>
-          <dd className="text-slate-600">{caveat}</dd>
-        </div>
-      ) : null}
-      <div className="flex gap-2">
-        <dt className="shrink-0 font-medium text-indigo-700">{`💡 ${t('cap.advice')}`}</dt>
-        <dd className="text-slate-600">{advice}</dd>
-      </div>
-    </dl>
+    <InfoHint
+      label={t('hint.chartInfo')}
+      align={align ?? 'start'}
+      className="ml-1"
+      text={
+        <span data-testid="chart-caption" className="block space-y-1.5">
+          <span className="block">
+            <span className="font-medium text-green-700">{`🟢 ${t('cap.correct')}`}</span>{' '}
+            <span>{correct}</span>
+          </span>
+          {caveat ? (
+            <span className="block">
+              <span className="font-medium text-red-700">{`🔴 ${t('cap.caveat')}`}</span>{' '}
+              <span>{caveat}</span>
+            </span>
+          ) : null}
+          <span className="block">
+            <span className="font-medium text-indigo-700">{`💡 ${t('cap.advice')}`}</span>{' '}
+            <span>{advice}</span>
+          </span>
+        </span>
+      }
+    />
   );
 }

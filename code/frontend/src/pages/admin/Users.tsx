@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, UserPlus } from 'lucide-react';
-import { v3, type CabinetUser, type Role } from '../../lib/api-v3';
+import { v3, type CabinetUser, type CounterOption, type Role } from '../../lib/api-v3';
 import { useT, fmtDate } from '../../i18n';
 import { Card, ErrorBox, Modal, PageHeader, Pill, Skeleton } from '../../components/ui';
 import { ApiError } from '../../lib/api';
@@ -13,18 +13,36 @@ export function Users(): JSX.Element {
   const qc = useQueryClient();
   const { user: me } = useAuth();
   const q = useQuery({ queryKey: ['users'], queryFn: v3.users });
+  // ANA-29: which Metrika counters exist and which are assigned per user.
+  const counters = useQuery({ queryKey: ['admin-counters'], queryFn: v3.adminCounters });
+  const counterMap = useQuery({ queryKey: ['user-counters'], queryFn: v3.adminUserCounters });
+  const counterLabel = (c: CounterOption) =>
+    c.name ? `${c.name} (#${c.id})` : c.site ? `${c.site} (#${c.id})` : `#${c.id}`;
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<{ email: string; name: string; role: Role }>({
-    email: '',
-    name: '',
-    role: 'analyst',
-  });
+  const [form, setForm] = useState<{
+    email: string;
+    name: string;
+    role: Role;
+    counterIds?: number[];
+  }>({ email: '', name: '', role: 'analyst' });
   const [secret, setSecret] = useState<{ email: string; password: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  /** Invite default for analysts: the configured counter (mirrors the backend default grant). */
+  const defaultCounterIds =
+    counters.data && counters.data.configured > 0 ? [counters.data.configured] : [];
 
   const done = () => qc.invalidateQueries({ queryKey: ['users'] });
   const create = useMutation({
-    mutationFn: () => v3.createUser(form),
+    // Untouched selection → omit counterIds so the backend applies its own default
+    // (a new analyst gets the configured counter when one is configured).
+    mutationFn: () => {
+      const { counterIds, ...rest } = form;
+      const configured = counters.data?.configured ?? 0;
+      const ids = counterIds ?? (form.role === 'analyst' && configured > 0 ? [configured] : null);
+      return v3.createUser({ ...rest, ...(ids ? { counterIds: ids } : {}) });
+    },
     onSuccess: (r) => {
       setOpen(false);
       setSecret({ email: r.user.email, password: r.temporaryPassword });
@@ -34,7 +52,7 @@ export function Users(): JSX.Element {
     onError: (e) =>
       setError(
         e instanceof ApiError && e.status === 409
-          ? 'Email уже существует'
+          ? t('admin.users.emailExists')
           : String((e as Error).message),
       ),
   });
@@ -48,6 +66,19 @@ export function Users(): JSX.Element {
           ? t('admin.users.lastAdmin')
           : String((e as Error).message),
       ),
+  });
+  const setCounters = useMutation({
+    mutationFn: (x: { id: number; counterIds: number[] }) => v3.setUserCounters(x.id, x.counterIds),
+    onMutate: () => setNotice(null),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['user-counters'] });
+      setError(null);
+      setNotice(t('uc.saved'));
+    },
+    onError: () => {
+      setNotice(null);
+      setError(t('uc.saveError'));
+    },
   });
   const reset = useMutation({
     mutationFn: (u: CabinetUser) =>
@@ -74,6 +105,16 @@ export function Users(): JSX.Element {
           onClick={() => setError(null)}
         >
           {error}
+        </div>
+      )}
+      {counters.data?.metrikaError && <p className="text-xs text-muted">{t('uc.metrikaError')}</p>}
+      {notice && (
+        <div
+          role="status"
+          className="card border-green-300 p-3 text-sm text-green-700"
+          onClick={() => setNotice(null)}
+        >
+          {notice}
         </div>
       )}
       {secret && (
@@ -110,6 +151,7 @@ export function Users(): JSX.Element {
                   <th className="px-3 py-2">Email</th>
                   <th className="px-3 py-2">{t('admin.users.role')}</th>
                   <th className="px-3 py-2">{t('admin.users.status')}</th>
+                  <th className="px-3 py-2">{t('uc.column')}</th>
                   <th className="px-3 py-2">{t('admin.users.lastLogin')}</th>
                   <th className="px-3 py-2" />
                 </tr>
@@ -138,6 +180,34 @@ export function Users(): JSX.Element {
                       <Pill tone={u.isActive ? 'green' : 'neutral'}>
                         {u.isActive ? t('admin.users.active') : t('admin.users.disabled')}
                       </Pill>
+                    </td>
+                    <td className="px-3 py-2">
+                      {u.role === 'admin' || !counters.data ? (
+                        <span className="text-muted">{t('uc.all')}</span>
+                      ) : !counters.data.counters.length ? (
+                        <span className="text-muted">{t('uc.empty')}</span>
+                      ) : (
+                        <select
+                          multiple
+                          size={Math.min(4, counters.data.counters.length)}
+                          aria-label={t('uc.title')}
+                          value={(counterMap.data?.[u.id] ?? []).map(String)}
+                          onChange={(e) =>
+                            setCounters.mutate({
+                              id: u.id,
+                              counterIds: [...e.target.selectedOptions].map((o) => Number(o.value)),
+                            })
+                          }
+                          className="input h-auto w-full min-w-40 py-1 text-xs"
+                        >
+                          {counters.data.counters.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {String(c.id === counters.data?.configured ? '• ' : '')}
+                              {counterLabel(c)}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-muted">
                       {u.lastLoginAt ? fmtDate(u.lastLoginAt, locale, true) : '—'}
@@ -209,6 +279,31 @@ export function Users(): JSX.Element {
               <option value="admin">{t('role.admin')}</option>
             </select>
           </label>
+          {form.role === 'analyst' && !!counters.data?.counters.length && (
+            <label className="block">
+              <span className="label">{t('uc.inviteLabel')}</span>
+              <select
+                multiple
+                size={Math.min(4, counters.data.counters.length)}
+                aria-label={t('uc.title')}
+                value={(form.counterIds ?? defaultCounterIds).map(String)}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    counterIds: [...e.target.selectedOptions].map((o) => Number(o.value)),
+                  })
+                }
+                className="input h-auto w-full py-1 text-xs"
+              >
+                {counters.data.counters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.id === counters.data?.configured ? '• ' : ''}
+                    {counterLabel(c)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-ghost" onClick={() => setOpen(false)}>
               {t('common.cancel')}

@@ -40,7 +40,10 @@ vi.mock('../auth/AuthContext', () => ({
 // FilterBar тянет свои запросы — для навигационных тестов не важен.
 vi.mock('./FilterBar', () => ({ FilterBar: () => <div data-testid="filter-bar" /> }));
 
-function renderCabinet(route = '/app') {
+function renderCabinet(route = '/app', { tourDone = true }: { tourDone?: boolean } = {}) {
+  // The onboarding tour has its own suite; keep it closed in layout tests…
+  if (tourDone) window.localStorage.setItem('pca.tour.v1.analyst', 'done');
+  else window.localStorage.removeItem('pca.tour.v1.analyst');
   return renderWithProviders(
     <Routes>
       <Route path="/app" element={<CabinetLayout />}>
@@ -130,6 +133,25 @@ describe('CabinetLayout', () => {
     // Соседний пункт не активен.
     const overview = within(drawerNav).getByRole('link', { name: 'Обзор' });
     expect(overview).not.toHaveAttribute('aria-current');
+  });
+
+  it('mounts the role tour (opens on the first visit) and the header help link', () => {
+    renderCabinet('/app/traffic', { tourDone: false });
+    // ANA-47: тур смонтирован в оболочке кабинета и открыт при первом входе.
+    expect(screen.getByRole('dialog', { name: 'Добро пожаловать в кабинет' })).toBeInTheDocument();
+    // ANA-45: «?» в шапке ведёт на статью текущего раздела.
+    const help = screen.getByRole('link', { name: 'Справка по этому разделу' });
+    expect(help).toHaveAttribute('href', '/help/traffic-behavior');
+  });
+
+  it('shows the build-mismatch wiring in the footer without a false badge', () => {
+    // /api/health недоступен в jsdom → бейдж не рисуется, футер не падает.
+    const { container } = renderCabinet();
+    const footer = container.querySelector('footer')!;
+    // Версия в футере + сайдбаре; бейджа расхождения без ответа /api/health нет.
+    expect(within(footer).getAllByTestId('version-badge').length).toBe(1);
+    expect(within(footer).queryByTestId('build-mismatch')).toBeNull();
+    expect(footer.textContent).toContain('ProductCamp');
   });
 });
 

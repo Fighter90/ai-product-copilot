@@ -46,11 +46,11 @@ function shortLabel(page: string): string {
   return path === '' ? '/' : path;
 }
 
-/** ECharts horizontal bar: visits per page (top 8), with visits + reaches series. */
+/** ECharts horizontal bar: visits per page (top 8), with visits + reaches series (labels from the caller). */
 export function pageBarOption(
   rows: PageRow[],
   title: string,
-  labels: { visits: string; reaches: string } = { visits: 'Визиты', reaches: 'Заявки' },
+  labels: { visits: string; reaches: string },
 ): object {
   const top = rows.slice(0, 8).reverse();
   return {

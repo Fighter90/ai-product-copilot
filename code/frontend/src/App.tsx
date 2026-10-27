@@ -26,6 +26,7 @@ const ReportPreview = lazy(() =>
 );
 const History = lazy(() => import('./routes/history').then((m) => ({ default: m.History })));
 const B2b = lazy(() => import('./routes/b2b').then((m) => ({ default: m.B2b })));
+const Marketing = lazy(() => import('./routes/marketing').then((m) => ({ default: m.Marketing })));
 const Live = lazy(() => import('./pages/app/Live').then((m) => ({ default: m.Live })));
 const Goals = lazy(() => import('./pages/app/Goals').then((m) => ({ default: m.Goals })));
 const GoalDetail = lazy(() =>
@@ -47,14 +48,20 @@ const Integrations = lazy(() =>
   import('./pages/admin/Integrations').then((m) => ({ default: m.Integrations })),
 );
 const Audit = lazy(() => import('./pages/admin/Audit').then((m) => ({ default: m.Audit })));
+const Hypotheses = lazy(() =>
+  import('./pages/app/Hypotheses').then((m) => ({ default: m.Hypotheses })),
+);
+const Decisions = lazy(() =>
+  import('./pages/app/Decisions').then((m) => ({ default: m.Decisions })),
+);
 
 /** Same look as auth's Splash — shown while a lazy route chunk loads. */
 /** Pre-v3 URLs (/traffic, /report, …) keep working by redirecting into the cabinet. */
 function LegacyRedirect(): JSX.Element {
   const { pathname, search } = useLocation();
   const map: Record<string, string> = {
-    '/hypotheses': '/app/report',
-    '/decisions': '/app/report',
+    '/hypotheses': '/app/hypotheses',
+    '/decisions': '/app/decisions',
     '/settings': '/app/admin/metrika',
     '/goals': '/app/kpi',
   };
@@ -101,8 +108,10 @@ export function App(): JSX.Element {
                 <Route path="report" element={<ReportPreview />} />
                 <Route path="history" element={<History />} />
                 <Route path="b2b" element={<B2b />} />
+                <Route path="marketing" element={<Marketing />} />
                 <Route path="datalens" element={<DataLens />} />
-                <Route path="hypotheses" element={<Navigate to="/app/report" replace />} />
+                <Route path="hypotheses" element={<Hypotheses />} />
+                <Route path="decisions" element={<Decisions />} />
                 <Route
                   path="admin/users"
                   element={

@@ -3,6 +3,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { BrandMark } from '../../components/BrandMark';
 import { LangToggle, ThemeToggle, VersionBadge } from '../../components/ui';
+import { BuildMismatchBadge } from '../../components/BuildMismatchBadge';
 import { useT } from '../../i18n';
 import { useAuth } from '../../auth/AuthContext';
 
@@ -82,7 +83,11 @@ export function PublicFooter(): JSX.Element {
           >
             {t('footer.changelog')}
           </a>
-          <VersionBadge />
+          <span className="flex items-center gap-2">
+            {/* ANA-43: warns when the landing/help bundle is older than the running backend. */}
+            <BuildMismatchBadge />
+            <VersionBadge />
+          </span>
         </div>
       </div>
     </footer>

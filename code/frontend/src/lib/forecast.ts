@@ -57,6 +57,15 @@ export function paceInfo(points: DailyPoint[]): PaceInfo {
   };
 }
 
+/**
+ * ANA-50: темп по последним `days` (по умолчанию 7) дням факта — «текущий темп» reacts to a
+ * recent acceleration/slowdown that a whole-period linear pace smooths away. Fewer points than
+ * the window → whatever fact exists (≥ 1 day, same guard as {@link paceInfo}).
+ */
+export function recentPaceInfo(points: DailyPoint[], days = 7): PaceInfo {
+  return paceInfo(points.slice(Math.max(points.length - days, 0)));
+}
+
 export interface ScenarioInput {
   /** Baseline visits per day. */
   readonly visitsPerDay: number;
@@ -112,8 +121,15 @@ export interface ForecastResult {
   readonly windowDays: number;
   /** Total reaches over the fact window (= current progress). */
   readonly totalNow: number;
-  /** Baseline pace (orders/day) — the «текущий темп». */
+  /** Baseline pace (orders/day) — the «текущий темп» over the whole fact window. */
   readonly pace: number;
+  /** ANA-50: linear pace over the last 7 days of the window (see {@link recentPaceInfo}). */
+  readonly recentPace: number;
+  /**
+   * ANA-50: требуемый дневной темп к дедлайну — remaining / days until the deadline.
+   * Null when the target is already reached (0 needed) or the deadline has passed.
+   */
+  readonly requiredPace: number | null;
   /** Orders/day under the scenario. */
   readonly scenarioPace: number;
   /** Target − totalNow, floored at 0. */
@@ -160,10 +176,16 @@ export function forecastGoal(input: ForecastInput): ForecastResult {
   const reached = pace.total >= target;
   const baselineDays = daysToTarget(target, pace.total, pace.perDay);
   const scenarioDays = daysToTarget(target, pace.total, sp);
+  // Required daily pace to close the gap exactly by the deadline (0 days left → null).
+  const daysToLeft = Math.max(diffDaysIso(to, horizonDate), 0);
+  const requiredPace =
+    reached || daysToLeft === 0 ? null : Math.max(0, target - pace.total) / daysToLeft;
   return {
     windowDays: pace.days,
     totalNow: pace.total,
     pace: pace.perDay,
+    recentPace: recentPaceInfo(points).perDay,
+    requiredPace,
     scenarioPace: sp,
     remaining: Math.max(0, target - pace.total),
     reached,
@@ -246,7 +268,8 @@ export function forecastChartOption(input: ForecastChartInput): object {
   ];
 
   const allValues = [...factCum, ...tailValues, target];
-  const yMax = Math.ceil(Math.max(1, ...allValues) * 1.05); // max(1,…) — ось не вырождается при пустых данных
+  // max(1,…) — ось не вырождается при пустых данных
+  const yMax = Math.ceil(Math.max(1, ...allValues) * 1.05);
 
   return {
     tooltip: { trigger: 'axis', ...intTooltip },
