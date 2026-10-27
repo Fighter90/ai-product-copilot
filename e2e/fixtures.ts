@@ -241,6 +241,27 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
     return json(r, state.hypotheses);
   });
 
+  // Hypothesis detail — status change (PATCH …/status) and delete (DELETE), for the kanban.
+  await page.route('**/api/hypotheses/*', async (r) => {
+    const parts = r.request().url().split('?')[0]!.split('/').filter(Boolean);
+    const method = r.request().method();
+    const id = Number(
+      parts[parts.length - 1] === 'status' ? parts[parts.length - 2] : parts[parts.length - 1],
+    );
+    if (method === 'PATCH') {
+      const body = JSON.parse(r.request().postData() ?? '{}') as { status?: string };
+      state.hypotheses = state.hypotheses.map((h) =>
+        h.id === id ? { ...h, status: body.status ?? h.status } : h,
+      );
+      return json(r, state.hypotheses.find((h) => h.id === id) ?? {});
+    }
+    if (method === 'DELETE') {
+      state.hypotheses = state.hypotheses.filter((h) => h.id !== id);
+      return r.fulfill({ status: 204 });
+    }
+    return json(r, state.hypotheses.find((h) => h.id === id) ?? {});
+  });
+
   // Decisions — stateful create (also flips the linked hypothesis status to the outcome).
   await page.route('**/api/decisions', async (r) => {
     if (r.request().method() === 'POST') {
