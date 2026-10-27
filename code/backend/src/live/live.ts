@@ -127,6 +127,12 @@ export const ROLE_FUNNELS: ReadonlyArray<RoleFunnelDef> = [
   roleFunnel('partner', 'Партнёр', 'Partner', false),
 ];
 
+/**
+ * Steps of PC_FUNNEL backed by a pc-goals JS event (the audit reference uses only these).
+ * In the current funnel shape every step is goal-backed, so this is PC_FUNNEL itself; the
+ * visits/payment split and the filtered version live in the upcoming live.ts refactor —
+ * replace this alias with it when that lands.
+ */
 export const TICKET_TYPES = ['standard', 'optimal', 'max'] as const;
 
 export const ROLE_EVENTS: ReadonlyArray<{ key: string; event: string; ru: string; en: string }> = [

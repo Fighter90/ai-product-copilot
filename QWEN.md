@@ -245,7 +245,7 @@ pnpm e2e        # Playwright
 | Validation | Zod                                                                        |
 | HTTP       | undici (built-in fetch)                                                    |
 | Storage    | SQLite via `better-sqlite3` (без Docker)                                   |
-| Frontend   | React 18 + Vite 5                                                          |
+| Frontend   | React 18 + Vite 7                                                          |
 | UI         | TailwindCSS + shadcn/ui                                                    |
 | Charts     | Apache ECharts (`echarts-for-react`)                                       |
 | Tables     | TanStack Table v8                                                          |

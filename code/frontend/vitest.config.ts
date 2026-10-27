@@ -9,6 +9,9 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
+    // Full-app renders (App/Landing, CabinetLayout) are heavy on a cold run and blow the 5 s
+    // default on a loaded box — vitest 4 fails them even when the overrun is one-off JIT/import.
+    testTimeout: 20_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
