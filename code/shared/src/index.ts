@@ -8,6 +8,7 @@ export * from './report-charts';
 export * from './echarts-layout';
 export * from './goal-classifier';
 export * from './format-goal';
+export * from './kpi';
 export * from './period-totals';
 export * from './aggregate';
 export * from './traffic-sources';

@@ -1,4 +1,4 @@
-import { resolveKpiTarget, formatGoalLabel, type ReportSnapshot } from '@pca/shared';
+import { paidAndGap, resolveKpiTarget, formatGoalLabel, type ReportSnapshot } from '@pca/shared';
 import type { MetricsRepo } from '../db/repositories/metrics-repo';
 import type { HypothesesRepo } from '../db/repositories/hypotheses-repo';
 import type { DecisionsRepo } from '../db/repositories/decisions-repo';
@@ -88,11 +88,18 @@ export class SnapshotBuilder {
     const goalLabel = formatGoalLabel(
       resolvePrimaryGoal(this.deps.metrics.listGoals(true), this.deps.primaryGoalId?.()),
     );
-    // When the primary goal is a purchase goal, its reaches ARE payments and count toward the
-    // KPI target alongside B2B paid (matches the Goals page). Otherwise only B2B paid counts.
+    // ANA-75 (БАГ-02): единая семантика «Оплачено/Осталось» — тот же helper paidAndGap, что на
+    // Обзоре, /app/kpi и воронке: цель типа «оплата» → заказы Метрики считаются оплатой;
+    // B2C-платежи и B2B-paid складываются всегда. B2C-платежей у снапшота нет (они живут
+    // в payments-репозитории кабинета), поэтому здесь b2cPaidTickets = 0.
     const target = resolveKpiTarget(this.deps.kpiTarget?.());
-    const metrikaPaid = goalLabel.isPaid ? b2cApplications : 0;
-    const gap = Math.max(0, target - b2bPaidTickets - metrikaPaid);
+    const { gap } = paidAndGap({
+      target,
+      b2cGoalOrders: b2cApplications,
+      b2cPaidTickets: 0,
+      b2bPaidTickets,
+      goalIsPaid: goalLabel.isPaid,
+    });
 
     return {
       id: opts.id,

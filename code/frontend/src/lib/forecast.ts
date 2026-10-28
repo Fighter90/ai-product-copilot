@@ -1,4 +1,4 @@
-import { clampRatio } from '@pca/shared';
+import { clampRatio, resolveKpiDeadline } from '@pca/shared';
 import { intTooltip } from './echart-format';
 import { METRIC_COLORS } from './chart-colors';
 import type { DailyPoint } from './trends';
@@ -115,6 +115,11 @@ export interface ForecastInput {
   readonly crUpliftPp: number;
   /** Deadline horizon in days after `to`; default 2× the fact window (no event date in the app). */
   readonly horizonDays?: number;
+  /**
+   * ANA-75 (БАГ-01): admin EVENT_DATE (YYYY-MM-DD). When set, it IS the deadline (wins over
+   * {@link horizonDays}); empty/invalid → the heuristic «period end + 2× window».
+   */
+  readonly deadlineDate?: string;
 }
 
 export interface ForecastResult {
@@ -142,8 +147,12 @@ export interface ForecastResult {
   /** Days after `to` to reach the target at the scenario pace (null = unreachable). */
   readonly scenarioDays: number | null;
   readonly scenarioDate: string | null;
-  /** Deadline: `to` + horizonDays (default 2× window). */
+  /** Deadline: `to` + horizonDays (default 2× window), or the admin EVENT_DATE when set (ANA-75). */
   readonly horizonDate: string;
+  /** Resolved deadline horizon in days after `to` (event date or heuristic — see {@link horizonDate}). */
+  readonly horizonDays: number;
+  /** ANA-75: true when the deadline comes from the admin EVENT_DATE, not the heuristic. */
+  readonly deadlineFromEventDate: boolean;
   /**
    * scenarioDate − horizonDate in days: negative = ahead of the deadline (запас),
    * positive = behind it (отставание). Null when the scenario never reaches the target.
@@ -162,10 +171,13 @@ function round1(n: number): number {
  * Deterministic — same input, same dates — so the UI can recompute it on every slider move.
  */
 export function forecastGoal(input: ForecastInput): ForecastResult {
-  const { points, to, target, trafficPct, crUpliftPp, horizonDays } = input;
+  const { points, to, target, trafficPct, crUpliftPp, horizonDays, deadlineDate } = input;
   const pace = paceInfo(points);
-  const horizon = horizonDays ?? pace.days * 2;
-  const horizonDate = addDaysIso(to, horizon);
+  // ANA-75 (БАГ-01): единый дедлайн — админская дата события (EVENT_DATE), когда задана,
+  // иначе эвристика «конец периода + 2 длины периода» (тот же resolveKpiDeadline везде).
+  const dl = resolveKpiDeadline({ to, windowDays: pace.days, eventDate: deadlineDate });
+  const horizon = deadlineDate ? dl.horizonDays : (horizonDays ?? dl.horizonDays);
+  const horizonDate = deadlineDate ? dl.deadline : addDaysIso(to, horizon);
   const sp = scenarioPace({
     visitsPerDay: pace.visitsPerDay,
     reachPace: pace.perDay,
@@ -194,6 +206,8 @@ export function forecastGoal(input: ForecastInput): ForecastResult {
     scenarioDays,
     scenarioDate: scenarioDays === null ? null : addDaysIso(to, scenarioDays),
     horizonDate,
+    horizonDays: horizon,
+    deadlineFromEventDate: dl.fromEventDate,
     deviationDays: scenarioDays === null ? null : scenarioDays - horizon,
     projectedAtHorizon: round1(pace.total + sp * horizon),
   };

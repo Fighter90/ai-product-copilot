@@ -11,6 +11,9 @@ export const SETTING_KEYS = [
   'GOAL_ID',
   'ORDER_GOAL_ID',
   'KPI_TARGET',
+  // ANA-75 (БАГ-01): дата события (YYYY-MM-DD) — единый дедлайн KPI; пусто → эвристика
+  // «конец периода + 2 длины периода» (показывается с оговоркой).
+  'EVENT_DATE',
   'DATALENS_WEBHOOK_TOKEN',
   'DATALENS_LINKS',
   'DATALENS_DASHBOARD_URL',

@@ -402,10 +402,7 @@ export function ReportPreviewView({
                 label={t('rep.funnel.b2bInProgress')}
                 value={formatInt(snapshot.funnel.b2bPipelineTickets)}
               />
-              <Stat
-                label={t('rep.kpi.b2bOrders')}
-                value={formatInt(snapshot.funnel.b2bPaidTickets)}
-              />
+              {/* БАГ-21: плитка «Заказов создано (B2B)» уже есть в KPI-полосе выше — дубль убран. */}
             </div>
           )}
 
@@ -580,6 +577,30 @@ export function ReportPreview(): JSX.Element {
   });
 
   const snapshot = existingSnapshot.data ?? buildMut.data;
+  // БАГ-21: AI-гипотезы дорисовываются на бэке после сборки среза (fire-and-forget), поэтому
+  // опрашиваем срез, пока они не появятся — строка «AI-гипотез: …» обновляется сама, без
+  // перезагрузки страницы. Опрос останавливается на результате или после ~5 минут.
+  const activeId = snapshot?.id;
+  const pollCount = useRef(0);
+  useEffect(() => {
+    pollCount.current = 0;
+  }, [activeId]);
+  const refreshed = useQuery({
+    queryKey: ['snapshot-refresh', activeId],
+    queryFn: () => {
+      pollCount.current += 1;
+      return api.getSnapshot(activeId!);
+    },
+    enabled: !!activeId && !snapshot?.generatedHypotheses,
+    refetchInterval: (q) =>
+      (q.state.data?.generatedHypotheses ?? snapshot?.generatedHypotheses) ||
+      pollCount.current >= 60
+        ? false
+        : 5000,
+  });
+  // Свежий payload с тем же id (уже с гипотезами) выигрывает у исходного ответа сборки.
+  const effectiveSnapshot =
+    refreshed.data && refreshed.data.id === snapshot?.id ? refreshed.data : snapshot;
   // БАГ-04: ошибка скачивания отчёта видна в UI (fetch→blob вместо navigation-запроса).
   const [exportError, setExportError] = useState<string | null>(null);
   const doExport = (snapshotId: string, format: 'docx' | 'pdf'): void => {
@@ -591,7 +612,7 @@ export function ReportPreview(): JSX.Element {
   };
 
   // When viewing from History, use the saved AI narrative if present
-  const savedNarrative = snapshot?.aiNarrative;
+  const savedNarrative = effectiveSnapshot?.aiNarrative;
   const narrative = insightsMut.data?.narrative ?? savedNarrative;
   const insightsPending = insightsMut.isPending;
 
@@ -615,7 +636,7 @@ export function ReportPreview(): JSX.Element {
     <>
       {exportError && <ErrorBox error={exportError} />}
       <ReportPreviewView
-        snapshot={snapshot}
+        snapshot={effectiveSnapshot}
         isPending={buildMut.isPending}
         onBuild={() => buildMut.mutate({ from, to })}
         onExport={doExport}

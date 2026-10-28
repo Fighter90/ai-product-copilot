@@ -59,6 +59,13 @@ const FIELDS: Array<{
     number: true,
   },
   {
+    // ANA-75 (БАГ-01): дата события — единый дедлайн KPI (Обзор, /app/kpi, прогноз, отчёт);
+    // пусто → эвристика «конец периода + 2 длины периода» с оговоркой в UI.
+    key: 'EVENT_DATE',
+    labelKey: 'i18n.mk.eventDate.label',
+    hintKey: 'i18n.mk.eventDate.hint',
+  },
+  {
     // ANA-22: the admin's test-page/UTM pattern list — excluded from every sync query.
     key: 'TEST_TRAFFIC_PATTERNS',
     labelKey: 'dh.mk.testPatterns.label',
