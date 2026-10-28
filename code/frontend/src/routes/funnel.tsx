@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ChannelStat, B2bDeal, GeoDeviceStat, PageStat } from '@pca/shared';
-import { periodTotals } from '@pca/shared';
+import { aggregatePeriod, pageKey, periodTotals } from '@pca/shared';
 import { api } from '../lib/api';
 import { v3, type LiveFunnel } from '../lib/api-v3';
 import { useFilters } from '../store/filters';
@@ -169,9 +169,16 @@ export function FunnelView({
     return acc;
   }, new Map());
 
-  // Page insights
-  const highBouncePages = pages.filter((p) => p.bounceRate > 0.4 && p.visits > 30);
-  const lowCrPages = pages.filter((p) => p.conversionRate < 0.005 && p.visits > 50);
+  // Page insights — БАГ-07: page rows arrive per day and per raw URL («/?utm=…», «/b2b/»), so
+  // they are aggregated by the normalized page key first (path without query, one trailing-slash
+  // form) — otherwise «Проблемные страницы» repeats one page 3–5 times with split numbers.
+  // The shared aggregator sums visits/reaches, visit-weights bounce and recomputes CR.
+  const normalizedPages = aggregatePeriod(pages, (p) => pageKey(p.page)).map((p) => ({
+    ...p,
+    page: pageKey(p.page),
+  }));
+  const highBouncePages = normalizedPages.filter((p) => p.bounceRate > 0.4 && p.visits > 30);
+  const lowCrPages = normalizedPages.filter((p) => p.conversionRate < 0.005 && p.visits > 50);
 
   // ANA-21: per-issue pc-goals funnel (Визиты → reg_open → cart_open → reg_step1 → Оплата) when
   // the live funnel is available; «Оплата» falls back to manually entered B2B deals paid in the

@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import type { ChannelStat, B2bDeal } from '@pca/shared';
-import { summarizeChannels, channelMixOption, dailyReachesOption, weakSpots } from './overview';
+import type { ChannelStat, B2bDeal, PageStat, UtmStat } from '@pca/shared';
+import {
+  summarizeChannels,
+  channelMixOption,
+  dailyReachesOption,
+  weakSpots,
+  topPages,
+  topUtmRows,
+} from './overview';
 
 function stat(over: Partial<ChannelStat>): ChannelStat {
   return {
@@ -142,5 +149,108 @@ describe('dailyReachesOption', () => {
     ]) as { xAxis: { data: string[] }; series: { data: number[] }[] };
     expect(o.xAxis.data).toEqual(['2025-01-01', '2025-01-02']);
     expect(o.series[0]?.data).toEqual([4, 2]);
+  });
+});
+
+describe('topPages (БАГ-07 — дубли топа страниц)', () => {
+  const page = (over: Partial<PageStat>): PageStat => ({
+    date: '2025-01-01',
+    page: '/',
+    visits: 10,
+    users: 9,
+    bounceRate: 0.2,
+    goalReaches: 1,
+    conversionRate: 0.1,
+    ...over,
+  });
+
+  it('collapses «/» with different query strings into one summed row (Обзор: 5 строк «/»)', () => {
+    const out = topPages([
+      page({ date: '2025-01-01', visits: 20, goalReaches: 2 }),
+      page({ date: '2025-01-02', page: '/?utm_source=tg', visits: 18, goalReaches: 1 }),
+      page({ date: '2025-01-03', page: '/#top', visits: 12, goalReaches: 1 }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ page: '/', visits: 50, users: 27, goalReaches: 4 });
+    // CR is recomputed from sums, bounce is visit-weighted.
+    expect(out[0]!.conversionRate).toBeCloseTo(4 / 50);
+    expect(out[0]!.bounceRate).toBeCloseTo((20 * 0.2 + 18 * 0.2 + 12 * 0.2) / 50);
+  });
+
+  it('unifies the trailing slash and sorts by summed visits desc, cutting to top N', () => {
+    const out = topPages(
+      [
+        page({ page: '/b2b/', visits: 5 }),
+        page({ page: '/b2b', visits: 7 }),
+        page({ page: '/lp', visits: 30 }),
+        page({ page: '/rare', visits: 1 }),
+      ],
+      2,
+    );
+    expect(out.map((p) => [p.page, p.visits])).toEqual([
+      ['/lp', 30],
+      ['/b2b', 12],
+    ]);
+  });
+
+  it('keeps pages distinct when only the path differs', () => {
+    const out = topPages([page({ page: '/a', visits: 3 }), page({ page: '/b', visits: 4 })]);
+    expect(out).toHaveLength(2);
+  });
+});
+
+describe('topUtmRows (БАГ-07 — дубли UTM-разбивки)', () => {
+  const utm = (over: Partial<UtmStat>): UtmStat => ({
+    date: '2025-01-01',
+    utmSource: 'tg',
+    utmMedium: 'post',
+    utmCampaign: 'general',
+    visits: 10,
+    users: 9,
+    goalReaches: 1,
+    conversionRate: 0.1,
+    ...over,
+  });
+
+  it('collapses «tg/post/general» 20+18 into one row of 38 (trim + lowercase)', () => {
+    const out = topUtmRows([
+      utm({ visits: 20, goalReaches: 3 }),
+      utm({ utmSource: 'TG', utmMedium: ' Post ', visits: 18, goalReaches: 2 }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      utmSource: 'tg',
+      utmMedium: 'post',
+      utmCampaign: 'general',
+      visits: 38,
+      goalReaches: 5,
+    });
+    expect(out[0]!.conversionRate).toBeCloseTo(5 / 38);
+  });
+
+  it('collapses «Id123450/referral/refProg» 81+16 into one row of 97', () => {
+    const out = topUtmRows([
+      utm({ utmSource: 'Id123450', utmMedium: 'referral', utmCampaign: 'refProg', visits: 81 }),
+      utm({ utmSource: 'id123450', utmMedium: 'referral', utmCampaign: 'refprog', visits: 16 }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      utmSource: 'id123450',
+      utmMedium: 'referral',
+      utmCampaign: 'refprog',
+      visits: 97,
+    });
+  });
+
+  it('keeps distinct triplets apart and cuts to top N by summed visits', () => {
+    const out = topUtmRows(
+      [
+        utm({ utmCampaign: 'promo', visits: 40 }),
+        utm({ utmCampaign: 'general', visits: 10 }),
+        utm({ utmCampaign: 'general', visits: 8 }),
+      ],
+      1,
+    );
+    expect(out.map((u) => [u.utmCampaign, u.visits])).toEqual([['promo', 40]]);
   });
 });

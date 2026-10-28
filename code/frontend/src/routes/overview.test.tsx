@@ -192,7 +192,7 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
     expect(screen.queryByText('Direct traffic')).not.toBeInTheDocument();
   });
 
-  it('shows entry/exit pages as paths with the full URL in the title', () => {
+  it('shows entry/exit pages as normalized paths with the full URL in the title (БАГ-07)', () => {
     const page: PageStat = {
       date: '2025-01-01',
       page: 'https://productcamp.ru/tickets?x=1',
@@ -203,9 +203,10 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
       conversionRate: 0.1,
     };
     render(<OverviewView status="success" stats={[sample]} entryPages={[page]} />);
-    const cell = screen.getByRole('cell', { name: '/tickets?x=1' });
-    expect(cell).toHaveAttribute('title', 'https://productcamp.ru/tickets?x=1');
-    expect(screen.queryByText('https://productcamp.ru/tickets?x=1')).not.toBeInTheDocument();
+    // БАГ-07: the label is the normalized key — path without query, one trailing-slash form.
+    const cell = screen.getByRole('cell', { name: '/tickets' });
+    expect(cell).toHaveAttribute('title', 'https://productcamp.ru/tickets');
+    expect(screen.queryByText('/tickets?x=1')).not.toBeInTheDocument();
   });
 
   it('translates the KPI labels in English', () => {
@@ -306,5 +307,83 @@ describe('OverviewView (en locale)', () => {
     rerender(<OverviewView status="error" stats={[]} />);
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expectNoCyrillic(container);
+  });
+});
+
+describe('OverviewView — дубли топов и UTM (БАГ-07)', () => {
+  afterEach(() => {
+    cleanup();
+    usePrefs.setState({ locale: 'ru' });
+  });
+
+  const page = (over: Partial<PageStat>): PageStat => ({
+    date: '2025-01-01',
+    page: '/',
+    visits: 10,
+    users: 9,
+    bounceRate: 0.2,
+    goalReaches: 1,
+    conversionRate: 0.1,
+    ...over,
+  });
+
+  it('shows one «/» row with summed visits, not five duplicated lines', () => {
+    render(
+      <OverviewView
+        status="success"
+        stats={[sample]}
+        entryPages={[
+          page({ visits: 20, goalReaches: 2 }),
+          page({ date: '2025-01-02', page: '/?utm_source=tg', visits: 18, goalReaches: 1 }),
+          page({ date: '2025-01-03', page: '/#top', visits: 12, goalReaches: 1 }),
+          page({ page: '/b2b/', visits: 7 }),
+          page({ date: '2025-01-02', page: '/b2b', visits: 5 }),
+        ]}
+        exitPages={[page({ page: '/out', visits: 30 })]}
+      />,
+    );
+    const entry = within(screen.getByRole('region', { name: 'Топ страниц входа' }));
+    // «/» collapses to one aggregated row (20+18+12 = 50), «/b2b/» + «/b2b» → one «/b2b» (12).
+    expect(entry.getAllByText('/')).toHaveLength(1);
+    expect(entry.getByText('50')).toBeInTheDocument();
+    expect(entry.getAllByText('/b2b')).toHaveLength(1);
+    expect(entry.getByText('12')).toBeInTheDocument();
+    const exit = within(screen.getByRole('region', { name: 'Топ страниц выхода' }));
+    expect(exit.getByText('/out')).toBeInTheDocument();
+  });
+
+  it('collapses the UTM breakdown by the normalized key (trim + lowercase)', () => {
+    const utm = (over: Partial<UtmStat>): UtmStat => ({
+      date: '2025-01-01',
+      utmSource: 'tg',
+      utmMedium: 'post',
+      utmCampaign: 'general',
+      visits: 10,
+      users: 9,
+      goalReaches: 1,
+      conversionRate: 0.1,
+      ...over,
+    });
+    render(
+      <OverviewView
+        status="success"
+        stats={[sample]}
+        utm={[
+          utm({ visits: 20, goalReaches: 3 }),
+          utm({ utmSource: 'TG', utmMedium: ' Post ', visits: 18, goalReaches: 2 }),
+          utm({ utmCampaign: 'promo', visits: 5 }),
+        ]}
+      />,
+    );
+    const table = within(screen.getByRole('region', { name: 'UTM-разбивка' }));
+    // «tg/post/general» 20+18 collapsed into ONE summed row of 38 visits / 5 reaches;
+    // «tg/post/promo» is a distinct triplet and stays apart.
+    const general = table.getByText('38').closest('tr');
+    expect(general).toHaveTextContent('tg');
+    expect(general).toHaveTextContent('post');
+    expect(general).toHaveTextContent('general');
+    expect(general).toHaveTextContent('5');
+    expect(table.getAllByText('general')).toHaveLength(1);
+    expect(table.getByText('promo')).toBeInTheDocument();
   });
 });

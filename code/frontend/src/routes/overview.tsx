@@ -9,7 +9,13 @@ import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
 import { displayPath } from '../lib/url-path';
 import { EmptyState } from '../components/EmptyState';
-import { channelMixOption, summarizeChannels, weakSpots } from '../lib/overview';
+import {
+  channelMixOption,
+  summarizeChannels,
+  topPages,
+  topUtmRows,
+  weakSpots,
+} from '../lib/overview';
 import { applyTestTrafficFilter, isTestChannelRow, isTestPage } from '../lib/test-traffic';
 import { useKpiTarget } from '../lib/kpi-target';
 import { utmCoverage } from '../lib/traffic';
@@ -356,9 +362,10 @@ export function OverviewView({
   const utmCoveragePct = (utmCov.ratio * 100).toFixed(0);
   const lowUtm = utmCov.low;
 
-  // Top entry pages
-  const topEntry = [...(entryPages ?? [])].sort((a, b) => b.visits - a.visits).slice(0, 5);
-  const topExit = [...(exitPages ?? [])].sort((a, b) => b.visits - a.visits).slice(0, 5);
+  // Top entry pages — БАГ-07: aggregated by the normalized page key first, so «/» with different
+  // query strings is one summed row, not five duplicated lines with split numbers.
+  const topEntry = topPages(entryPages ?? []);
+  const topExit = topPages(exitPages ?? []);
 
   // Compute insights
   const channelInsights = computeChannelInsights(stats, locale);
@@ -454,22 +461,20 @@ export function OverviewView({
                 </tr>
               </thead>
               <tbody>
-                {[...utm]
-                  .sort((a, b) => b.visits - a.visits)
-                  .slice(0, 10)
-                  .map((u, i) => (
-                    <tr
-                      key={`${u.utmSource}-${u.utmMedium}-${u.utmCampaign}-${i}`}
-                      className="border-t border-slate-100"
-                    >
-                      <td className="py-1">{u.utmSource ?? '(none)'}</td>
-                      <td>{u.utmMedium ?? '(none)'}</td>
-                      <td>{u.utmCampaign ?? '(none)'}</td>
-                      <td>{formatInt(u.visits)}</td>
-                      <td>{formatInt(u.goalReaches)}</td>
-                      <td>{formatPercent(u.conversionRate)}</td>
-                    </tr>
-                  ))}
+                {/* БАГ-07: normalized key (trim + lowercase) — «tg/post/general» 20+18 is one row. */}
+                {topUtmRows(utm).map((u, i) => (
+                  <tr
+                    key={`${u.utmSource}-${u.utmMedium}-${u.utmCampaign}-${i}`}
+                    className="border-t border-slate-100"
+                  >
+                    <td className="py-1">{u.utmSource ?? '(none)'}</td>
+                    <td>{u.utmMedium ?? '(none)'}</td>
+                    <td>{u.utmCampaign ?? '(none)'}</td>
+                    <td>{formatInt(u.visits)}</td>
+                    <td>{formatInt(u.goalReaches)}</td>
+                    <td>{formatPercent(u.conversionRate)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

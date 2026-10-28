@@ -113,3 +113,29 @@ export function aggregatePeriod<T extends PeriodRow>(
 export function distinctCount<T>(rows: readonly T[], keyOf: (row: T) => string): number {
   return new Set(rows.map(keyOf)).size;
 }
+
+/**
+ * БАГ-07: canonical page key — the URL without query/hash and with one trailing-slash form (only
+ * the bare root keeps its «/»). Metrika page rows arrive per day and per raw URL, so «/»,
+ * «/?utm_source=x» and «/b2b/» are the same page for tops and must collapse into one row.
+ */
+export function pageKey(url: string): string {
+  const bare = url.split(/[?#]/, 1)[0] ?? url;
+  let key = bare;
+  while (key.length > 1 && key.endsWith('/')) key = key.slice(0, -1);
+  return key;
+}
+
+/** БАГ-07: normalized UTM value — trimmed and lowercased, so «tg», «TG» and « tg » are one source. */
+export function normUtm(value: string | null | undefined): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+/** БАГ-07: UTM row key (source|medium|campaign, normalized) — collapses case/whitespace dupes. */
+export function utmKey(
+  source: string | null | undefined,
+  medium: string | null | undefined,
+  campaign: string | null | undefined,
+): string {
+  return `${normUtm(source)}|${normUtm(medium)}|${normUtm(campaign)}`;
+}
