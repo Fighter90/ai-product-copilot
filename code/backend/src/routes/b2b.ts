@@ -83,9 +83,28 @@ export function parseB2bCsv(csv: string): {
 export async function b2bRoutes(app: FastifyInstance, opts: B2bRouteOptions): Promise<void> {
   app.get('/b2b', { schema: { tags: ['b2b'] } }, async () => opts.repo.list());
 
-  app.post('/b2b', { schema: { tags: ['b2b'] } }, async (req, reply) =>
-    reply.code(201).send(opts.repo.create(req.body as NewB2bDeal)),
-  );
+  // БАГ-03: раньше тело не валидировалось — сохранялись сделки с отрицательным числом билетов.
+  const CreateBody = z.object({
+    company: z.string().trim().min(1),
+    tickets: z.number().int().min(1),
+    stage: z.enum(['lead', 'negotiation', 'invoiced', 'paid']),
+    dateAdded: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    datePaid: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    amountRub: z.number().min(0).optional(),
+    contactEmail: z.string().max(200).optional(),
+    notes: z.string().max(2000).optional(),
+  });
+
+  app.post('/b2b', { schema: { tags: ['b2b'] } }, async (req, reply) => {
+    const parsed = CreateBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });
+    }
+    return reply.code(201).send(opts.repo.create(parsed.data as NewB2bDeal));
+  });
 
   // ANA-72: bulk backfill of the historical deals (pre-launch leads live in the customer's
   // sheet/CRM, not in Metrika). Exact duplicates (company+dateAdded+tickets) are skipped so

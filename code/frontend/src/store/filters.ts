@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 export type Segment = 'b2c' | 'b2c_b2b' | 'b2b';
 
@@ -22,26 +23,42 @@ export function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** Global dashboard filters (sticky header). */
-export const useFilters = create<FiltersState>((set) => ({
-  from: isoDaysAgo(13),
-  to: isoDaysAgo(0),
-  channels: [],
-  segment: 'b2c_b2b',
-  showArchived: false,
-  includeTest: false, // ANA-22: test traffic is excluded unless explicitly shown
-  setRange: (from, to) => set({ from, to }),
-  toggleChannel: (channel) =>
-    set((s) => ({
-      channels: s.channels.includes(channel)
-        ? s.channels.filter((c) => c !== channel)
-        : [...s.channels, channel],
-    })),
-  setSegment: (segment) => set({ segment }),
-  toggleArchived: () => set((s) => ({ showArchived: !s.showArchived })),
-  toggleTest: () => set((s) => ({ includeTest: !s.includeTest })),
-  preset: (days) => set({ from: isoDaysAgo(days - 1), to: isoDaysAgo(0) }),
-}));
+/** Global dashboard filters (sticky header). БАГ-18: период переживает перезагрузку страницы. */
+export const useFilters = create<FiltersState>()(
+  persist(
+    (set) => ({
+      from: isoDaysAgo(13),
+      to: isoDaysAgo(0),
+      channels: [],
+      segment: 'b2c_b2b',
+      showArchived: false,
+      includeTest: false, // ANA-22: test traffic is excluded unless explicitly shown
+      setRange: (from, to) => set({ from, to }),
+      toggleChannel: (channel) =>
+        set((s) => ({
+          channels: s.channels.includes(channel)
+            ? s.channels.filter((c) => c !== channel)
+            : [...s.channels, channel],
+        })),
+      setSegment: (segment) => set({ segment }),
+      toggleArchived: () => set((s) => ({ showArchived: !s.showArchived })),
+      toggleTest: () => set((s) => ({ includeTest: !s.includeTest })),
+      preset: (days) => set({ from: isoDaysAgo(days - 1), to: isoDaysAgo(0) }),
+    }),
+    {
+      name: 'pca.filters',
+      // persist только данные-фильтры; функции не сериализуем.
+      partialize: (s) => ({
+        from: s.from,
+        to: s.to,
+        channels: s.channels,
+        segment: s.segment,
+        showArchived: s.showArchived,
+        includeTest: s.includeTest,
+      }),
+    },
+  ),
+);
 
 /** Helper: format date for display */
 export function formatDateLabel(iso: string): string {

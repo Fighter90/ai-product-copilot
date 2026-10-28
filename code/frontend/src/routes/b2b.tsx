@@ -38,6 +38,8 @@ export function B2bView({
   const [amount, setAmount] = useState('');
   const [stage, setStage] = useState<B2bStage>('lead');
   const [tableOpen, setTableOpen] = useState(false);
+  // БАГ-03: явная ошибка формы вместо молчаливого игнора.
+  const [formError, setFormError] = useState('');
 
   // Per-stage totals for the kanban — every stage shown (0 if empty).
   const byStage = B2B_STAGES.map((s) => {
@@ -47,10 +49,21 @@ export function B2bView({
 
   const submit = (e: React.FormEvent): void => {
     e.preventDefault();
-    if (!company || !tickets) return;
+    const n = Number(tickets);
+    // БАГ-03: раньше пустая/невалидная форма молча ничего не делала, а отрицательные билеты
+    // сохранялись и ломали KPI (−5 из 300).
+    if (!company.trim()) {
+      setFormError(t('b2b.errCompany'));
+      return;
+    }
+    if (!Number.isInteger(n) || n < 1) {
+      setFormError(t('b2b.errTickets'));
+      return;
+    }
+    setFormError('');
     onAdd({
-      company,
-      tickets: Number(tickets),
+      company: company.trim(),
+      tickets: n,
       stage,
       ...(amount ? { amountRub: Number(amount) } : {}),
       dateAdded: new Date().toISOString().slice(0, 10),
@@ -131,6 +144,11 @@ export function B2bView({
         <button type="submit" className="rounded bg-indigo-600 px-3 py-1 text-sm text-white">
           {t('b2b.add')}
         </button>
+        {formError && (
+          <p role="alert" className="basis-full text-xs text-red-600">
+            {formError}
+          </p>
+        )}
       </form>
 
       <button
@@ -212,7 +230,11 @@ export function B2bView({
                       <button
                         type="button"
                         aria-label={t('b2b.removeOf', { company: d.company })}
-                        onClick={() => onRemove(d.id)}
+                        onClick={() => {
+                          // БАГ-03: удаление сделки — с подтверждением (как у гипотез).
+                          if (window.confirm(t('b2b.confirmRemove', { company: d.company })))
+                            onRemove(d.id);
+                        }}
                         className="text-red-700"
                       >
                         ✕

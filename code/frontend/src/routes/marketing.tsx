@@ -22,6 +22,7 @@ interface MarketingViewProps {
   syncing?: boolean;
   syncMessage?: string;
   onCellSave: (input: { weekStart: string; metricKey: string; value: number }) => void;
+  onCellClear: (weekStart: string, metricKey: string) => void;
   onSync: () => void;
 }
 
@@ -36,9 +37,11 @@ const SOURCE_STYLE: Record<MarketingCell['source'], string> = {
 function EditableCell({
   cell,
   onSave,
+  onClear,
 }: {
   cell: MarketingCell | undefined;
   onSave: (value: number) => void;
+  onClear: () => void;
 }): JSX.Element {
   const { t, locale } = useT();
   const [draft, setDraft] = useState(cell ? String(cell.value) : '');
@@ -54,8 +57,13 @@ function EditableCell({
 
   const save = (): void => {
     if (!dirty) return;
+    // БАГ-05: пустое поле + Enter = очистить ячейку (DELETE), а не «молча игнорировать».
+    if (draft.trim() === '') {
+      if (cell) onClear();
+      return;
+    }
     const value = Number(draft.replace(',', '.').trim());
-    if (draft.trim() === '' || !Number.isFinite(value) || value < 0) {
+    if (!Number.isFinite(value) || value < 0) {
       setInvalid(true);
       return;
     }
@@ -74,12 +82,13 @@ function EditableCell({
   return (
     <td className="border-l border-line p-0 align-middle">
       <input
-        aria-label={hint}
-        title={hint}
         inputMode="decimal"
         value={draft}
+        aria-label={invalid ? t('mk.errNumber') : hint}
+        title={invalid ? t('mk.errNumber') : hint}
         onChange={(e) => {
-          setDraft(e.target.value);
+          // БАГ-05: буквы не проходят вовсе — только цифры, запятая/точка, максимум 9 знаков.
+          setDraft(e.target.value.replace(/[^\d.,]/g, '').slice(0, 9));
           setInvalid(false);
         }}
         onBlur={save}
@@ -100,7 +109,7 @@ function EditableCell({
 }
 
 export function MarketingView(props: MarketingViewProps): JSX.Element {
-  const { grid, isAdmin, syncing, syncMessage, onCellSave, onSync } = props;
+  const { grid, isAdmin, syncing, syncMessage, onCellSave, onCellClear, onSync } = props;
   const { t, locale } = useT();
   const cellKey = (w: string, m: string): string => `${w}|${m}`;
   const byKey = new Map(grid.cells.map((c) => [cellKey(c.weekStart, c.metricKey), c]));
@@ -204,6 +213,7 @@ export function MarketingView(props: MarketingViewProps): JSX.Element {
                           onSave={(value) =>
                             onCellSave({ weekStart: w.key, metricKey: m.key, value })
                           }
+                          onClear={() => onCellClear(w.key, m.key)}
                         />
                       ))}
                     </tr>
@@ -228,6 +238,11 @@ export function Marketing(): JSX.Element {
     mutationFn: api.saveMarketingCell,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['marketing-weekly'] }),
   });
+  const clearCell = useMutation({
+    mutationFn: (input: { weekStart: string; metricKey: string }) =>
+      api.removeMarketingCell(input.weekStart, input.metricKey),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['marketing-weekly'] }),
+  });
   const sync = useMutation({
     mutationFn: () => api.marketingSync(),
     onSuccess: (res) => {
@@ -250,6 +265,7 @@ export function Marketing(): JSX.Element {
           syncing={sync.isPending}
           syncMessage={syncMessage}
           onCellSave={(input) => saveCell.mutate(input)}
+          onCellClear={(weekStart, metricKey) => clearCell.mutate({ weekStart, metricKey })}
           onSync={() => sync.mutate()}
         />
       ) : (

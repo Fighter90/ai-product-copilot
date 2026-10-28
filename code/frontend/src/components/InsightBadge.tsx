@@ -21,8 +21,11 @@ export function InsightBadge({
   icon?: string;
 }): JSX.Element {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${COLORS[type]}`}>
-      <span className="mr-1">{icon ?? ICONS[type]}</span> {text}
+    // БАГ-16: длинные URL в наблюдениях переносятся, а не растягивают страницу.
+    <span
+      className={`inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-xs [overflow-wrap:anywhere] ${COLORS[type]}`}
+    >
+      <span className="mr-1 shrink-0">{icon ?? ICONS[type]}</span> {text}
     </span>
   );
 }

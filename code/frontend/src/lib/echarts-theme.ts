@@ -43,10 +43,15 @@ export const PCA_DARK_THEME = {
   ...ECHARTS_V5_LAYOUT,
   color: PALETTE,
   backgroundColor: 'transparent',
-  textStyle: { fontFamily: 'Inter, system-ui, sans-serif', color: '#c8c8c8' },
-  title: { textStyle: { color: '#ffffff' } },
-  legend: { ...ECHARTS_V5_LAYOUT.legend, textStyle: { color: '#c8c8c8' } },
-  tooltip: { backgroundColor: '#252525', borderColor: '#3b3b3b', textStyle: { color: '#ffffff' } },
+  // Регресс 28.10: без «жирного белого» — обычное начертание и мягкий оттенок.
+  textStyle: { fontFamily: 'Inter, system-ui, sans-serif', color: '#d6d6d0', fontWeight: 400 },
+  title: { textStyle: { color: '#e8e8e4', fontWeight: 600 } },
+  legend: { ...ECHARTS_V5_LAYOUT.legend, textStyle: { color: '#cfcfc9', fontWeight: 400 } },
+  tooltip: {
+    backgroundColor: '#252525',
+    borderColor: '#3b3b3b',
+    textStyle: { color: '#e8e8e4', fontWeight: 400 },
+  },
   axisPointer: { lineStyle: { color: '#5a5a5a' } },
   categoryAxis: {
     ...ECHARTS_V5_LAYOUT.categoryAxis,

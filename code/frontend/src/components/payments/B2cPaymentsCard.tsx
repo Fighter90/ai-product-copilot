@@ -62,7 +62,11 @@ export function B2cPaymentsCard(): JSX.Element {
   });
   const remove = useMutation({
     mutationFn: (d: string) => api.removeB2cPayment(d),
-    onSuccess: () => invalidate(),
+    // БАГ-19: после удаления не должно висеть устаревшее «Оплаты за … сохранены».
+    onSuccess: () => {
+      setMsg(null);
+      invalidate();
+    },
   });
 
   const days: B2cPayment[] = q.data ?? [];
@@ -205,7 +209,10 @@ export function B2cPaymentsCard(): JSX.Element {
                 <td>{formatInt(p.tickets)}</td>
                 <td>{p.amountRub !== undefined ? formatInt(p.amountRub) : '—'}</td>
                 <td className="max-w-[12rem] truncate">
-                  {p.note} <Pill tone="neutral">{p.source}</Pill>
+                  {p.note}{' '}
+                  <Pill tone="neutral">
+                    {p.source === 'csv' ? 'CSV' : t('dh.payments.src.manual' as DictKey)}
+                  </Pill>
                 </td>
                 <td>
                   <button

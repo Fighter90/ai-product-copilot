@@ -44,6 +44,7 @@ export const ru = {
   'mk.cellHint': '{source} · {by} · {date}',
   'mk.empty': 'Пусто — данных нет, можно внести вручную',
   'mk.syncable': 'Заполняется синком из Метрики',
+  'mk.errNumber': 'Введите число',
   'nav.integrations': 'DataLens',
   'nav.users': 'Пользователи',
   'nav.ai': 'AI-провайдеры',
@@ -103,7 +104,7 @@ export const ru = {
     'Этот раздел доступен только администратору. Попросите администратора выдать доступ или изменить роль.',
   'auth.sessionExpired': 'Сессия истекла — войдите снова',
 
-  'live.title': 'Сейчас на сайте',
+  'live.title': 'Данные за выбранный период (без ожидания синка)',
   'live.subtitle': 'Живые данные Метрики, обновление каждые 60 секунд',
   'live.auto': 'Автообновление',
   'live.pause': 'Пауза',
@@ -131,6 +132,7 @@ export const ru = {
   'goals.col.role': 'Роль в воронке',
   'goals.col.reaches': 'Достижения',
   'goals.col.cr': 'Конверсия',
+  'goals.col.crVisits': 'Конверсия (по визитам с целью)',
   'goals.col.prev': 'Прошлый период',
   'goals.col.delta': 'Δ',
   'goals.col.r14': '14 дней',
@@ -341,7 +343,7 @@ export const ru = {
   'digest.bestChannel': 'Лучший канал',
   'filters.archivedGoals': 'Архивные цели',
   'filters.archivedGoalsHint':
-    'Показывать цели Метрики, которые были удалены или заархивированы. По умолчанию скрыты.',
+    'Показать цели, заархивированные или удалённые в Метрике. Спящие и мёртвые цели — это не архив: они остаются в списке всегда, статус виден в колонке «Статус».',
   'land.integrations.title': 'Интеграции',
   'land.integrations.lead':
     'Данные Яндекс.Метрики и ваш DataLens — в одной системе без ручных выгрузок.',
@@ -581,6 +583,9 @@ export const ru = {
   'b2b.col.stage': 'Этап',
   'b2b.newStage': 'Этап новой сделки',
   'b2b.add': 'Добавить',
+  'b2b.errCompany': 'Укажите компанию',
+  'b2b.errTickets': 'Билетов: целое число не меньше 1',
+  'b2b.confirmRemove': 'Удалить сделку «{company}»?',
   'b2b.expand': 'Развернуть полную таблицу ({n})',
   'b2b.stageOf': 'Этап {company}',
   'b2b.removeOf': 'Удалить {company}',
@@ -692,6 +697,7 @@ export const ru = {
   'dh.payments.days': 'Дней с оплатами: {n}',
   'dh.payments.remove': 'Удалить день',
   'dh.payments.saved': 'Оплаты за {date} сохранены.',
+  'dh.payments.src.manual': 'вручную',
 
   'an.live.min': 'мин',
   'an.live.refresh': 'Обновить',
@@ -1304,6 +1310,7 @@ export const en: Record<DictKey, string> = {
   'mk.cellHint': '{source} · {by} · {date}',
   'mk.empty': 'Empty — no data yet, you can enter it by hand',
   'mk.syncable': 'Filled by the Metrika sync',
+  'mk.errNumber': 'Enter a number',
   'nav.integrations': 'DataLens',
   'nav.users': 'Users',
   'nav.ai': 'AI providers',
@@ -1363,7 +1370,7 @@ export const en: Record<DictKey, string> = {
     'This section is for administrators only. Ask an administrator to grant access or change your role.',
   'auth.sessionExpired': 'Session expired — sign in again',
 
-  'live.title': 'Live on the site',
+  'live.title': 'Data for the selected period (no sync wait)',
   'live.subtitle': 'Live Metrika data, refreshed every 60 seconds',
   'live.auto': 'Auto-refresh',
   'live.pause': 'Pause',
@@ -1390,6 +1397,7 @@ export const en: Record<DictKey, string> = {
   'goals.col.role': 'Funnel role',
   'goals.col.reaches': 'Reaches',
   'goals.col.cr': 'Conversion',
+  'goals.col.crVisits': 'Conversion (per visits with the goal)',
   'goals.col.prev': 'Previous period',
   'goals.col.delta': 'Δ',
   'goals.col.r14': '14 days',
@@ -1599,7 +1607,7 @@ export const en: Record<DictKey, string> = {
   'digest.bestChannel': 'Best channel',
   'filters.archivedGoals': 'Archived goals',
   'filters.archivedGoalsHint':
-    'Show Metrika goals that were deleted or archived. Hidden by default.',
+    'Show goals archived or deleted in Metrika. Sleeping and dead goals are not the archive: they stay in the list, see the Status column.',
   'land.integrations.title': 'Integrations',
   'land.integrations.lead':
     'Yandex Metrika data and your DataLens — one system, no manual exports.',
@@ -1840,6 +1848,9 @@ export const en: Record<DictKey, string> = {
   'b2b.col.stage': 'Stage',
   'b2b.newStage': 'New deal stage',
   'b2b.add': 'Add',
+  'b2b.errCompany': 'Enter the company name',
+  'b2b.errTickets': 'Tickets: an integer of at least 1',
+  'b2b.confirmRemove': 'Delete the deal “{company}”?',
   'b2b.expand': 'Expand full table ({n})',
   'b2b.stageOf': 'Stage {company}',
   'b2b.removeOf': 'Delete {company}',
@@ -1951,6 +1962,7 @@ export const en: Record<DictKey, string> = {
   'dh.payments.days': 'Days with payments: {n}',
   'dh.payments.remove': 'Remove the day',
   'dh.payments.saved': 'Payments for {date} saved.',
+  'dh.payments.src.manual': 'manual',
 
   'an.live.min': 'min',
   'an.live.refresh': 'Refresh',

@@ -50,7 +50,10 @@ describe('B2bView', () => {
     expect(screen.getByText('B2B deals')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Stage SmallCo'), { target: { value: 'invoiced' } });
     expect(h.onStageChange).toHaveBeenCalledWith({ id: 2, stage: 'invoiced' });
+    // БАГ-03: удаление — с подтверждением.
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Delete BigCorp' }));
+    expect(confirmSpy).toHaveBeenCalled();
     expect(h.onRemove).toHaveBeenCalledWith(1);
     expectNoCyrillic(document.body);
   });

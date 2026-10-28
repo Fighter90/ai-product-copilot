@@ -95,7 +95,12 @@ export function GoalDetail(): JSX.Element {
           <>
             <Kpi label={t('goals.col.reaches')} value={d.totals.reaches} accent />
             <Kpi label={t('live.visits')} value={d.totals.visits} />
-            <Kpi label={t('goals.col.cr')} value={d.totals.conversionRate} digits={2} suffix="%" />
+            <Kpi
+              label={t('goals.col.crVisits')}
+              value={d.totals.conversionRate}
+              digits={2}
+              suffix="%"
+            />
           </>
         ) : (
           Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-24" />)

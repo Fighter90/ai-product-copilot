@@ -157,6 +157,10 @@ export function funnelOption(stages: FunnelStage[], prevLabel = 'от пред.'
               p.data.isFirst ? '' : ` · ${formatPercent(p.data.fromPrev)} ${prevLabel}`
             }`,
           fontSize: 11,
+          fontWeight: 500,
+          color: '#ffffff',
+          textBorderColor: 'transparent',
+          lineHeight: 15,
         },
         data: stages.map((s, i) => ({
           name: s.label,

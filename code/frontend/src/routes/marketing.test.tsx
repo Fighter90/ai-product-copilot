@@ -67,7 +67,7 @@ const grid: MarketingGrid = {
   ],
 };
 
-const handlers = () => ({ onCellSave: vi.fn(), onSync: vi.fn() });
+const handlers = () => ({ onCellSave: vi.fn(), onCellClear: vi.fn(), onSync: vi.fn() });
 
 describe('MarketingView', () => {
   afterEach(() => setTestLocale('ru'));

@@ -11,7 +11,8 @@ import { v3 } from '../lib/api-v3';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
 import { errorMessage } from '../lib/error-message';
-import { downloadFile, reportDownloadUrl } from '../lib/download';
+import { downloadFileViaFetch, reportDownloadUrl } from '../lib/download';
+import { ErrorBox } from '../components/ui';
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { mdToHtml } from '../lib/md-to-html';
@@ -579,6 +580,15 @@ export function ReportPreview(): JSX.Element {
   });
 
   const snapshot = existingSnapshot.data ?? buildMut.data;
+  // БАГ-04: ошибка скачивания отчёта видна в UI (fetch→blob вместо navigation-запроса).
+  const [exportError, setExportError] = useState<string | null>(null);
+  const doExport = (snapshotId: string, format: 'docx' | 'pdf'): void => {
+    setExportError(null);
+    downloadFileViaFetch(
+      reportDownloadUrl(snapshotId, format),
+      `productcamp-report-${snapshotId}.${format}`,
+    ).catch((e: unknown) => setExportError(e instanceof Error ? e.message : String(e)));
+  };
 
   // When viewing from History, use the saved AI narrative if present
   const savedNarrative = snapshot?.aiNarrative;
@@ -602,27 +612,30 @@ export function ReportPreview(): JSX.Element {
   }, [search, navigate]);
 
   return (
-    <ReportPreviewView
-      snapshot={snapshot}
-      isPending={buildMut.isPending}
-      onBuild={() => buildMut.mutate({ from, to })}
-      onExport={(snapshotId, format) => downloadFile(reportDownloadUrl(snapshotId, format))}
-      insightsPending={insightsPending}
-      narrative={narrative}
-      insightsError={errorMessage(insightsMut.error)}
-      onInsights={(snapshotId, providerId) => insightsMut.mutate({ snapshotId, providerId })}
-      providers={providersQ.data ?? []}
-      providersPending={providersQ.isPending}
-      aiGeneratedBy={insightsMut.data?.generatedBy}
-      prefillSeed={prefill}
-      onPrefillChange={(next) => {
-        storeHypothesisSeed(next);
-        setPrefill(next);
-      }}
-      onDiscardPrefill={() => {
-        clearHypothesisSeed();
-        setPrefill({});
-      }}
-    />
+    <>
+      {exportError && <ErrorBox error={exportError} />}
+      <ReportPreviewView
+        snapshot={snapshot}
+        isPending={buildMut.isPending}
+        onBuild={() => buildMut.mutate({ from, to })}
+        onExport={doExport}
+        insightsPending={insightsPending}
+        narrative={narrative}
+        insightsError={errorMessage(insightsMut.error)}
+        onInsights={(snapshotId, providerId) => insightsMut.mutate({ snapshotId, providerId })}
+        providers={providersQ.data ?? []}
+        providersPending={providersQ.isPending}
+        aiGeneratedBy={insightsMut.data?.generatedBy}
+        prefillSeed={prefill}
+        onPrefillChange={(next) => {
+          storeHypothesisSeed(next);
+          setPrefill(next);
+        }}
+        onDiscardPrefill={() => {
+          clearHypothesisSeed();
+          setPrefill({});
+        }}
+      />
+    </>
   );
 }

@@ -20,10 +20,11 @@ vi.mock('../lib/api-v3', () => ({
 }));
 vi.mock('../lib/download', () => ({
   downloadFile: vi.fn(),
+  downloadFileViaFetch: vi.fn().mockResolvedValue(undefined),
   reportDownloadUrl: (id: string, format: string) => `/api/report/download/${id}/${format}`,
 }));
 import { api } from '../lib/api';
-import { downloadFile } from '../lib/download';
+import { downloadFileViaFetch } from '../lib/download';
 import { ReportPreviewView, ReportPreview } from './report-preview';
 
 const snapshot: ReportSnapshot = {
@@ -281,7 +282,11 @@ describe('ReportPreview (wrapper)', () => {
     expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Export DOCX' }));
-    expect(downloadFile).toHaveBeenCalledWith('/api/report/download/snap-1/docx');
+    // БАГ-04: скачивание через fetch→blob (downloadFileViaFetch), а не navigation.
+    expect(vi.mocked(downloadFileViaFetch)).toHaveBeenCalledWith(
+      '/api/report/download/snap-1/docx',
+      'productcamp-report-snap-1.docx',
+    );
   });
 
   it('generates an AI narrative for the snapshot', async () => {
