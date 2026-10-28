@@ -75,14 +75,21 @@ export function authorMatches(s: Pick<SnapshotRow, 'author'>, author: string): b
   return (s.author ?? '') === author;
 }
 
+/** Длина периода [from, to] включительно в днях ('YYYY-MM-DD'; UTC-парсинг — без сдвигов TZ). */
+export function periodDays(from: string, to: string): number {
+  const a = Date.parse(`${from}T00:00:00Z`);
+  const b = Date.parse(`${to}T00:00:00Z`);
+  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
+  return Math.round((b - a) / 86_400_000) + 1;
+}
+
+/** '(none)' — внутренняя метка отсутствующего UTM-значения; пользователю показываем «—». */
+export function channelPart(part: string): string {
+  return part === '(none)' ? '—' : part;
+}
+
 /** KPI-строка сравнения: метка + старое → новое + дельта со знаком. */
-function DiffNum({
-  v,
-  locale,
-}: {
-  v: { from: number; to: number; delta: number };
-  locale: Locale;
-}) {
+function DiffNum({ v }: { v: { from: number; to: number; delta: number } }) {
   const sign = v.delta > 0 ? '+' : '';
   const tone = v.delta > 0 ? 'text-green-700' : v.delta < 0 ? 'text-red-700' : 'text-slate-400';
   return (
@@ -92,7 +99,6 @@ function DiffNum({
         ({sign}
         {formatInt(v.delta)})
       </b>
-      <span className="sr-only">{translate(locale, 'i18n.hist.changeSr')}</span>
     </span>
   );
 }
@@ -105,9 +111,10 @@ function SnapshotCompare({ snapshots }: { snapshots: SnapshotRow[] }): JSX.Eleme
   const { t, locale } = useT();
   const [aId, setAId] = useState<string | null>(null);
   const [bId, setBId] = useState<string | null>(null);
-  // Defaults once there is something to pick: two most recent snapshots.
-  const a = aId ?? snapshots[0]?.id ?? null;
-  const b = bId ?? snapshots[1]?.id ?? null;
+  // Defaults once there is something to pick. Список отсортирован по generated_at DESC, поэтому
+  // «старый» — второй (более ранний) снапшот, «новый» — первый (БАГ-12: было наоборот).
+  const a = aId ?? snapshots[1]?.id ?? null;
+  const b = bId ?? snapshots[0]?.id ?? null;
 
   const q = useQuery({
     queryKey: ['snapshot-compare', a, b],
@@ -119,6 +126,14 @@ function SnapshotCompare({ snapshots }: { snapshots: SnapshotRow[] }): JSX.Eleme
   });
 
   if (!a || !b || a === b || snapshots.length < 2) return null;
+
+  // БАГ-12: сравнение периодов разной длины (14 дн. против 7 дн.) искажает дельты —
+  // предупреждаем явно, до таблицы сравнения.
+  const oldSnap = snapshots.find((s) => s.id === a);
+  const newSnap = snapshots.find((s) => s.id === b);
+  const oldDays = oldSnap ? periodDays(oldSnap.dateFrom, oldSnap.dateTo) : 0;
+  const newDays = newSnap ? periodDays(newSnap.dateFrom, newSnap.dateTo) : 0;
+  const periodMismatch = oldDays !== newDays;
 
   const option = (id: string): JSX.Element => {
     const s = snapshots.find((x) => x.id === id)!;
@@ -164,6 +179,12 @@ function SnapshotCompare({ snapshots }: { snapshots: SnapshotRow[] }): JSX.Eleme
         </label>
       </div>
 
+      {periodMismatch && (
+        <p role="note" className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">
+          {t('hist.compare.periodMismatch', { old: oldDays, new: newDays })}
+        </p>
+      )}
+
       {a === b ? (
         <p className="mt-2 text-xs text-slate-500">{t('hist.compare.same')}</p>
       ) : q.isPending ? (
@@ -187,7 +208,7 @@ function SnapshotCompare({ snapshots }: { snapshots: SnapshotRow[] }): JSX.Eleme
                 <tr key={r.key} className="border-t border-slate-100">
                   <td className="py-1">{t(kpiLabel[r.key]!)}</td>
                   <td>
-                    <DiffNum v={r} locale={locale} />
+                    <DiffNum v={r} />
                   </td>
                 </tr>
               ))}
@@ -209,13 +230,13 @@ function SnapshotCompare({ snapshots }: { snapshots: SnapshotRow[] }): JSX.Eleme
                   {q.data.channels.map((c) => (
                     <tr key={c.key} className="border-t border-slate-100">
                       <td className="py-1">
-                        {c.source} / {c.medium}
+                        {channelPart(c.source)} / {channelPart(c.medium)}
                       </td>
                       <td>
-                        <DiffNum v={c.visits} locale={locale} />
+                        <DiffNum v={c.visits} />
                       </td>
                       <td>
-                        <DiffNum v={c.reaches} locale={locale} />
+                        <DiffNum v={c.reaches} />
                       </td>
                     </tr>
                   ))}
@@ -373,9 +394,9 @@ export function HistoryView({
                   </td>
                   <td
                     className="max-w-[12rem] truncate text-xs text-slate-500"
-                    title={s.author ?? ''}
+                    title={s.author ?? t('fx.hist.unknownAuthor')}
                   >
-                    {s.author ?? '—'}
+                    {s.author ?? t('fx.hist.unknownAuthor')}
                   </td>
                   <td>
                     <Link

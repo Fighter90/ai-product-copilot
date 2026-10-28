@@ -560,6 +560,10 @@ export const ru = {
   'hist.compare.old': 'Старый:',
   'hist.compare.new': 'Новый:',
   'hist.compare.same': 'Выберите два разных отчёта.',
+  // БАГ-12: предупреждение о сравнении периодов разной длины; автор без e-mail (legacy-снапшоты).
+  'hist.compare.periodMismatch':
+    'Периоды разной длины: {old} дн. против {new} дн. — динамика не эквивалентна, сравнивайте с осторожностью.',
+  'fx.hist.unknownAuthor': 'неизвестно',
   'hist.compare.kpi': 'KPI',
   'hist.compare.delta': 'Изменение',
   'hist.compare.channel': 'Канал',
@@ -1014,7 +1018,6 @@ export const ru = {
     'Интерфейс восстановим перезагрузкой. Данные в порядке — ошибка только отображения.',
   'i18n.err.boundary.textChunk': 'Попробуйте повторить — обычно это разовый сбой загрузки.',
   'i18n.err.loadingAria': 'Загрузка',
-  'i18n.hist.changeSr': 'изменение',
 
   // Legacy top-nav shell (components/Layout)
   'i18n.layout.funnel': 'Воронка',
@@ -1825,6 +1828,10 @@ export const en: Record<DictKey, string> = {
   'hist.compare.old': 'Older:',
   'hist.compare.new': 'Newer:',
   'hist.compare.same': 'Pick two different reports.',
+  // БАГ-12: предупреждение о сравнении периодов разной длины; автор без e-mail (legacy-снапшоты).
+  'hist.compare.periodMismatch':
+    'Periods differ in length: {old} days vs {new} days — the dynamics are not directly comparable, interpret with care.',
+  'fx.hist.unknownAuthor': 'unknown',
   'hist.compare.kpi': 'KPI',
   'hist.compare.delta': 'Change',
   'hist.compare.channel': 'Channel',
@@ -2278,7 +2285,6 @@ export const en: Record<DictKey, string> = {
     'A reload restores the interface. Your data is fine — only the display failed.',
   'i18n.err.boundary.textChunk': 'Try again — this is usually a one-off loading hiccup.',
   'i18n.err.loadingAria': 'Loading',
-  'i18n.hist.changeSr': 'change',
 
   // Legacy top-nav shell (components/Layout)
   'i18n.layout.funnel': 'Funnel',
