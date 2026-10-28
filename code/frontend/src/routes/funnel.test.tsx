@@ -150,6 +150,8 @@ describe('FunnelView (en locale)', () => {
 });
 
 describe('FunnelView — per-issue pc-goals funnel (ANA-21)', () => {
+  afterEach(() => setTestLocale('ru'));
+
   const live = {
     from: '2025-01-01',
     to: '2025-01-14',
@@ -215,7 +217,10 @@ describe('FunnelView — per-issue pc-goals funnel (ANA-21)', () => {
     render(
       <FunnelView
         status="success"
-        stats={stats}
+        // ANA-75 БАГ-10: the funnel «Визиты» stage now reuses the channels factsource (the card
+        // figure), so an all-zero live funnel is only empty when the channels have no visits too.
+        // deals=[] keeps the B2B paid fallback at 0 so no stage carries data.
+        stats={[]}
         deals={[]}
         geoDevice={[]}
         pages={[]}
@@ -241,5 +246,72 @@ describe('FunnelView — per-issue pc-goals funnel (ANA-21)', () => {
     expect(screen.getByRole('list', { name: 'Funnel stages' })).toBeInTheDocument();
     expect(screen.getByText('Opened registration')).toBeInTheDocument();
     expectNoCyrillic(container);
+  });
+});
+
+describe('FunnelView — ANA-75 БАГ-10 (aligned visits, split B2C/B2B losses)', () => {
+  // Live pc-goals funnel reports 2 246 visits — a different source than the channels factsource.
+  const liveDiffVisits = {
+    from: '2025-01-01',
+    to: '2025-01-14',
+    updatedAt: '2025-01-15T00:00:00.000Z',
+    stages: [
+      { key: 'visits', ru: 'Визит', en: 'Visit', value: 2246, goalId: null, source: 'visits' },
+      {
+        key: 'reg_open',
+        ru: 'Открыл регистрацию',
+        en: 'Opened registration',
+        value: 300,
+        goalId: 1,
+        source: 'goal',
+      },
+      {
+        key: 'cart_open',
+        ru: 'Открыл корзину',
+        en: 'Opened cart',
+        value: 80,
+        goalId: 2,
+        source: 'goal',
+      },
+      {
+        key: 'reg_step1',
+        ru: 'Оставил контакты',
+        en: 'Left contacts',
+        value: 27,
+        goalId: 3,
+        source: 'goal',
+      },
+      { key: 'payment', ru: 'Оплата', en: 'Payment', value: 0, goalId: null, source: 'none' },
+    ],
+    tickets: [],
+    roles: [],
+  } as unknown as LiveFunnel;
+
+  it('shows the same visits figure in the card and the funnel (live source is overridden)', () => {
+    render(
+      <FunnelView
+        status="success"
+        stats={stats}
+        deals={deals}
+        geoDevice={[]}
+        pages={[]}
+        live={liveDiffVisits}
+      />,
+    );
+    // The live pc-goals figure (2 246) must not leak into the page anywhere.
+    // NB: plain-space literals — RTL getByText does not match Intl nbsp strings.
+    expect(screen.queryByText('2 246')).not.toBeInTheDocument();
+    // Card + funnel stage list both render the channels factsource visits (1 000).
+    expect(screen.getAllByText('1 000').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('splits losses: B2C branch for visits→applications, B2B pipeline only from B2B deals', () => {
+    render(<FunnelView status="success" stats={stats} deals={deals} geoDevice={[]} pages={[]} />);
+    // stats: 1 000 visits, 100 goal reaches → 900 (90.0%) lost on the B2C branch.
+    expect(screen.getByText('B2C-ветка: потеряно от визита до заявки:')).toBeInTheDocument();
+    expect(screen.getByText('900 визитов (90.0%)')).toBeInTheDocument();
+    // deals: 30 tickets, all paid → 0 B2B pipeline losses; the 900 B2C visits are not counted here.
+    expect(screen.getByText('B2B-пайплайн: сделки, не дошедшие до оплаты:')).toBeInTheDocument();
+    expect(screen.getByText('0 сделок (0.0%)')).toBeInTheDocument();
   });
 });
