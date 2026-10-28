@@ -70,7 +70,12 @@ function channelCrOption(channels: ChannelStat[], t: TFn, locale: Locale): objec
   };
 }
 
-/** Funnel loss analysis */
+/**
+ * Funnel loss analysis (ANA-75 БАГ-10): the two branches are computed independently —
+ * B2C (visits → заявки B2C) uses only Metrika visits/applications, while B2B pipeline losses use
+ * only B2B deal data (tickets in the pipeline vs paid). B2C applications no longer count as
+ * B2B pipeline losses.
+ */
 function FunnelLossAnalysis({
   visits,
   reaches,
@@ -83,19 +88,19 @@ function FunnelLossAnalysis({
   b2bPaid: number;
 }): JSX.Element {
   const { t } = useT();
-  const lostAtApplication = visits - reaches;
-  const lostAtPipeline = reaches - b2bTickets;
-  const lostAtPayment = b2bTickets - b2bPaid;
+  // B2C-ветка: визиты, не дошедшие до заявки B2C.
+  const lostAtApplication = Math.max(0, visits - reaches);
   const applicationLossRate = visits > 0 ? (lostAtApplication / visits) * 100 : 0;
-  const pipelineLossRate = reaches > 0 ? (lostAtPipeline / reaches) * 100 : 0;
-  const paymentLossRate = b2bTickets > 0 ? (lostAtPayment / b2bTickets) * 100 : 0;
+  // B2B-ветка: только сделки/стадии — билеты в пайплайне, не дошедшие до оплаты.
+  const lostAtB2bPipeline = Math.max(0, b2bTickets - b2bPaid);
+  const b2bPipelineLossRate = b2bTickets > 0 ? (lostAtB2bPipeline / b2bTickets) * 100 : 0;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('an.fn.loss.title')}</h3>
       <div className="space-y-2 text-sm text-slate-600">
         <div className="flex items-center justify-between">
-          <span>{t('an.fn.loss.application')}</span>
+          <span>{t('an.fn.loss.b2c')}</span>
           <span className="font-medium">
             {t('an.fn.loss.visits', {
               n: formatInt(lostAtApplication),
@@ -104,17 +109,12 @@ function FunnelLossAnalysis({
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span>{t('an.fn.loss.pipeline')}</span>
+          <span>{t('an.fn.loss.b2b')}</span>
           <span className="font-medium">
-            {formatInt(Math.max(0, lostAtPipeline))} (
-            {formatPercent(Math.max(0, pipelineLossRate) / 100)})
-          </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span>{t('an.fn.loss.payment')}</span>
-          <span className="font-medium">
-            {formatInt(Math.max(0, lostAtPayment))} (
-            {formatPercent(Math.max(0, paymentLossRate) / 100)})
+            {t('an.fn.loss.deals', {
+              n: formatInt(lostAtB2bPipeline),
+              pct: formatPercent(b2bPipelineLossRate / 100),
+            })}
           </span>
         </div>
       </div>
@@ -183,17 +183,23 @@ export function FunnelView({
   // ANA-21: per-issue pc-goals funnel (Визиты → reg_open → cart_open → reg_step1 → Оплата) when
   // the live funnel is available; «Оплата» falls back to manually entered B2B deals paid in the
   // period. Without live data the chart falls back to the cached SQLite totals.
+  // ANA-75 БАГ-10: «Визиты» в воронке переопределяются тем же periodTotals(stats), что и в
+  // карточке выше — один источник на страницу, иначе карточка и воронка расходятся (live-цели
+  // считают визиты по-другому).
   const stages = live
-    ? buildFunnel(valuesFromStages(live.stages), {
-        paymentFallback: b2bPaid,
-        labels: {
-          visits: t('an.col.visits'),
-          reg_open: t('an.fn.stage.regOpen'),
-          cart_open: t('an.fn.stage.cartOpen'),
-          reg_step1: t('an.fn.stage.regStep1'),
-          payment: t('an.fn.stage.payment'),
+    ? buildFunnel(
+        { ...valuesFromStages(live.stages), visits },
+        {
+          paymentFallback: b2bPaid,
+          labels: {
+            visits: t('an.col.visits'),
+            reg_open: t('an.fn.stage.regOpen'),
+            cart_open: t('an.fn.stage.cartOpen'),
+            reg_step1: t('an.fn.stage.regStep1'),
+            payment: t('an.fn.stage.payment'),
+          },
         },
-      })
+      )
     : buildSummaryFunnel(
         { visits, applications: reaches, b2bTickets, b2bPaid },
         {

@@ -160,4 +160,15 @@ describe('funnelOption', () => {
     });
     expect(first).toBe('visits\n100');
   });
+
+  it('keeps stage labels readable: fontSize ≥ 12 with a matching lineHeight (ANA-75 БАГ-10)', () => {
+    const option = funnelOption(buildFunnel({ visits: 10 })) as {
+      series: Array<{ label: { fontSize: number; lineHeight: number; fontWeight: number } }>;
+    };
+    expect(option.series[0]?.label.fontSize).toBeGreaterThanOrEqual(12);
+    expect(option.series[0]?.label.lineHeight).toBeGreaterThanOrEqual(
+      option.series[0]!.label.fontSize + 3,
+    );
+    expect(option.series[0]?.label.fontWeight).toBeGreaterThanOrEqual(500);
+  });
 });
