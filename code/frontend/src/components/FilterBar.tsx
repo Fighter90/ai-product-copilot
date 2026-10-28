@@ -1,5 +1,6 @@
 import { useFilters, isoDaysAgo, type Segment } from '../store/filters';
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useT, fmtDate } from '../i18n';
 import { api, http } from '../lib/api';
 import { useAuth } from '../auth/AuthContext';
@@ -60,6 +61,10 @@ export function FilterBar(): JSX.Element {
   const datesToggleRef = useRef<HTMLButtonElement>(null);
   // On <768px the controls collapse into a bottom-sheet toggled by «Фильтры».
   const [sheetOpen, setSheetOpen] = useState(false);
+  // БАГ-06: «Архивные цели» is a client-side filter over the goals list, but the Overview page
+  // has no goals list — there the toggle would silently do nothing, so it is hidden on /app.
+  const { pathname } = useLocation();
+  const showArchivedToggle = pathname.replace(/\/+$/, '') !== '/app';
 
   // ANA-49: previous period of the same length — the comparison baseline for the KPI tiles.
   const periodDays = daysBetween(from, to) + 1;
@@ -346,22 +351,24 @@ export function FilterBar(): JSX.Element {
           </div>
         </div>
 
-        {/* Archived goals checkbox with tooltip */}
-        <div className="group relative">
-          <label className="flex cursor-pointer items-center gap-1 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={toggleArchived}
-              className="focus-visible:ring-2 focus-visible:ring-indigo-600"
-            />
-            {t('filters.archivedGoals')}
-          </label>
-          {/* Tooltip (hover and keyboard focus) */}
-          <div className="absolute left-0 top-full z-20 mt-1 hidden w-64 rounded border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow group-hover:block group-focus-within:block">
-            <p>{t('filters.archivedGoalsHint')}</p>
+        {/* Archived goals checkbox with tooltip — hidden on Обзор, where no goals list exists */}
+        {showArchivedToggle && (
+          <div className="group relative">
+            <label className="flex cursor-pointer items-center gap-1 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={toggleArchived}
+                className="focus-visible:ring-2 focus-visible:ring-indigo-600"
+              />
+              {t('filters.archivedGoals')}
+            </label>
+            {/* Tooltip (hover and keyboard focus) */}
+            <div className="absolute left-0 top-full z-20 mt-1 hidden w-64 rounded border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow group-hover:block group-focus-within:block">
+              <p>{t('filters.archivedGoalsHint')}</p>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* ANA-22: test/service traffic is excluded by default — the toggle brings it back */}
         <div className="group relative">

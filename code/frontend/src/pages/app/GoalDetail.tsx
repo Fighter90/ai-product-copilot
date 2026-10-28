@@ -37,7 +37,9 @@ export function GoalDetail(): JSX.Element {
       accessor: (r) => r.reaches,
       total: 'sum',
     },
-    { id: 'cr', header: t('goals.col.cr'), kind: 'pct', accessor: (r) => r.conversionRate },
+    // БАГ-13: this conversion is Metrika's goalConversionRate — goal visits / all visits —
+    // NOT reaches / visits; the header must say so, the number stays as Metrika reports it.
+    { id: 'cr', header: t('goals.col.crVisits'), kind: 'pct', accessor: (r) => r.conversionRate },
   ];
 
   const series = d && {

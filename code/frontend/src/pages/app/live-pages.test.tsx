@@ -52,6 +52,8 @@ const GOALS: LiveGoals = {
   goals: [
     goal({ id: 1, name: 'Ticket purchase' }),
     goal({ id: 2, name: 'Old landing form', event: 'old_form', archived: true }),
+    // БАГ-06: «sleeping» is an activity status, NOT the archive flag — such goals stay listed.
+    goal({ id: 3, name: 'Sleeping form', event: null, status: 'sleeping', reaches90: 12 }),
   ],
 };
 
@@ -148,6 +150,8 @@ describe('Goals page — «Архивные цели» filter', () => {
     expect(await screen.findByText('Ticket purchase')).toBeInTheDocument();
     // ANA-34: the funnel-role column joins the pc-goals reference by the JS event.
     expect(screen.getByText('Регистрация')).toBeInTheDocument();
+    // БАГ-06: only the archive flag hides a goal — «sleeping» stays in the list.
+    expect(screen.getByText('Sleeping form')).toBeInTheDocument();
     expect(screen.queryByText('Old landing form')).not.toBeInTheDocument();
     expect(screen.getByRole('note')).toHaveTextContent('Скрыто архивных целей: 1');
 
@@ -230,6 +234,11 @@ describe('Live pages in English', () => {
     );
     expect(await screen.findByText('Archived')).toBeInTheDocument();
     expect(screen.getAllByText('Ads').length).toBeGreaterThan(0);
+    // БАГ-13: every conversion number on the card is goal visits / all visits — the breakdown
+    // table headers must carry the same honest label as the KPI tile (reaches/visits ≠ conversion).
+    expect(
+      screen.getAllByText('Conversion (per visits with the goal)').length,
+    ).toBeGreaterThanOrEqual(2);
     expectNoCyrillic(container);
   });
 
