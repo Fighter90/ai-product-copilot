@@ -11,6 +11,15 @@ import { combineStatus, type QueryStatus } from '../lib/query-status';
 import { applyTestTrafficFilter, isTestPage } from '../lib/test-traffic';
 import { InsightBadge } from '../components/InsightBadge';
 import { InfoHint } from '../components/InfoHint';
+import {
+  BOUNCE_HIGH,
+  BOUNCE_LOW,
+  CR_GOOD_TARGET,
+  CR_HIGH_VS_AVG,
+  CR_LOW_VS_AVG,
+  MIN_PAGE_VISITS,
+  MIN_PAGE_VISITS_CR_LOW,
+} from '../lib/insight-thresholds';
 import { useT } from '../i18n';
 
 type TFn = ReturnType<typeof useT>['t'];
@@ -47,7 +56,7 @@ function computePageInsights(
 
   for (const p of rows.slice(0, 10)) {
     // High bounce rate warning
-    if (p.bounceRate > 0.5 && p.visits > 30) {
+    if (p.bounceRate > BOUNCE_HIGH && p.visits > MIN_PAGE_VISITS) {
       badges.push(
         <InsightBadge
           key={`bounce-${type}-${p.page}`}
@@ -61,7 +70,7 @@ function computePageInsights(
       );
     }
     // Low bounce rate - good
-    else if (p.bounceRate < 0.2 && p.visits > 30) {
+    else if (p.bounceRate < BOUNCE_LOW && p.visits > MIN_PAGE_VISITS) {
       badges.push(
         <InsightBadge
           key={`good-bounce-${type}-${p.page}`}
@@ -71,8 +80,14 @@ function computePageInsights(
       );
     }
 
-    // High conversion - good
-    if (p.conversionRate > avgCR * 1.5 && p.visits > 30) {
+    // High conversion - good. ANA-75 (БАГ-09): praised only when the CR also reaches the shared
+    // absolute target — «выше среднего (0.3%)» for a 0.6% CR must not sit next to
+    // «Общий CR 0.6% — низкий, цель > 2%».
+    if (
+      p.conversionRate >= CR_GOOD_TARGET &&
+      p.conversionRate > avgCR * CR_HIGH_VS_AVG &&
+      p.visits > MIN_PAGE_VISITS
+    ) {
       badges.push(
         <InsightBadge
           key={`cr-good-${type}-${p.page}`}
@@ -86,7 +101,7 @@ function computePageInsights(
       );
     }
     // Low conversion with high traffic - problem
-    else if (p.conversionRate < avgCR * 0.5 && p.visits > 50) {
+    else if (p.conversionRate < avgCR * CR_LOW_VS_AVG && p.visits > MIN_PAGE_VISITS_CR_LOW) {
       badges.push(
         <InsightBadge
           key={`cr-bad-${type}-${p.page}`}
@@ -310,7 +325,7 @@ export function BehaviorView({
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('an.keyInsights')}</h3>
         <div className="flex flex-wrap gap-2">
-          {bestPage && bestPage.conversionRate > 0.01 && (
+          {bestPage && bestPage.conversionRate >= CR_GOOD_TARGET && (
             <InsightBadge
               type="good"
               text={t('ins.bestCr', {
@@ -319,7 +334,7 @@ export function BehaviorView({
               })}
             />
           )}
-          {worstPage && worstPage.bounceRate > 0.4 && (
+          {worstPage && worstPage.bounceRate > BOUNCE_HIGH && (
             <InsightBadge
               type="warning"
               text={t('ins.worstBounce', {
@@ -328,7 +343,7 @@ export function BehaviorView({
               })}
             />
           )}
-          {entryCR > 0.02 ? (
+          {entryCR >= CR_GOOD_TARGET ? (
             <InsightBadge
               type="good"
               text={t('ins.overallCrGood', { cr: formatPercent(entryCR) })}
@@ -387,7 +402,7 @@ export function BehaviorView({
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('an.recommendations')}</h3>
         <ul className="space-y-2 text-sm text-slate-600">
-          {worstPage && worstPage.bounceRate > 0.4 && (
+          {worstPage && worstPage.bounceRate > BOUNCE_HIGH && (
             <li className="flex items-start gap-2">
               <span className="text-red-500">🔴</span>
               <span>
@@ -396,13 +411,13 @@ export function BehaviorView({
               </span>
             </li>
           )}
-          {entryCR < 0.02 && (
+          {entryCR < CR_GOOD_TARGET && (
             <li className="flex items-start gap-2">
               <span className="text-amber-500">🟡</span>
               <span>{t('an.beh.rec.crLow', { cr: formatPercent(entryCR) })}</span>
             </li>
           )}
-          {entryCR >= 0.02 && (
+          {entryCR >= CR_GOOD_TARGET && (
             <li className="flex items-start gap-2">
               <span className="text-green-500">🟢</span>
               <span>{t('an.beh.rec.crGood', { cr: formatPercent(entryCR) })}</span>

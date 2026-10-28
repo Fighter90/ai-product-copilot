@@ -10,6 +10,17 @@ import { formatInt, formatPercent } from '../lib/format';
 import { displayPath } from '../lib/url-path';
 import { EmptyState } from '../components/EmptyState';
 import { channelMixOption, summarizeChannels, weakSpots } from '../lib/overview';
+import { pageRows, type PageRow } from '../lib/behavior';
+import {
+  BOUNCE_HIGH,
+  BOUNCE_LOW,
+  CR_EXCELLENT_TARGET,
+  CR_GOOD_TARGET,
+  CR_HIGH_VS_AVG,
+  CR_LOW_VS_AVG,
+  MIN_CHANNEL_VISITS,
+  MIN_PAGE_VISITS,
+} from '../lib/insight-thresholds';
 import { applyTestTrafficFilter, isTestChannelRow, isTestPage } from '../lib/test-traffic';
 import { useKpiTarget } from '../lib/kpi-target';
 import { utmCoverage } from '../lib/traffic';
@@ -58,7 +69,7 @@ function computeChannelInsights(stats: ChannelStat[], locale: Locale): JSX.Eleme
   const overallCR = totalVisits > 0 ? totalApplications / totalVisits : 0;
 
   // Overall conversion assessment
-  if (overallCR > 0.05) {
+  if (overallCR > CR_EXCELLENT_TARGET) {
     insights.push(
       <InsightBadge
         key="cr-good"
@@ -66,7 +77,7 @@ function computeChannelInsights(stats: ChannelStat[], locale: Locale): JSX.Eleme
         text={translate(locale, 'i18n.ov.ins.crGood', { cr: formatPercent(overallCR) })}
       />,
     );
-  } else if (overallCR < 0.02) {
+  } else if (overallCR < CR_GOOD_TARGET) {
     insights.push(
       <InsightBadge
         key="cr-bad"
@@ -86,7 +97,13 @@ function computeChannelInsights(stats: ChannelStat[], locale: Locale): JSX.Eleme
   for (const [raw, data] of channelCRs) {
     const channel = channelName(raw, locale);
     const cr = data.visits > 0 ? data.reaches / data.visits : 0;
-    if (cr > overallCR * 1.5 && data.visits > 50) {
+    // ANA-75 (БАГ-09): «высокий CR» у канала — только если CR дотягивает до общей цели,
+    // иначе похвала каналу противоречит вердикту «общий CR низкий» рядом с ней.
+    if (
+      cr >= CR_GOOD_TARGET &&
+      cr > overallCR * CR_HIGH_VS_AVG &&
+      data.visits > MIN_CHANNEL_VISITS
+    ) {
       insights.push(
         <InsightBadge
           key={`good-${channel}`}
@@ -97,7 +114,7 @@ function computeChannelInsights(stats: ChannelStat[], locale: Locale): JSX.Eleme
           })}
         />,
       );
-    } else if (cr < overallCR * 0.5 && data.visits > 50) {
+    } else if (cr < overallCR * CR_LOW_VS_AVG && data.visits > MIN_CHANNEL_VISITS) {
       insights.push(
         <InsightBadge
           key={`bad-${channel}`}
@@ -142,21 +159,25 @@ function computeUtmInsights(stats: ChannelStat[], utm: UtmStat[], locale: Locale
   return insights;
 }
 
-/** Compute page insights */
+/**
+ * Compute page insights. ANA-75 (БАГ-09): the rows here are exactly the aggregated top rows the
+ * adjacent table renders (`pageRows` + visits sort + slice), so every number quoted in a badge is
+ * visible in the table — no insight can reference a hidden row.
+ */
 function computePageInsights(
-  pages: PageStat[] | undefined,
+  rows: PageRow[],
   type: 'entry' | 'exit',
   locale: Locale,
 ): JSX.Element[] {
   const insights: JSX.Element[] = [];
-  if (!pages || pages.length === 0) return insights;
+  if (rows.length === 0) return insights;
 
-  pages.slice(0, 5).forEach((p, i) => {
+  rows.forEach((p) => {
     const path = displayPath(p.page);
-    if (p.bounceRate > 0.7 && p.visits > 50) {
+    if (p.bounceRate > BOUNCE_HIGH && p.visits > MIN_PAGE_VISITS) {
       insights.push(
         <InsightBadge
-          key={`bounce-${type}-${p.page}-${i}`}
+          key={`bounce-${type}-${p.page}`}
           type="warning"
           text={translate(locale, 'i18n.ov.ins.bounceHigh', {
             cr: formatPercent(p.bounceRate),
@@ -165,10 +186,10 @@ function computePageInsights(
           })}
         />,
       );
-    } else if (p.bounceRate < 0.3 && p.visits > 50) {
+    } else if (p.bounceRate < BOUNCE_LOW && p.visits > MIN_PAGE_VISITS) {
       insights.push(
         <InsightBadge
-          key={`good-${type}-${p.page}-${i}`}
+          key={`good-${type}-${p.page}`}
           type="good"
           text={translate(locale, 'i18n.ov.ins.bounceLow', {
             cr: formatPercent(p.bounceRate),
@@ -260,7 +281,7 @@ function Caption({ id }: { id: 'trends' | 'mix' | 'geo' | 'device' }): JSX.Eleme
 }
 
 /** Entry/exit pages table: path only (scheme + host stripped), the full URL in the title. */
-function PagesTable({ title, pages }: { title: string; pages: PageStat[] }): JSX.Element {
+function PagesTable({ title, rows }: { title: string; rows: PageRow[] }): JSX.Element {
   const { t } = useT();
   return (
     <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={title}>
@@ -274,8 +295,8 @@ function PagesTable({ title, pages }: { title: string; pages: PageStat[] }): JSX
           </tr>
         </thead>
         <tbody>
-          {pages.map((p, i) => (
-            <tr key={`${p.page}-${i}`} className="border-t border-slate-100">
+          {rows.map((p) => (
+            <tr key={p.page} className="border-t border-slate-100">
               <td className="max-w-[20rem] truncate py-1" title={p.page}>
                 {displayPath(p.page)}
               </td>
@@ -356,15 +377,16 @@ export function OverviewView({
   const utmCoveragePct = (utmCov.ratio * 100).toFixed(0);
   const lowUtm = utmCov.low;
 
-  // Top entry pages
-  const topEntry = [...(entryPages ?? [])].sort((a, b) => b.visits - a.visits).slice(0, 5);
-  const topExit = [...(exitPages ?? [])].sort((a, b) => b.visits - a.visits).slice(0, 5);
+  // Top entry/exit pages — ANA-75 (БАГ-09): per-day API rows are aggregated per page (pageRows,
+  // sorted by visits) and BOTH the table and the page insights read this same top-5 list.
+  const topEntry = pageRows(entryPages ?? []).slice(0, 5);
+  const topExit = pageRows(exitPages ?? []).slice(0, 5);
 
   // Compute insights
   const channelInsights = computeChannelInsights(stats, locale);
   const utmInsights = computeUtmInsights(stats, utm ?? [], locale);
-  const entryInsights = computePageInsights(entryPages, 'entry', locale);
-  const exitInsights = computePageInsights(exitPages, 'exit', locale);
+  const entryInsights = computePageInsights(topEntry, 'entry', locale);
+  const exitInsights = computePageInsights(topExit, 'exit', locale);
   const geoInsights = computeGeoInsights(geoDevice, locale);
 
   // Data-quality notices live in one collapsed block below the KPI strip (ANA-48).
@@ -480,7 +502,7 @@ export function OverviewView({
       {/* Entry pages */}
       {topEntry.length > 0 && (
         <Card title={t('ov.card.entry')}>
-          <PagesTable title={t('ov.card.entry')} pages={topEntry} />
+          <PagesTable title={t('ov.card.entry')} rows={topEntry} />
           {entryInsights.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">{entryInsights}</div>
           )}
@@ -490,7 +512,7 @@ export function OverviewView({
       {/* Exit pages */}
       {topExit.length > 0 && (
         <Card title={t('ov.card.exit')}>
-          <PagesTable title={t('ov.card.exit')} pages={topExit} />
+          <PagesTable title={t('ov.card.exit')} rows={topExit} />
           {exitInsights.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">{exitInsights}</div>
           )}

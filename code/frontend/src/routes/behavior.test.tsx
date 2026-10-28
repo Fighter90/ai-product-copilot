@@ -111,4 +111,39 @@ describe('BehaviorView (en locale)', () => {
     expect(screen.getByText(/No data for the selected period/)).toBeInTheDocument();
     expectNoCyrillic(container);
   });
+
+  it('never praises a sub-target CR as «выше среднего» next to «общий CR низкий» (ANA-75 / БАГ-09)', () => {
+    // avg CR = 0.5%; /a converts at 1% — twice the average but below the shared 2% target.
+    render(
+      <BehaviorView
+        status="success"
+        entry={[
+          page({ page: '/a', visits: 100, goalReaches: 1, bounceRate: 0.2 }),
+          page({ page: '/b', visits: 100, goalReaches: 0, bounceRate: 0.2 }),
+        ]}
+        exit={[]}
+      />,
+    );
+    expect(screen.queryByText(/выше среднего/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Лучший CR/)).not.toBeInTheDocument();
+    // The overall verdict stays, so no badge contradicts it.
+    expect(screen.getByText(/Общий CR 0.5% — низкий, цель > 2%/)).toBeInTheDocument();
+  });
+
+  it('praises a page CR only when it reaches the shared CR target (ANA-75 / БАГ-09)', () => {
+    render(
+      <BehaviorView
+        status="success"
+        entry={[
+          page({ page: '/good', visits: 100, goalReaches: 4, bounceRate: 0.2 }), // CR 4% ≥ 2%
+          page({ page: '/rest', visits: 100, goalReaches: 0, bounceRate: 0.2 }),
+        ]}
+        exit={[]}
+      />,
+    );
+    expect(
+      screen.getByText(/Высокий CR 4\.0% на \/good — выше среднего \(2\.0%\)/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Лучший CR: \/good 4\.0%/)).toBeInTheDocument();
+  });
 });

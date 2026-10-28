@@ -208,6 +208,41 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
     expect(screen.queryByText('https://productcamp.ru/tickets?x=1')).not.toBeInTheDocument();
   });
 
+  it('computes page insights from the same aggregated rows the table shows (ANA-75 / БАГ-09)', () => {
+    // Two per-day rows for «/»: the old per-row insight quoted a single day's bounce that was
+    // nowhere in the table. Aggregated weighted bounce = (0.15·100 + 0.10·50) / 150 = 13.3%.
+    render(
+      <OverviewView
+        status="success"
+        stats={[sample]}
+        entryPages={[
+          {
+            date: '2025-01-01',
+            page: 'https://productcamp.ru/',
+            visits: 100,
+            users: 90,
+            bounceRate: 0.15,
+            goalReaches: 2,
+            conversionRate: 0.02,
+          },
+          {
+            date: '2025-01-02',
+            page: 'https://productcamp.ru/',
+            visits: 50,
+            users: 45,
+            bounceRate: 0.1,
+            goalReaches: 1,
+            conversionRate: 0.02,
+          },
+        ]}
+      />,
+    );
+    // The badge and the table cell quote the SAME number.
+    expect(screen.getAllByText(/13\.3%/).length).toBeGreaterThanOrEqual(2);
+    // The page is aggregated into one row, not two per-day rows.
+    expect(screen.getAllByRole('cell', { name: '/' })).toHaveLength(1);
+  });
+
   it('translates the KPI labels in English', () => {
     usePrefs.setState({ locale: 'en' });
     render(<OverviewView status="success" stats={[sample]} />);
