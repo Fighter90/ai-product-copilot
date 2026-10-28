@@ -28,7 +28,8 @@ import {
   CR_LOW_VS_AVG,
   MIN_CHANNEL_VISITS,
   MIN_PAGE_VISITS,
-} from '../lib/insight-thresholds';import type { PageRow } from '../lib/behavior';
+} from '../lib/insight-thresholds';
+import type { PageRow } from '../lib/behavior';
 import { applyTestTrafficFilter, isTestChannelRow, isTestPage } from '../lib/test-traffic';
 import { useKpiTarget } from '../lib/kpi-target';
 import { utmCoverage } from '../lib/traffic';

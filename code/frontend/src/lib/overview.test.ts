@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import type { ChannelStat, B2bDeal, PageStat, UtmStat } from '@pca/shared';import {
+import type { ChannelStat, B2bDeal, PageStat, UtmStat } from '@pca/shared';
+import {
   summarizeChannels,
   channelMixOption,
   dailyReachesOption,
   weakSpots,
   b2bDailyPoints,
   topPages,
-  topUtmRows,} from './overview';
+  topUtmRows,
+} from './overview';
 
 function stat(over: Partial<ChannelStat>): ChannelStat {
   return {
