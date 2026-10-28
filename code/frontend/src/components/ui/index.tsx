@@ -209,16 +209,26 @@ export function ErrorBox({
   );
 }
 
+/** Dialog widths: md/lg keep the old compact look, xl fits the form-heavy hypothesis/decision editors. */
+const MODAL_SIZES: Record<'md' | 'lg' | 'xl', string> = {
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+  xl: 'max-w-2xl',
+};
+
 export function Modal({
   open,
   title,
   onClose,
   children,
+  size = 'lg',
 }: {
   open: boolean;
   title: ReactNode;
   onClose: () => void;
   children: ReactNode;
+  /** Dialog width (ANA-75 / БАГ-14): 'md' | 'lg' (default) | 'xl'. */
+  size?: keyof typeof MODAL_SIZES;
 }): JSX.Element | null {
   useEffect(() => {
     if (!open) return;
@@ -235,7 +245,7 @@ export function Modal({
       <div
         role="dialog"
         aria-modal="true"
-        className="card w-full max-w-lg p-5 shadow-2xl animate-fade-up"
+        className={`card w-full min-w-0 p-5 shadow-2xl animate-fade-up ${MODAL_SIZES[size]}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">

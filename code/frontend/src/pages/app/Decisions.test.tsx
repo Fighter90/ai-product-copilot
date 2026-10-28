@@ -76,8 +76,16 @@ describe('Decisions page (Decision Log)', () => {
 
     fireEvent.click(await screen.findByTestId('dec-new'));
     const editor = await screen.findByTestId('decision-editor');
-    // Blank form → save disabled with per-field errors.
+    // Blank form → save disabled, and «Заполните поле» errors stay hidden until the user
+    // touches a field (БАГ-14 dirty tracking).
     await waitFor(() => expect(screen.getByTestId('dec-save')).toBeDisabled());
+    expect(
+      screen.queryByText('Нужно минимум одно доказательство (цитата + источник)'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Заполните поле')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Гипотеза'), { target: { value: '100' } });
+    // After the first input the remaining per-field errors become visible.
     expect(
       screen.getByText('Нужно минимум одно доказательство (цитата + источник)'),
     ).toBeInTheDocument();

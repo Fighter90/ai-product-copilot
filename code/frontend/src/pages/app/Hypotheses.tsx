@@ -208,15 +208,16 @@ export function Hypotheses(): JSX.Element {
         }
       />
 
-      {/* Kanban */}
-      <div className="grid gap-3 lg:grid-cols-5" data-testid="hyp-kanban">
+      {/* Kanban: min-w-0/overflow-hidden on lanes and cards so long titles never push a card
+          past its column edge (ANA-75 / БАГ-15). */}
+      <div className="grid gap-3 lg:grid-cols-6" data-testid="hyp-kanban">
         {KANBAN_COLUMNS.map((col) => {
           const cards = byStatus(col.statuses);
           return (
             <section
               key={col.id}
               aria-label={t(col.key)}
-              className="rounded-xl border border-line bg-surface/60 p-2"
+              className="min-w-0 overflow-hidden rounded-xl border border-line bg-surface/60 p-2"
             >
               <h2 className="mb-2 flex items-center justify-between px-1 text-xs font-semibold uppercase tracking-wide text-muted">
                 {t(col.key)}
@@ -227,10 +228,12 @@ export function Hypotheses(): JSX.Element {
                   <article
                     key={h.id}
                     data-testid={`hyp-card-${h.id}`}
-                    className="card p-3 text-sm animate-fade-up"
+                    className="card min-w-0 overflow-hidden p-3 text-sm animate-fade-up"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <span className="font-medium leading-snug">{h.title}</span>
+                      <span className="min-w-0 break-words font-medium leading-snug">
+                        {h.title}
+                      </span>
                       <span className="shrink-0 rounded bg-raised px-1.5 py-0.5 text-[11px] font-bold text-accent">
                         {fmtNum(h.iceScore, locale)}
                       </span>

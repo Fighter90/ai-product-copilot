@@ -18,7 +18,7 @@ export const STATUS_KEY: Record<HypothesisStatus, DictKey> = {
   expired: 'hyp.status.expired',
 };
 
-/** Kanban columns: red and expired share the «Отклонена» column (the issue's 4-lane board). */
+/** Kanban columns: «Просрочена» is its own lane — expired ≠ rejected (ANA-75 / БАГ-15). */
 export const KANBAN_COLUMNS: ReadonlyArray<{
   readonly id: string;
   readonly key: DictKey;
@@ -28,7 +28,8 @@ export const KANBAN_COLUMNS: ReadonlyArray<{
   { id: 'in_progress', key: 'hyp.status.in_progress', statuses: ['in_progress'] },
   { id: 'green', key: 'hyp.status.green', statuses: ['green'] },
   { id: 'yellow', key: 'hyp.status.yellow', statuses: ['yellow'] },
-  { id: 'red', key: 'hyp.status.red', statuses: ['red', 'expired'] },
+  { id: 'red', key: 'hyp.status.red', statuses: ['red'] },
+  { id: 'expired', key: 'hyp.status.expired', statuses: ['expired'] },
 ];
 
 export const CATEGORY_KEY: Record<AssumptionCategory, DictKey> = {

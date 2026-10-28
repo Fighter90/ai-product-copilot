@@ -72,6 +72,8 @@ function DecisionEditor({
   const [decidedBy, setDecidedBy] = useState(user?.name ?? '');
   const [apiError, setApiError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // БАГ-14: «Заполните поле» stays hidden until the user touches the form (dirty tracking).
+  const [dirty, setDirty] = useState(false);
 
   const errors = useMemo(() => {
     const e: Record<string, string> = {};
@@ -95,6 +97,8 @@ function DecisionEditor({
   }, [hypothesisId, scope, outcomeRationale, nextStep, decidedBy, findings, evidence, t]);
 
   const valid = Object.keys(errors).length === 0 && !busy;
+  /** Per-field errors as displayed: gated behind the first user input (БАГ-14 dirty tracking). */
+  const shownErrors = dirty ? errors : {};
 
   const save = async (): Promise<void> => {
     if (!valid || typeof hypothesisId !== 'number') return;
@@ -123,8 +127,12 @@ function DecisionEditor({
   };
 
   return (
-    <Modal open title={t('dec.new')} onClose={busy ? () => {} : onClose}>
-      <div data-testid="decision-editor" className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
+    <Modal open size="xl" title={t('dec.new')} onClose={busy ? () => {} : onClose}>
+      <div
+        data-testid="decision-editor"
+        className="max-h-[70vh] space-y-4 overflow-y-auto overflow-x-hidden pr-1"
+        onChangeCapture={() => setDirty(true)}
+      >
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className={label} htmlFor="dec-hypothesis">
@@ -143,7 +151,7 @@ function DecisionEditor({
                 </option>
               ))}
             </select>
-            <FieldError>{errors.hypothesisId}</FieldError>
+            <FieldError>{shownErrors.hypothesisId}</FieldError>
           </div>
           <div>
             <label className={label} htmlFor="dec-date">
@@ -197,7 +205,7 @@ function DecisionEditor({
               value={scope}
               onChange={(e) => setScope(e.target.value)}
             />
-            <FieldError>{errors.scope}</FieldError>
+            <FieldError>{shownErrors.scope}</FieldError>
           </div>
         </div>
 
@@ -226,7 +234,7 @@ function DecisionEditor({
                 </select>
                 <input
                   aria-label={t('dec.finding')}
-                  className={input}
+                  className={`${input} min-w-0 flex-1`}
                   value={f.text}
                   onChange={(e) =>
                     setFindings(
@@ -252,7 +260,7 @@ function DecisionEditor({
           >
             <Plus className="h-4 w-4" /> {t('hyp.add')}
           </button>
-          <FieldError>{errors.findings}</FieldError>
+          <FieldError>{shownErrors.findings}</FieldError>
         </div>
 
         <div>
@@ -263,7 +271,7 @@ function DecisionEditor({
                 <input
                   aria-label={t('dec.f.quote')}
                   placeholder={t('dec.f.quote')}
-                  className={input}
+                  className={`${input} min-w-0 flex-1`}
                   value={ev.quote}
                   onChange={(e) =>
                     setEvidence(
@@ -274,7 +282,7 @@ function DecisionEditor({
                 <input
                   aria-label={t('dec.f.source')}
                   placeholder={t('dec.f.source')}
-                  className={input}
+                  className={`${input} min-w-0 flex-1`}
                   value={ev.source}
                   onChange={(e) =>
                     setEvidence(
@@ -300,7 +308,7 @@ function DecisionEditor({
           >
             <Plus className="h-4 w-4" /> {t('hyp.add')}
           </button>
-          <FieldError>{errors.evidence}</FieldError>
+          <FieldError>{shownErrors.evidence}</FieldError>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -339,11 +347,12 @@ function DecisionEditor({
           </label>
           <textarea
             id="dec-rationale"
-            className={`${input} h-16 resize-none`}
+            rows={2}
+            className={`${input} min-h-16 resize-none`}
             value={outcomeRationale}
             onChange={(e) => setOutcomeRationale(e.target.value)}
           />
-          <FieldError>{errors.outcomeRationale}</FieldError>
+          <FieldError>{shownErrors.outcomeRationale}</FieldError>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
@@ -356,7 +365,7 @@ function DecisionEditor({
               value={nextStep}
               onChange={(e) => setNextStep(e.target.value)}
             />
-            <FieldError>{errors.nextStep}</FieldError>
+            <FieldError>{shownErrors.nextStep}</FieldError>
           </div>
           <div>
             <label className={label} htmlFor="dec-by">
@@ -368,7 +377,7 @@ function DecisionEditor({
               value={decidedBy}
               onChange={(e) => setDecidedBy(e.target.value)}
             />
-            <FieldError>{errors.decidedBy}</FieldError>
+            <FieldError>{shownErrors.decidedBy}</FieldError>
           </div>
         </div>
 

@@ -94,7 +94,14 @@ describe('Hypotheses page', () => {
   it.skip('renders the kanban columns with ICE, the AI badge and the unverified-numbers warning', async () => {
     const { container } = renderWithProviders(<Hypotheses />, '/app/hypotheses');
     expect(await screen.findByTestId('hyp-kanban')).toBeInTheDocument();
-    for (const col of ['Бэклог', 'В проверке', 'Подтверждена', 'Частично', 'Отклонена']) {
+    for (const col of [
+      'Бэклог',
+      'В проверке',
+      'Подтверждена',
+      'Частично',
+      'Отклонена',
+      'Просрочена',
+    ]) {
       expect(screen.getByRole('region', { name: col })).toBeInTheDocument();
     }
     expect(screen.getByTestId('hyp-card-2')).toHaveTextContent('BBB высокий');
@@ -180,6 +187,27 @@ describe('Hypotheses page', () => {
         expect.objectContaining({ subject: 'Подкаст', title: 'Тест' }),
       ),
     );
+  });
+
+  it('БАГ-15: shows «Просрочена» as its own kanban column, separate from «Отклонена»', async () => {
+    mockData({ list: [h({ id: 3, title: 'CCC просроченная', status: 'expired' })] });
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    expect(await screen.findByTestId('hyp-kanban')).toBeInTheDocument();
+    const expired = screen.getByRole('region', { name: 'Просрочена' });
+    const rejected = screen.getByRole('region', { name: 'Отклонена' });
+    expect(expired).toHaveTextContent('CCC просроченная');
+    expect(rejected).toHaveTextContent('— пусто —');
+  });
+
+  it('БАГ-14: the editor hides «Заполните поле» until a field is touched', async () => {
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    fireEvent.click(await screen.findByTestId('hyp-new'));
+    await waitFor(() => expect(screen.getByTestId('hyp-save')).toBeDisabled());
+    expect(screen.queryByText('Заполните поле')).not.toBeInTheDocument();
+
+    // First input anywhere reveals the remaining per-field errors.
+    fireEvent.change(screen.getByLabelText('Целевая аудитория'), { target: { value: 'x' } });
+    expect(screen.getAllByText('Заполните поле').length).toBeGreaterThan(0);
   });
 
   it('moves a card via the status select (ANA-37 kanban)', async () => {

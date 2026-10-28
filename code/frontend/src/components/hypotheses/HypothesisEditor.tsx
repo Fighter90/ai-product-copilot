@@ -19,7 +19,8 @@ import { CATEGORY_KEY, METHOD_TYPE_KEY } from './labels';
  * Structured hypothesis editor (ANA-37). Format «{ЦА} {действие} {решение}, если {условие}»,
  * ≥3 hidden assumptions covering all categories, ≥2 validation methods of distinct types,
  * ICE sliders (1–10) with rationales, traffic-light criteria and a deadline. Validation runs on
- * every render — errors sit next to their fields; saving an incomplete hypothesis is impossible.
+ * every render, but per-field errors are shown only after the first user input (dirty tracking);
+ * saving an incomplete hypothesis is impossible.
  */
 
 /** Editable form state (camelCase, arrays mutable). Built from a seed, a blank template or an existing hypothesis. */
@@ -151,8 +152,13 @@ export function HypothesisEditor({
   const [d, setD] = useState<HypothesisDraft>(initial);
   const [apiError, setApiError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const set = <K extends keyof HypothesisDraft>(key: K, value: HypothesisDraft[K]): void =>
+  // БАГ-14: validation errors stay hidden until the user touches the form (dirty tracking) —
+  // a freshly opened editor must not greet the user with a wall of «Заполните поле».
+  const [dirty, setDirty] = useState(false);
+  const set = <K extends keyof HypothesisDraft>(key: K, value: HypothesisDraft[K]): void => {
+    setDirty(true);
     setD((prev) => ({ ...prev, [key]: value }));
+  };
 
   /** Per-field errors, localised. The shared validator stays the source of truth for the counts. */
   const errors = useMemo(() => {
@@ -190,6 +196,8 @@ export function HypothesisEditor({
 
   const shared = useMemo(() => validateHypothesis(draftToNew(d)), [d]);
   const valid = Object.keys(errors).length === 0 && shared.ok;
+  /** Per-field errors as displayed: gated behind the first user input (БАГ-14 dirty tracking). */
+  const shownErrors = dirty ? errors : {};
   const sentence = `${d.subject} ${d.action} ${d.solution}${
     d.condition ? `${t('hyp.sentenceIf')}${d.condition}` : ''
   }`.trim();
@@ -208,8 +216,11 @@ export function HypothesisEditor({
   };
 
   return (
-    <Modal open={open} title={heading} onClose={busy ? () => {} : onClose}>
-      <div data-testid="hypothesis-editor" className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
+    <Modal open={open} size="xl" title={heading} onClose={busy ? () => {} : onClose}>
+      <div
+        data-testid="hypothesis-editor"
+        className="max-h-[70vh] space-y-4 overflow-y-auto overflow-x-hidden pr-1"
+      >
         {/* Format sentence */}
         <p className="rounded-md border border-line bg-raised px-3 py-2 text-sm italic text-muted">
           {sentence || '…'}
@@ -226,7 +237,7 @@ export function HypothesisEditor({
               value={d.subject}
               onChange={(e) => set('subject', e.target.value)}
             />
-            <FieldError>{errors.subject}</FieldError>
+            <FieldError>{shownErrors.subject}</FieldError>
           </div>
           <div>
             <label className={label} htmlFor="hyp-action">
@@ -238,7 +249,7 @@ export function HypothesisEditor({
               value={d.action}
               onChange={(e) => set('action', e.target.value)}
             />
-            <FieldError>{errors.action}</FieldError>
+            <FieldError>{shownErrors.action}</FieldError>
           </div>
           <div>
             <label className={label} htmlFor="hyp-solution">
@@ -250,7 +261,7 @@ export function HypothesisEditor({
               value={d.solution}
               onChange={(e) => set('solution', e.target.value)}
             />
-            <FieldError>{errors.solution}</FieldError>
+            <FieldError>{shownErrors.solution}</FieldError>
           </div>
           <div>
             <label className={label} htmlFor="hyp-condition">
@@ -262,7 +273,7 @@ export function HypothesisEditor({
               value={d.condition}
               onChange={(e) => set('condition', e.target.value)}
             />
-            <FieldError>{errors.condition}</FieldError>
+            <FieldError>{shownErrors.condition}</FieldError>
           </div>
         </div>
 
@@ -276,7 +287,7 @@ export function HypothesisEditor({
             value={d.title}
             onChange={(e) => set('title', e.target.value)}
           />
-          <FieldError>{errors.title}</FieldError>
+          <FieldError>{shownErrors.title}</FieldError>
         </div>
 
         {/* Hidden assumptions */}
@@ -306,7 +317,7 @@ export function HypothesisEditor({
                 </select>
                 <input
                   aria-label={t('hyp.f.assumptionText')}
-                  className={input}
+                  className={`${input} min-w-0 flex-1`}
                   value={a.text}
                   onChange={(e) =>
                     set(
@@ -342,7 +353,7 @@ export function HypothesisEditor({
           >
             <Plus className="h-4 w-4" /> {t('hyp.add')}
           </button>
-          <FieldError>{errors.hiddenAssumptions}</FieldError>
+          <FieldError>{shownErrors.hiddenAssumptions}</FieldError>
         </div>
 
         {/* Validation methods */}
@@ -372,7 +383,7 @@ export function HypothesisEditor({
                 </select>
                 <input
                   aria-label={t('hyp.f.methodPlan')}
-                  className={input}
+                  className={`${input} min-w-0 flex-1`}
                   value={m.plan}
                   onChange={(e) =>
                     set(
@@ -408,7 +419,7 @@ export function HypothesisEditor({
           >
             <Plus className="h-4 w-4" /> {t('hyp.add')}
           </button>
-          <FieldError>{errors.validationMethods}</FieldError>
+          <FieldError>{shownErrors.validationMethods}</FieldError>
         </div>
 
         {/* ICE */}
@@ -443,11 +454,12 @@ export function HypothesisEditor({
                 </label>
                 <textarea
                   id={`hyp-${rationale}`}
-                  className={`${input} h-14 resize-none`}
+                  rows={2}
+                  className={`${input} min-h-14 resize-none`}
                   value={d[rationale]}
                   onChange={(e) => set(rationale, e.target.value)}
                 />
-                <FieldError>{errors[rationale]}</FieldError>
+                <FieldError>{shownErrors[rationale]}</FieldError>
               </div>
             ))}
           </div>
@@ -468,11 +480,12 @@ export function HypothesisEditor({
               </label>
               <textarea
                 id={`hyp-${field}`}
-                className={`${input} h-14 resize-none`}
+                rows={2}
+                className={`${input} min-h-14 resize-none`}
                 value={d[field]}
                 onChange={(e) => set(field, e.target.value)}
               />
-              <FieldError>{errors[field]}</FieldError>
+              <FieldError>{shownErrors[field]}</FieldError>
             </div>
           ))}
         </div>
@@ -488,7 +501,7 @@ export function HypothesisEditor({
             value={d.deadlineDays}
             onChange={(e) => set('deadlineDays', Number(e.target.value))}
           />
-          <FieldError>{errors.deadlineDays}</FieldError>
+          <FieldError>{shownErrors.deadlineDays}</FieldError>
         </div>
 
         {/* Evidence */}
