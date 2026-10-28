@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ChannelStat, B2bDeal, GeoDeviceStat, PageStat } from '@pca/shared';
-import { periodTotals } from '@pca/shared';
+import { aggregatePeriod, pageKey, periodTotals } from '@pca/shared';
 import { api } from '../lib/api';
 import { v3, type LiveFunnel } from '../lib/api-v3';
 import { useFilters } from '../store/filters';
@@ -18,15 +18,7 @@ import { ChartCaption } from '../components/charts/ChartCaption';
 import { EmptyState } from '../components/EmptyState';
 import { channelRows } from '../lib/traffic';
 import { funnelByChannelOption } from '../lib/funnel-by-channel';
-import { pageRows } from '../lib/behavior';
-import {
-  BOUNCE_HIGH,
-  CR_CRITICAL_TARGET,
-  CR_GOOD_TARGET,
-  CR_LOW_PAGE_TARGET,
-  MIN_PAGE_VISITS,
-  MIN_PAGE_VISITS_CR_LOW,
-} from '../lib/insight-thresholds';
+import { CR_CRITICAL_TARGET, CR_GOOD_TARGET } from '../lib/insight-thresholds';
 import { byCountry, audienceBarOption } from '../lib/audience';
 import { localizeChart } from '../lib/chart-i18n';
 import { InsightBadge } from '../components/InsightBadge';
@@ -178,18 +170,16 @@ export function FunnelView({
     return acc;
   }, new Map());
 
-  // Page insights — ANA-75 (БАГ-09): the API returns per-day rows; thresholds applied to raw days
-  // let a 100%-bounce page with small daily traffic slip through («Нет страниц с критическим
-  // bounce» next to Behavior showing it at 100%). Aggregate per page first — the same per-page
-  // view the Behavior table shows.
-  const perPage = pageRows(pages);
-  const highBouncePages = perPage.filter(
-    (p) => p.bounceRate > BOUNCE_HIGH && p.visits > MIN_PAGE_VISITS,
-  );
-  const lowCrPages = perPage.filter(
-    (p) => p.conversionRate < CR_LOW_PAGE_TARGET && p.visits > MIN_PAGE_VISITS_CR_LOW,
-  );
-
+  // Page insights — БАГ-07: page rows arrive per day and per raw URL («/?utm=…», «/b2b/»), so
+  // they are aggregated by the normalized page key first (path without query, one trailing-slash
+  // form) — otherwise «Проблемные страницы» repeats one page 3–5 times with split numbers.
+  // The shared aggregator sums visits/reaches, visit-weights bounce and recomputes CR.
+  const normalizedPages = aggregatePeriod(pages, (p) => pageKey(p.page)).map((p) => ({
+    ...p,
+    page: pageKey(p.page),
+  }));
+  const highBouncePages = normalizedPages.filter((p) => p.bounceRate > 0.4 && p.visits > 30);
+  const lowCrPages = normalizedPages.filter((p) => p.conversionRate < 0.005 && p.visits > 50);
   // ANA-21: per-issue pc-goals funnel (Визиты → reg_open → cart_open → reg_step1 → Оплата) when
   // the live funnel is available; «Оплата» falls back to manually entered B2B deals paid in the
   // period. Without live data the chart falls back to the cached SQLite totals.

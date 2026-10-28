@@ -55,6 +55,25 @@ describe('BehaviorView', () => {
     // 3 charts: CR bar, bounce bar, exit bounce bar
     expect(screen.getAllByTestId('echart')).toHaveLength(3);
   });
+
+  it('БАГ-08: «Средние» and the exit summary bounce are visit-weighted, not a plain row mean', () => {
+    const rows = [
+      page({ page: '/big', visits: 900, users: 800, bounceRate: 0.2, goalReaches: 30 }),
+      page({ page: '/tiny', visits: 90, users: 80, bounceRate: 1, goalReaches: 0 }),
+    ];
+    render(<BehaviorView status="success" entry={rows} exit={rows} />);
+    // Weighted bounce = (900×0.2 + 90×1)/990 ≈ 27.3%; the plain row mean would be 60%.
+    // CR = Σreaches/Σvisits = 30/990 ≈ 3.0%; the plain row mean would be 1.7%.
+    const averages = screen.getAllByText(
+      'Средние: отказы 27.3% · CR 3.0% · Страницы отсортированы по визитам',
+    );
+    expect(averages.length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/60\.0%/)).not.toBeInTheDocument();
+    // «средний отказ» in the exit-pages summary card is the same weighted figure.
+    expect(
+      screen.getByText('2 страниц выхода · 990 визитов · средний отказ 27.3%'),
+    ).toBeInTheDocument();
+  });
 });
 
 describe('Behavior (data wrapper)', () => {

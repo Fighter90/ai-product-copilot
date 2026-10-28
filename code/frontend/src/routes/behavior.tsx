@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { weightedBounce, type PageStat } from '@pca/shared';
+import { reachRate, weightedBounce, type PageStat } from '@pca/shared';
 import { api } from '../lib/api';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
@@ -34,10 +34,12 @@ function computePageInsights(
   if (pages.length === 0) return { badges, summary: '' };
 
   const rows = pageRows(pages);
-  const avgBounce = rows.reduce((a, r) => a + r.bounceRate, 0) / rows.length;
-  const avgCR = rows.reduce((a, r) => a + r.conversionRate, 0) / rows.length;
   const totalVisits = rows.reduce((a, r) => a + r.visits, 0);
   const totalReaches = rows.reduce((a, r) => a + r.goalReaches, 0);
+  // БАГ-08: averages are visit-weighted, never a plain row mean — bounce = Σ(visits×bounce)/Σvisits,
+  // CR = ΣgoalReaches/Σvisits (a 1-visit page with 100% bounce must not drag the headline).
+  const avgBounce = weightedBounce(rows);
+  const avgCR = reachRate(totalReaches, totalVisits);
 
   // Summary
   const summary =
@@ -169,8 +171,13 @@ function bounceBarOption(rows: PageRow[], title: string, bounceLabel: string): o
 
 function PageTable({ title, rows }: { title: string; rows: PageRow[] }): JSX.Element {
   const { t } = useT();
-  const avgCR = rows.length > 0 ? rows.reduce((a, r) => a + r.conversionRate, 0) / rows.length : 0;
-  const avgBounce = rows.length > 0 ? rows.reduce((a, r) => a + r.bounceRate, 0) / rows.length : 0;
+  // БАГ-08: the «Средние» line is visit-weighted — bounce = Σ(visits×bounce)/Σvisits,
+  // CR = ΣgoalReaches/Σvisits, not a plain mean over rows.
+  const avgCR = reachRate(
+    rows.reduce((a, r) => a + r.goalReaches, 0),
+    rows.reduce((a, r) => a + r.visits, 0),
+  );
+  const avgBounce = weightedBounce(rows);
 
   return (
     <div className="space-y-3">

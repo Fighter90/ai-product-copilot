@@ -252,3 +252,53 @@ describe('Live pages in English', () => {
     expect(screen.queryByText('Ticket purchase')).not.toBeInTheDocument();
   });
 });
+
+describe('Explore — weighted totals (БАГ-08)', () => {
+  const PAGES_TABLE: LiveTable = {
+    from: '2026-10-01',
+    to: '2026-10-14',
+    goalId: null,
+    updatedAt: NOW,
+    columns: [
+      'ym:s:startURLPath',
+      'ym:s:visits',
+      'ym:s:bounceRate',
+      'ym:s:pageDepth',
+      'ym:s:avgVisitDurationSeconds',
+    ],
+    totals: [100, 28, 2.8, 57],
+    rows: [
+      { dims: ['/'], values: [90, 20, 3, 60] },
+      { dims: ['/lp'], values: [10, 100, 1, 30] },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.mocked(v3.liveTable).mockResolvedValue(PAGES_TABLE);
+  });
+
+  it('«Итого» for rates/durations is visit-weighted, not a plain row mean', async () => {
+    setTestLocale('ru');
+    renderWithProviders(
+      <Routes>
+        <Route path="/app/explore/:preset" element={<Explore />} />
+      </Routes>,
+      '/app/explore/pages',
+    );
+    // Both rows are in the grid…
+    expect(await screen.findByText('/lp')).toBeInTheDocument();
+    // …and the totals row weighs by visits: bounce (90×20 + 10×100)/100 = 28% (plain mean 60%),
+    // depth 2.8 (plain 2), duration 0:57 (plain 0:45).
+    await waitFor(() => {
+      const foot = document.querySelector('tfoot');
+      expect(foot).not.toBeNull();
+      const text = foot!.textContent ?? '';
+      expect(text).toContain('Итого');
+      expect(text).toContain('28,00%');
+      expect(text).toContain('2,80');
+      expect(text).toContain('0:57');
+      expect(text).not.toContain('60,00%');
+      expect(text).not.toContain('0:45');
+    });
+  });
+});

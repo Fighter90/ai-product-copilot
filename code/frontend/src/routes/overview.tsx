@@ -10,8 +10,14 @@ import { useAuth } from '../auth/AuthContext';
 import { formatInt, formatPercent } from '../lib/format';
 import { displayPath } from '../lib/url-path';
 import { EmptyState } from '../components/EmptyState';
-import { channelMixOption, summarizeChannels, weakSpots, b2bDailyPoints } from '../lib/overview';
-import { pageRows, type PageRow } from '../lib/behavior';
+import {
+  channelMixOption,
+  summarizeChannels,
+  topPages,
+  topUtmRows,
+  weakSpots,
+  b2bDailyPoints,
+} from '../lib/overview';
 import {
   BOUNCE_HIGH,
   BOUNCE_LOW,
@@ -21,7 +27,7 @@ import {
   CR_LOW_VS_AVG,
   MIN_CHANNEL_VISITS,
   MIN_PAGE_VISITS,
-} from '../lib/insight-thresholds';
+} from '../lib/insight-thresholds';import type { PageRow } from '../lib/behavior';
 import { applyTestTrafficFilter, isTestChannelRow, isTestPage } from '../lib/test-traffic';
 import { useKpiTarget } from '../lib/kpi-target';
 import { utmCoverage } from '../lib/traffic';
@@ -417,10 +423,10 @@ export function OverviewView({
   const utmCoveragePct = (utmCov.ratio * 100).toFixed(0);
   const lowUtm = utmCov.low;
 
-  // Top entry/exit pages — ANA-75 (БАГ-09): per-day API rows are aggregated per page (pageRows,
+  // Top entry/exit pages — ANA-75 (БАГ-07/09): per-day API rows are aggregated per page (topPages,
   // sorted by visits) and BOTH the table and the page insights read this same top-5 list.
-  const topEntry = pageRows(entryPages ?? []).slice(0, 5);
-  const topExit = pageRows(exitPages ?? []).slice(0, 5);
+  const topEntry = topPages(entryPages ?? []).slice(0, 5);
+  const topExit = topPages(exitPages ?? []).slice(0, 5);
 
   // Compute insights
   const channelInsights = computeChannelInsights(stats, locale);
@@ -516,22 +522,20 @@ export function OverviewView({
                 </tr>
               </thead>
               <tbody>
-                {[...utm]
-                  .sort((a, b) => b.visits - a.visits)
-                  .slice(0, 10)
-                  .map((u, i) => (
-                    <tr
-                      key={`${u.utmSource}-${u.utmMedium}-${u.utmCampaign}-${i}`}
-                      className="border-t border-slate-100"
-                    >
-                      <td className="py-1">{u.utmSource ?? '(none)'}</td>
-                      <td>{u.utmMedium ?? '(none)'}</td>
-                      <td>{u.utmCampaign ?? '(none)'}</td>
-                      <td>{formatInt(u.visits)}</td>
-                      <td>{formatInt(u.goalReaches)}</td>
-                      <td>{formatPercent(u.conversionRate)}</td>
-                    </tr>
-                  ))}
+                {/* БАГ-07: normalized key (trim + lowercase) — «tg/post/general» 20+18 is one row. */}
+                {topUtmRows(utm).map((u, i) => (
+                  <tr
+                    key={`${u.utmSource}-${u.utmMedium}-${u.utmCampaign}-${i}`}
+                    className="border-t border-slate-100"
+                  >
+                    <td className="py-1">{u.utmSource ?? '(none)'}</td>
+                    <td>{u.utmMedium ?? '(none)'}</td>
+                    <td>{u.utmCampaign ?? '(none)'}</td>
+                    <td>{formatInt(u.visits)}</td>
+                    <td>{formatInt(u.goalReaches)}</td>
+                    <td>{formatPercent(u.conversionRate)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

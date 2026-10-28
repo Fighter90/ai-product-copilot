@@ -1,5 +1,12 @@
-import type { ChannelStat, B2bDeal } from '@pca/shared';
-import { KPI_TARGET_PAID_TICKETS, periodTotals } from '@pca/shared';
+import type { ChannelStat, B2bDeal, PageStat, UtmStat } from '@pca/shared';
+import {
+  KPI_TARGET_PAID_TICKETS,
+  aggregatePeriod,
+  normUtm,
+  pageKey,
+  periodTotals,
+  utmKey,
+} from '@pca/shared';
 import { intTooltip } from './echart-format';
 import { channelColor } from './chart-colors';
 import type { DailyPoint } from './trends';
@@ -140,4 +147,32 @@ export function dailyReachesOption(stats: ChannelStat[]): object {
     yAxis: { type: 'value' },
     series: [{ type: 'line', smooth: true, data: keys.map((k) => byDate.get(k) as number) }],
   };
+}
+
+/**
+ * БАГ-07: top entry/exit pages aggregated by the normalized page key (path without query, one
+ * trailing-slash form) before the top-N cut. Metrika page rows arrive per day and per raw URL,
+ * so a plain sort+slice shows «/» five times with split numbers instead of one summed row.
+ * Visits/users/reaches are summed, bounce is visit-weighted, CR is recomputed by the shared
+ * aggregator; the displayed page is the normalized key.
+ */
+export function topPages(pages: PageStat[], n = 5): PageStat[] {
+  return aggregatePeriod(pages, (r) => pageKey(r.page))
+    .slice(0, n)
+    .map((r) => ({ ...r, page: pageKey(r.page) }));
+}
+
+/**
+ * БАГ-07: UTM-разбивка aggregated by the normalized key (trim + lowercase per dimension) before
+ * the top-N cut, so «tg/post/general» and «TG / Post / General» are one row with summed numbers.
+ */
+export function topUtmRows(rows: UtmStat[], n = 10): UtmStat[] {
+  return aggregatePeriod(rows, (r) => utmKey(r.utmSource, r.utmMedium, r.utmCampaign))
+    .slice(0, n)
+    .map((r) => ({
+      ...r,
+      utmSource: normUtm(r.utmSource),
+      utmMedium: normUtm(r.utmMedium),
+      utmCampaign: normUtm(r.utmCampaign),
+    }));
 }

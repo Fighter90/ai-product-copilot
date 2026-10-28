@@ -21,8 +21,11 @@ export interface GridColumn<T> {
   readonly kind?: GridKind;
   readonly accessor: (row: T) => string | number | null;
   readonly cell?: (row: T) => ReactNode;
-  /** Sum (int/float) or weighted average (pct/sec, weighted by `weightId`) in the totals row. */
+  /** Sum (int/float) or average (pct/sec) in the totals row; with `weightOf` the average is
+   * visit-weighted, not a plain mean of rows (БАГ-08). */
   readonly total?: 'sum' | 'avg' | 'none';
+  /** Row weight for the weighted average total — e.g. visits: Σ(w×v)/Σw instead of Σv/n. */
+  readonly weightOf?: (row: T) => number;
   readonly minWidth?: number;
   readonly hidden?: boolean;
 }
@@ -132,7 +135,15 @@ export function DataGrid<T>({
     const vals = filtered.map((r) => Number(c.accessor(r)) || 0);
     if (!vals.length) return null;
     const sum = vals.reduce((a, b) => a + b, 0);
-    return c.total === 'sum' ? sum : sum / vals.length;
+    if (c.total === 'sum') return sum;
+    if (!c.weightOf) return sum / vals.length;
+    // БАГ-08: rate/duration averages are weighted by the row weight (visits) — a plain mean lets
+    // a 1-visit row drag «Итого» as much as the top page.
+    const weights = filtered.map((r) => Math.max(0, Number(c.weightOf?.(r)) || 0));
+    const weightSum = weights.reduce((a, b) => a + b, 0);
+    return weightSum > 0
+      ? vals.reduce((acc, v, i) => acc + v * (weights[i] ?? 0), 0) / weightSum
+      : sum / vals.length;
   });
   const visibleCols = columns.filter((c) => visibility[c.id] !== false);
   const pad = dense ? 'px-2 py-1.5' : 'px-3 py-2';

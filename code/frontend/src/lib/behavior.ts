@@ -1,4 +1,4 @@
-import type { PageStat } from '@pca/shared';
+import { pageKey, type PageStat } from '@pca/shared';
 import { intTooltip, intBarLabel } from './echart-format';
 import { formatPercent } from './format';
 
@@ -21,8 +21,9 @@ export function pageRows(stats: PageStat[]): PageRow[] {
     { visits: number; users: number; goalReaches: number; bounceVisits: number }
   >();
   for (const s of stats) {
-    const cur = map.get(s.page) ?? { visits: 0, users: 0, goalReaches: 0, bounceVisits: 0 };
-    map.set(s.page, {
+    const key = pageKey(s.page);
+    const cur = map.get(key) ?? { visits: 0, users: 0, goalReaches: 0, bounceVisits: 0 };
+    map.set(key, {
       visits: cur.visits + s.visits,
       users: cur.users + s.users,
       goalReaches: cur.goalReaches + s.goalReaches,

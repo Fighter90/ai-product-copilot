@@ -3,7 +3,10 @@ import {
   aggregatePeriod,
   distinctCount,
   mergeByKey,
+  normUtm,
+  pageKey,
   reachRate,
+  utmKey,
   weightedAverage,
   weightedBounce,
   weightedRate,
@@ -122,5 +125,44 @@ describe('distinctCount', () => {
       { date: 'd1', channel: 'Ad traffic' },
     ];
     expect(distinctCount(rows, (r) => r.channel)).toBe(2);
+  });
+});
+
+describe('pageKey (БАГ-07)', () => {
+  it('drops query and hash: «/», «/?utm=…» and «/#top» are one page', () => {
+    expect(pageKey('/')).toBe('/');
+    expect(pageKey('/?utm_source=tg')).toBe('/');
+    expect(pageKey('/?a=1')).toBe('/');
+    expect(pageKey('/#top')).toBe('/');
+    expect(pageKey('https://productcamp.ru/?utm_source=x&id=1')).toBe('https://productcamp.ru');
+  });
+
+  it('unifies the trailing slash (only the bare root keeps «/»)', () => {
+    expect(pageKey('/b2b/')).toBe('/b2b');
+    expect(pageKey('/b2b')).toBe('/b2b');
+    expect(pageKey('https://productcamp.ru/')).toBe('https://productcamp.ru');
+    expect(pageKey('/lp////')).toBe('/lp');
+    expect(pageKey('')).toBe('');
+  });
+
+  it('keeps case and host (lowercasing is a UTM-only rule)', () => {
+    expect(pageKey('/B2B')).toBe('/B2B');
+    expect(pageKey('https://ProductCamp.ru/B2B')).toBe('https://ProductCamp.ru/B2B');
+  });
+});
+
+describe('normUtm / utmKey (БАГ-07)', () => {
+  it('trims and lowercases, treating null as empty', () => {
+    expect(normUtm(' TG ')).toBe('tg');
+    expect(normUtm(null)).toBe('');
+    expect(normUtm(undefined)).toBe('');
+  });
+
+  it('collapses case/whitespace dupes: tg/post/general and Id123450/referral/refProg', () => {
+    expect(utmKey('tg', 'post', 'general')).toBe(utmKey('TG ', 'Post', 'General'));
+    expect(utmKey('Id123450', 'referral', 'refProg')).toBe(
+      utmKey('id123450', 'referral', 'refprog'),
+    );
+    expect(utmKey('tg', 'post', 'general')).toBe('tg|post|general');
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import type { ChannelStat, B2bDeal } from '@pca/shared';
+import type { ChannelStat, B2bDeal, PageStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
@@ -182,6 +182,38 @@ describe('FunnelView (en locale)', () => {
     );
     expect(screen.queryByText(/Нет страниц с критическим bounce/)).not.toBeInTheDocument();
     expect(screen.getByText(/\/PCxPS_special — 100\.0% при 45 визитах/)).toBeInTheDocument();
+  });
+});
+
+describe('FunnelView — problem pages (БАГ-07)', () => {
+  it('collapses raw-URL duplicates of one page into a single aggregated line', () => {
+    const dup = (over: Partial<PageStat>): PageStat => ({
+      date: '2025-01-01',
+      page: 'https://productcamp.ru/',
+      visits: 100,
+      users: 90,
+      bounceRate: 0.5,
+      goalReaches: 5,
+      conversionRate: 0.05,
+      ...over,
+    });
+    render(
+      <FunnelView
+        status="success"
+        stats={stats}
+        deals={deals}
+        geoDevice={[]}
+        pages={[
+          // The same home page arrives 3× per day / raw URL with split numbers…
+          dup({ date: '2025-01-01' }),
+          dup({ date: '2025-01-02', page: 'https://productcamp.ru/?utm_source=tg' }),
+          dup({ date: '2025-01-03', page: 'https://productcamp.ru/#top' }),
+        ]}
+      />,
+    );
+    // …and is listed once, with summed visits (300), under the normalized key.
+    expect(screen.getAllByText('https://productcamp.ru — 50.0% при 300 визитах')).toHaveLength(1);
+    expect(screen.queryByText(/при 100 визитах/)).not.toBeInTheDocument();
   });
 });
 

@@ -72,6 +72,11 @@ export function Explore(): JSX.Element {
   if (q.error && isNotConfigured(q.error)) return <NotConfigured />;
   const d = q.data;
 
+  // БАГ-08: «Итого» for rate/duration columns is visit-weighted — the weight is the visits value
+  // of the same row (metric columns follow the dimension columns).
+  const metricCols = d ? d.columns.filter((c) => !c.startsWith('ym:s:goal') && METRIC[c]) : [];
+  const visitIdx = metricCols.indexOf('ym:s:visits');
+
   const columns: GridColumn<Row>[] = d
     ? d.columns.map((c, i) => {
         const nd = d.columns.filter((x) => !x.startsWith('ym:s:goal') && !METRIC[x]).length;
@@ -103,6 +108,12 @@ export function Explore(): JSX.Element {
                 : c,
           kind: isGoalReaches ? 'int' : isGoalCr ? 'pct' : (m?.kind ?? 'float'),
           total: isGoalReaches ? 'sum' : m?.total,
+          // БАГ-08: bounce/depth/duration «Итого» is weighted by the row's visits, not a plain
+          // row mean (47% → ≈23% on the real dataset).
+          weightOf:
+            !isGoalReaches && m?.total === 'avg' && visitIdx >= 0
+              ? (r: Row) => Number(r.values[visitIdx] ?? 0)
+              : undefined,
           accessor: (r: Row) => r.values[vi] ?? 0,
         } satisfies GridColumn<Row>;
       })
