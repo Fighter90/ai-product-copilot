@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { FilterBar } from './FilterBar';
 import { useFilters } from '../store/filters';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
@@ -68,9 +69,17 @@ function openPicker() {
   };
 }
 
+/** Render inside a router at /app/goals (БАГ-06: the bar reads the route for page-aware toggles). */
+const renderBar = (initialEntries: string[] = ['/app/goals']) =>
+  render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <FilterBar />
+    </MemoryRouter>,
+  );
+
 describe('FilterBar', () => {
   it('applies preset, segment and archived toggle', () => {
-    render(<FilterBar />);
+    renderBar();
 
     fireEvent.click(presetBtn(7));
     expect(useFilters.getState().from <= useFilters.getState().to).toBe(true);
@@ -82,13 +91,23 @@ describe('FilterBar', () => {
     expect(useFilters.getState().showArchived).toBe(true);
   });
 
+  it('БАГ-06: hides the archived-goals toggle on Обзор (/app) where no goals list exists', () => {
+    renderBar(['/app']);
+    expect(screen.queryByLabelText(/архивные/i)).not.toBeInTheDocument();
+  });
+
+  it('БАГ-06: keeps the archived-goals toggle on the goals page (/app/goals)', () => {
+    renderBar(['/app/goals']);
+    expect(screen.getByLabelText(/архивные/i)).toBeInTheDocument();
+  });
+
   it('shows the 1г (1 year) preset button', () => {
-    render(<FilterBar />);
+    renderBar();
     expect(presetBtn(365)).toBeInTheDocument();
   });
 
   it('marks the active preset with aria-pressed (ANA-49)', () => {
-    render(<FilterBar />);
+    renderBar();
     const p7 = presetBtn(7);
     const p14 = presetBtn(14);
     const p30 = presetBtn(30);
@@ -107,7 +126,7 @@ describe('FilterBar', () => {
   });
 
   it('toggles custom date picker visibility with aria-expanded', () => {
-    render(<FilterBar />);
+    renderBar();
     const toggle = datesToggle();
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     // Custom date picker is hidden initially
@@ -123,7 +142,7 @@ describe('FilterBar', () => {
   });
 
   it('applies custom date range when valid', () => {
-    render(<FilterBar />);
+    renderBar();
     const { from, to } = openPicker();
     fireEvent.change(from, { target: { value: isoOffset(-29) } });
     fireEvent.change(to, { target: { value: today } });
@@ -135,7 +154,7 @@ describe('FilterBar', () => {
   });
 
   it('treats a single-day range (from == to) as valid', () => {
-    render(<FilterBar />);
+    renderBar();
     const { from, to, apply } = openPicker();
     fireEvent.change(from, { target: { value: isoOffset(-5) } });
     fireEvent.change(to, { target: { value: isoOffset(-5) } });
@@ -146,7 +165,7 @@ describe('FilterBar', () => {
   });
 
   it('disables «Применить» when from > to and shows a hint (ANA-49)', () => {
-    render(<FilterBar />);
+    renderBar();
     const { from, to, apply } = openPicker();
     fireEvent.change(from, { target: { value: '2025-06-15' } });
     fireEvent.change(to, { target: { value: '2025-06-10' } });
@@ -160,7 +179,7 @@ describe('FilterBar', () => {
   });
 
   it('disables «Применить» when from is in the future (ANA-49)', () => {
-    render(<FilterBar />);
+    renderBar();
     const { from, to, apply } = openPicker();
     fireEvent.change(from, { target: { value: isoOffset(10) } });
     fireEvent.change(to, { target: { value: isoOffset(20) } });
@@ -170,7 +189,7 @@ describe('FilterBar', () => {
   });
 
   it('disables «Применить» when the range exceeds 365 days (ANA-49)', () => {
-    render(<FilterBar />);
+    renderBar();
     const { from, apply } = openPicker();
     fireEvent.change(from, { target: { value: isoOffset(-400) } });
 
@@ -179,7 +198,7 @@ describe('FilterBar', () => {
   });
 
   it('disables «Применить» when a date is missing (ANA-49)', () => {
-    render(<FilterBar />);
+    renderBar();
     const { from, apply } = openPicker();
     fireEvent.change(from, { target: { value: '' } });
 
@@ -188,7 +207,7 @@ describe('FilterBar', () => {
   });
 
   it('updates the hint live when an invalid range is fixed (ANA-49)', () => {
-    render(<FilterBar />);
+    renderBar();
     const { from, to, apply } = openPicker();
     fireEvent.change(from, { target: { value: isoOffset(-1) } });
     fireEvent.change(to, { target: { value: isoOffset(-5) } });
@@ -203,7 +222,7 @@ describe('FilterBar', () => {
   });
 
   it('closes the picker on Escape and returns focus to the toggle (ANA-49)', () => {
-    render(<FilterBar />);
+    renderBar();
     const toggle = datesToggle();
     fireEvent.click(toggle);
     const from = screen.getByLabelText('Дата начала периода');
@@ -214,7 +233,7 @@ describe('FilterBar', () => {
   });
 
   it('resets custom fields when a preset is chosen (ANA-49)', () => {
-    render(<FilterBar />);
+    renderBar();
     const { from } = openPicker();
     fireEvent.change(from, { target: { value: '2020-01-01' } });
 
@@ -229,7 +248,7 @@ describe('FilterBar', () => {
   });
 
   it('closes custom date picker on ✕ button click', () => {
-    render(<FilterBar />);
+    renderBar();
     openPicker();
     expect(screen.getByLabelText('Дата начала периода')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Закрыть' }));
@@ -237,7 +256,7 @@ describe('FilterBar', () => {
   });
 
   it('opens the mobile filter sheet and closes it via «Готово»', () => {
-    render(<FilterBar />);
+    renderBar();
     // ANA-49: the collapsed trigger carries the current period, hence the regex.
     const trigger = screen.getByRole('button', { name: /Фильтры/ });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -249,7 +268,7 @@ describe('FilterBar', () => {
   });
 
   it('closes the mobile filter sheet via the backdrop', () => {
-    render(<FilterBar />);
+    renderBar();
     fireEvent.click(screen.getByRole('button', { name: /Фильтры/ }));
     fireEvent.click(screen.getByLabelText('Закрыть фильтры'));
     expect(screen.getByRole('button', { name: /Фильтры/ })).toHaveAttribute(
@@ -264,7 +283,7 @@ describe('FilterBar (en locale)', () => {
 
   it('renders dates, segment hints and the archived toggle without Cyrillic', () => {
     setTestLocale('en');
-    const { container } = render(<FilterBar />);
+    const { container } = renderBar();
     expect(screen.getByText(/consumer channels only/)).toBeInTheDocument();
     expectNoCyrillic(container);
   });
