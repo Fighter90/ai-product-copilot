@@ -14,13 +14,14 @@ test.describe('Global filter header (cabinet /app)', () => {
     await expect(range).toHaveText(rangeBefore);
   });
 
-  test('segment toggle and archived toggle are interactive', async ({ page }) => {
+  test('segment toggle is interactive; archived toggle lives on /app/goals (БАГ-06)', async ({ page }) => {
     await installMocks(page);
     await page.goto('/app');
     await page.getByLabel('Сегмент').selectOption('b2b');
     await expect(page.getByLabel('Сегмент')).toHaveValue('b2b');
-    // ANA-22: a second checkbox toggles test-traffic inclusion — scope to the archived one.
-    const archived = page.getByRole('checkbox', { name: 'Архивные цели' });
+    // «Архивные цели» фильтрует список целей — тумблер скрыт на Обзоре (где списка нет).
+    await page.goto('/app/goals');
+    const archived = page.getByLabel('Архивные цели');
     await expect(archived).not.toBeChecked();
     await archived.check();
     await expect(archived).toBeChecked();
