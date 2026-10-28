@@ -3,7 +3,7 @@ import { weightedBounce, type PageStat } from '@pca/shared';
 import { api } from '../lib/api';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
-import { pageRows, type PageRow } from '../lib/behavior';
+import { crBarOption, pageRows, type PageRow } from '../lib/behavior';
 import { EChart } from '../components/charts/EChart';
 import { ChartCaption } from '../components/charts/ChartCaption';
 import { EmptyState } from '../components/EmptyState';
@@ -140,50 +140,6 @@ function bounceBarOption(rows: PageRow[], title: string, bounceLabel: string): o
           value: r.bounceRate,
           itemStyle: {
             color: r.bounceRate > 0.4 ? '#ef4444' : r.bounceRate > 0.25 ? '#f59e0b' : '#22c55e',
-          },
-        })),
-        label: {
-          show: true,
-          position: 'right',
-          formatter: (v: { value: number }) => formatPercent(v.value),
-        },
-      },
-    ],
-  };
-}
-
-/** ECharts conversion rate bar chart (horizontal) */
-function crBarOption(rows: PageRow[], title: string): object {
-  const top = rows
-    .slice(0, 8)
-    .filter((r) => r.visits > 20)
-    .sort((a, b) => a.conversionRate - b.conversionRate)
-    .reverse();
-  return {
-    title: { text: title, left: 'center', textStyle: { fontSize: 13 } },
-    tooltip: {
-      trigger: 'axis',
-      formatter: (params: unknown[]) => {
-        const p = params[0] as { name: string; value: number };
-        return `${p.name}<br/>CR: ${formatPercent(p.value)}`;
-      },
-    },
-    grid: { left: 140, right: 16, top: 32, bottom: 28 },
-    xAxis: { type: 'value', axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%` } },
-    yAxis: { type: 'category', data: top.map((r) => shortLabel(r.page)) },
-    series: [
-      {
-        name: 'CR',
-        type: 'bar',
-        data: top.map((r) => ({
-          value: r.conversionRate,
-          itemStyle: {
-            color:
-              r.conversionRate > 0.02
-                ? '#22c55e'
-                : r.conversionRate > 0.005
-                  ? '#f59e0b'
-                  : '#ef4444',
           },
         })),
         label: {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { PageStat } from '@pca/shared';
-import { pageRows, pageBarOption } from './behavior';
+import { pageRows, pageBarOption, crBarOption } from './behavior';
 
 const page = (over: Partial<PageStat>): PageStat => ({
   date: '2025-01-01',
@@ -49,5 +49,49 @@ describe('pageBarOption', () => {
     expect(o.yAxis.data).toEqual(['/program', '/', '/reg-new']);
     expect(o.series[0]?.name).toBe('Визиты');
     expect(o.series[1]?.data).toEqual([1, 2, 30]);
+  });
+});
+
+describe('crBarOption (ANA-75: readable CR axis ticks)', () => {
+  const row = (page: string, conversionRate: number) => ({
+    page,
+    visits: 100,
+    users: 0,
+    bounceRate: 0,
+    goalReaches: conversionRate * 100,
+    conversionRate,
+  });
+
+  it('keeps sub-percent ticks distinct (minInterval + one-decimal formatter, no «0% 0% 0%»)', () => {
+    const o = crBarOption(
+      [row('/a', 0.003), row('/b', 0.01), row('/c', 0.015)],
+      'Конверсия страниц входа',
+    ) as {
+      xAxis: { minInterval: number; axisLabel: { formatter: (v: number) => string } };
+      yAxis: { data: string[] };
+      series: { data: { value: number; itemStyle: { color: string } }[] }[];
+    };
+    expect(o.xAxis.minInterval).toBe(0.005);
+    const f = o.xAxis.axisLabel.formatter;
+    const ticks = [0, 0.005, 0.01, 0.015, 0.02].map(f);
+    expect(new Set(ticks).size).toBe(ticks.length);
+    expect(f(0)).toBe('0%');
+    expect(f(0.005)).toBe('0.5%');
+    expect(f(0.1)).toBe('10%');
+    // top-8 rows with >20 visits, sorted by CR desc
+    expect(o.yAxis.data).toEqual(['/c', '/b', '/a']);
+    expect(o.series[0]?.data.map((d) => d.value)).toEqual([0.015, 0.01, 0.003]);
+  });
+
+  it('filters low-traffic pages and colors bars by CR thresholds', () => {
+    const o = crBarOption(
+      [
+        { ...row('/low', 0.5), visits: 10 }, // below the 20-visit cut-off
+        row('/hot', 0.05),
+        row('/warm', 0.01),
+      ],
+      'CR',
+    ) as { series: { data: { itemStyle: { color: string } }[] }[] };
+    expect(o.series[0]?.data.map((d) => d.itemStyle.color)).toEqual(['#22c55e', '#f59e0b']);
   });
 });
