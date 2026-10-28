@@ -135,15 +135,19 @@ describe('utmRows', () => {
 describe('channelBarOption', () => {
   it('maps channels to a bar series', () => {
     const o = channelBarOption(channelRows([stat({ channel: 'podcast', visits: 10 })])) as {
+      grid: { containLabel: boolean };
       xAxis: { data: string[]; axisLabel: { rotate: number; formatter: (v: string) => string } };
       series: { data: { value: number; itemStyle: { color: string } }[] }[];
     };
     expect(o.xAxis.data).toEqual(['podcast']);
     expect(o.series[0]?.data[0]?.value).toBe(10);
     expect(o.series[0]?.data[0]?.itemStyle.color).toMatch(/^#[0-9A-F]{6}$/i);
-    // x labels are rotated and long names truncated; short names pass through unchanged.
+    // x labels are rotated, never skipped, and long names truncated; short names pass through.
+    expect(o.grid.containLabel).toBe(true);
     expect(o.xAxis.axisLabel.rotate).toBe(30);
     expect(o.xAxis.axisLabel.formatter('короткий')).toBe('короткий');
+    // ANA-75: real channel names like «Прямые заходы» are no longer cut to «Прямые захо…».
+    expect(o.xAxis.axisLabel.formatter('Прямые заходы')).toBe('Прямые заходы');
     expect(o.xAxis.axisLabel.formatter('очень длинное название канала')).toMatch(/…$/);
   });
 });

@@ -303,17 +303,21 @@ export const v3 = {
       { method: 'DELETE', ...json({ confirm: 'УДАЛИТЬ' }) },
     ),
 
-  liveSummary: (p: { from?: string; to?: string; test?: boolean }) =>
-    http<LiveSummary>(`/live/summary${q(p)}`),
-  liveGoals: (p: { from?: string; to?: string; test?: boolean }) =>
-    http<LiveGoals>(`/live/goals${q(p)}`),
+  // ANA-75: pages pass react-query settings (e.g. `refetchInterval`) inside `p`; destructure so
+  // only the API params are serialized into the URL, never UI-only fields.
+  liveSummary: ({ from, to, test }: { from?: string; to?: string; test?: boolean }) =>
+    http<LiveSummary>(`/live/summary${q({ from, to, test })}`),
+  liveGoals: ({ from, to, test }: { from?: string; to?: string; test?: boolean }) =>
+    http<LiveGoals>(`/live/goals${q({ from, to, test })}`),
   goalRoles: () => http<{ roles: GoalRole[] }>('/metrics/goal-roles'),
-  liveGoal: (id: number, p: { from?: string; to?: string; test?: boolean }) =>
-    http<LiveGoalDetail>(`/live/goals/${id}${q(p)}`),
-  liveFunnel: (p: { from?: string; to?: string; test?: boolean }) =>
-    http<LiveFunnel>(`/live/funnel${q(p)}`),
-  liveTable: (preset: string, p: { from?: string; to?: string; test?: boolean; goal?: number }) =>
-    http<LiveTable>(`/live/table/${preset}${q(p)}`),
+  liveGoal: (id: number, { from, to, test }: { from?: string; to?: string; test?: boolean }) =>
+    http<LiveGoalDetail>(`/live/goals/${id}${q({ from, to, test })}`),
+  liveFunnel: ({ from, to, test }: { from?: string; to?: string; test?: boolean }) =>
+    http<LiveFunnel>(`/live/funnel${q({ from, to, test })}`),
+  liveTable: (
+    preset: string,
+    { from, to, test, goal }: { from?: string; to?: string; test?: boolean; goal?: number },
+  ) => http<LiveTable>(`/live/table/${preset}${q({ from, to, test, goal })}`),
 
   helpArticles: (lang: string) => http<HelpArticleMeta[]>(`/help/articles?lang=${lang}`),
   helpArticle: (slug: string, lang: string) =>

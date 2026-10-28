@@ -22,6 +22,9 @@ export function Goals(): JSX.Element {
     queryKey: ['live', 'goals', p.from, p.to, p.test],
     queryFn: () => v3.liveGoals(p),
     refetchInterval: p.refetchInterval,
+    // ANA-75: keep the heavy /live/goals payload fresh for the auto-refresh period —
+    // no duplicate fetch on remount/focus between refetches.
+    staleTime: p.refetchInterval === false ? 60_000 : p.refetchInterval,
   });
   // ANA-34: pc-goals reference — the funnel role of each JS-event goal, joined by `event`.
   const rolesQ = useQuery({

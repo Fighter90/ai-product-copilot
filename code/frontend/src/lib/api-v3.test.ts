@@ -152,7 +152,24 @@ describe('v3 client: live mode (query-string encoding)', () => {
     expect(lastCall().url).toBe('/api/live/funnel?from=2025-01-01');
 
     await v3.liveTable('sources', { goal: 77, test: true });
-    expect(lastCall().url).toBe('/api/live/table/sources?goal=77&test=1');
+    expect(lastCall().url).toBe('/api/live/table/sources?test=1&goal=77');
+  });
+
+  it('ANA-75: strips UI-only fields (refetchInterval) from live URLs', async () => {
+    const p = {
+      from: '2025-01-01',
+      to: '2025-01-31',
+      test: false,
+      refetchInterval: 60_000 as const,
+    };
+    await v3.liveSummary(p);
+    expect(lastCall().url).toBe('/api/live/summary?from=2025-01-01&to=2025-01-31&test=0');
+    await v3.liveGoals(p);
+    expect(lastCall().url).toBe('/api/live/goals?from=2025-01-01&to=2025-01-31&test=0');
+    await v3.liveGoal(11, p);
+    expect(lastCall().url).toBe('/api/live/goals/11?from=2025-01-01&to=2025-01-31&test=0');
+    await v3.liveFunnel(p);
+    expect(lastCall().url).toBe('/api/live/funnel?from=2025-01-01&to=2025-01-31&test=0');
   });
 });
 
