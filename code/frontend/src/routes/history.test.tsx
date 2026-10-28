@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
+import type { ChannelStat, ReportSnapshot } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 vi.mock('../lib/api', () => ({
   api: {
     listSnapshots: vi.fn(),
+    getSnapshot: vi.fn(),
   },
 }));
 import { api } from '../lib/api';
@@ -15,6 +17,8 @@ import {
   formatSnapshotName,
   shortSnapshotId,
   periodOverlaps,
+  periodDays,
+  channelPart,
   authorMatches,
   type SnapshotRow,
 } from './history';
@@ -160,8 +164,121 @@ describe('HistoryView — author filter (ANA-39)', () => {
       />,
     );
     expect(screen.queryByRole('combobox', { name: 'Автор' })).not.toBeInTheDocument();
-    // Authorless rows render an em dash in the author column.
-    expect(screen.getByText('—')).toBeInTheDocument();
+    // Authorless (legacy) rows show «неизвестно» instead of an anonymous dash (БАГ-12).
+    expect(screen.getByText('неизвестно')).toBeInTheDocument();
+  });
+});
+
+describe('periodDays / channelPart (БАГ-12)', () => {
+  it('counts the inclusive period length in days', () => {
+    expect(periodDays('2026-01-01', '2026-01-07')).toBe(7);
+    expect(periodDays('2026-01-01', '2026-01-14')).toBe(14);
+    expect(periodDays('2026-01-01', '2026-01-01')).toBe(1);
+    expect(periodDays('oops', '2026-01-07')).toBe(0); // malformed dates → 0
+  });
+
+  it('maps the internal «(none)» UTM sentinel to an em dash', () => {
+    expect(channelPart('(none)')).toBe('—');
+    expect(channelPart('ya')).toBe('ya');
+  });
+});
+
+describe('SnapshotCompare (БАГ-12: сравнение снапшотов)', () => {
+  /** Minimal full-snapshot fixture — only the fields snapshotDiff reads. */
+  function cmpSnap(id: string, visits: number, channels: ChannelStat[] = []): ReportSnapshot {
+    return {
+      id,
+      generatedAt: '2026-01-01T00:00:00Z',
+      period: { from: '2026-01-01', to: '2026-01-07' },
+      kpi: { target: 300, b2cApplications: 1, b2bPaidTickets: 0, gap: 300 },
+      channels,
+      hypotheses: { problems: [], solutions: [] },
+      decisions: [],
+      b2bSummary: { totalTickets: 0, paidTickets: 0, dealsCount: 0, deals: [], byStage: [] },
+      funnel: { visits, b2cApplications: 1, b2bPipelineTickets: 0, b2bPaidTickets: 0 },
+      breakdowns: { utm: [], geoDevice: [], entryPages: [], exitPages: [] },
+    } as unknown as ReportSnapshot;
+  }
+
+  function ch(source: string | null, medium: string | null, visits: number): ChannelStat {
+    return {
+      date: '2026-01-01',
+      channel: `${source}/${medium}`,
+      utmSource: source,
+      utmMedium: medium,
+      utmCampaign: null,
+      visits,
+      users: visits,
+      bounceRate: 0,
+      avgDuration: 0,
+      goalReaches: 0,
+      conversionRate: 0,
+    };
+  }
+
+  // Backend list order: newest first (generated_at DESC). 14-дневный старый против 7-дневного нового.
+  const snapshots: SnapshotRow[] = [
+    {
+      id: 'snap-new',
+      generatedAt: '2026-01-22T00:00:00Z',
+      dateFrom: '2026-01-15',
+      dateTo: '2026-01-21',
+    },
+    {
+      id: 'snap-old',
+      generatedAt: '2026-01-15T00:00:00Z',
+      dateFrom: '2026-01-01',
+      dateTo: '2026-01-14',
+    },
+  ];
+
+  afterEach(() => vi.resetAllMocks());
+
+  it('defaults «Старый» to the earlier snapshot and «Новый» to the latest', () => {
+    vi.mocked(api.getSnapshot).mockResolvedValue(cmpSnap('x', 0));
+    renderWithProviders(<HistoryView status="success" snapshots={snapshots} />);
+    expect(screen.getByRole('combobox', { name: 'Старый:' })).toHaveValue('snap-old');
+    expect(screen.getByRole('combobox', { name: 'Новый:' })).toHaveValue('snap-new');
+  });
+
+  it('warns when the compared periods have different lengths (14 дн. против 7 дн.)', () => {
+    vi.mocked(api.getSnapshot).mockResolvedValue(cmpSnap('x', 0));
+    renderWithProviders(<HistoryView status="success" snapshots={snapshots} />);
+    expect(screen.getByRole('note')).toHaveTextContent('Периоды разной длины: 14 дн. против 7 дн.');
+  });
+
+  it('shows no length warning when both periods are equal', () => {
+    vi.mocked(api.getSnapshot).mockResolvedValue(cmpSnap('x', 0));
+    renderWithProviders(
+      <HistoryView
+        status="success"
+        snapshots={[
+          {
+            id: 'snap-new',
+            generatedAt: '2026-01-15T00:00:00Z',
+            dateFrom: '2026-01-08',
+            dateTo: '2026-01-14',
+          },
+          {
+            id: 'snap-old',
+            generatedAt: '2026-01-08T00:00:00Z',
+            dateFrom: '2026-01-01',
+            dateTo: '2026-01-07',
+          },
+        ]}
+      />,
+    );
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+
+  it('renders «—» for channels without UTM data instead of «(none)»', async () => {
+    vi.mocked(api.getSnapshot).mockImplementation(async (id) =>
+      cmpSnap(id, id === 'snap-new' ? 30 : 10, [ch(null, null, 5)]),
+    );
+    renderWithProviders(<HistoryView status="success" snapshots={snapshots} />);
+    // Канал есть в обоих снапшотах, но без UTM — подпись «— / —», не «(none) / (none)».
+    expect(await screen.findByText('— / —')).toBeInTheDocument();
+    expect(screen.queryByText('(none) / (none)')).not.toBeInTheDocument();
   });
 });
 
