@@ -323,6 +323,8 @@ export const ru = {
   'kpi.whatif.crAria': 'Прирост конверсии, процентные пункты',
   'kpi.whatif.disclaimer':
     'Линейная модель по дневным достижениям цели; дедлайн = конец периода + 2 длины периода (дата события в системе не задана). Сезонность и разовые акции не учитываются.',
+  'kpi.whatif.disclaimerEventDate':
+    'Линейная модель по дневным достижениям цели; дедлайн — дата события {date}. Сезонность и разовые акции не учитываются.',
   'kpi.whatif.chartFact': 'Факт (накопленно)',
   'kpi.whatif.chartForecast': 'Прогноз (сценарий)',
   'kpi.whatif.chartTarget': 'Цель {n}',
@@ -1154,6 +1156,9 @@ export const ru = {
   'i18n.mk.kpiGoal.hint': '0 = автоопределение при синке',
   'i18n.mk.kpiTarget.label': 'Цель по оплатам',
   'i18n.mk.kpiTarget.hint': 'Например 300 билетов',
+  'i18n.mk.eventDate.label': 'Дата события (дедлайн KPI)',
+  'i18n.mk.eventDate.hint':
+    'Формат YYYY-MM-DD, например 2026-12-05. Задана — дедлайн KPI равен этой дате; пусто — конец периода + 2 длины периода (с оговоркой).',
   'i18n.mk.cleared': 'Кэш данных Метрики очищен',
   'i18n.mk.connection': 'Подключение',
   'i18n.mk.appliedAtOnce': 'Применяется сразу, без перезапуска сервера.',
@@ -1594,6 +1599,8 @@ export const en: Record<DictKey, string> = {
   'kpi.whatif.crAria': 'Conversion uplift, percentage points',
   'kpi.whatif.disclaimer':
     'Linear model over daily goal reaches; deadline = period end + 2× period length (no event date in the system). Seasonality and one-off campaigns are not modelled.',
+  'kpi.whatif.disclaimerEventDate':
+    'Linear model over daily goal reaches; deadline = the event date {date}. Seasonality and one-off campaigns are not modelled.',
   'kpi.whatif.chartFact': 'Actual (cumulative)',
   'kpi.whatif.chartForecast': 'Forecast (scenario)',
   'kpi.whatif.chartTarget': 'Target {n}',
@@ -2425,6 +2432,9 @@ export const en: Record<DictKey, string> = {
   'i18n.mk.kpiGoal.hint': '0 = auto-detect at sync',
   'i18n.mk.kpiTarget.label': 'Payments target',
   'i18n.mk.kpiTarget.hint': 'e.g. 300 tickets',
+  'i18n.mk.eventDate.label': 'Event date (KPI deadline)',
+  'i18n.mk.eventDate.hint':
+    'YYYY-MM-DD format, e.g. 2026-12-05. When set, the KPI deadline equals this date; when empty — period end + 2× period length (with a caveat).',
   'i18n.mk.cleared': 'Metrika cache cleared',
   'i18n.mk.connection': 'Connection',
   'i18n.mk.appliedAtOnce': 'Applied immediately, no server restart.',

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { B2bDeal, ChannelStat, GoalLabel } from '@pca/shared';
-import { periodTotals, formatGoalLabel } from '@pca/shared';
+import { paidAndGap, periodTotals, formatGoalLabel, readEventDate } from '@pca/shared';
 import { api } from '../lib/api';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
@@ -90,21 +90,24 @@ function WhatIfForecast({
   to,
   target,
   deals,
+  eventDate,
 }: {
   points: DailyPoint[];
   to: string;
   target: number;
   deals: B2bDeal[];
+  /** ANA-75 (БАГ-01): admin EVENT_DATE — the deadline; empty → the «+2× window» heuristic. */
+  eventDate?: string;
 }): JSX.Element {
   const { t, locale } = useT();
   const [trafficPct, setTrafficPct] = useState(0);
   const [crUpliftPp, setCrUpliftPp] = useState(0);
   const [tab, setTab] = useState<'forecast' | 'b2b'>('forecast');
 
-  // Client-side, on the fly: pure math, no refetch.
+  // Client-side, on the fly: pure math, no refetch. deadlineDate (EVENT_DATE) wins when set.
   const fc = useMemo(
-    () => forecastGoal({ points, to, target, trafficPct, crUpliftPp }),
-    [points, to, target, trafficPct, crUpliftPp],
+    () => forecastGoal({ points, to, target, trafficPct, crUpliftPp, deadlineDate: eventDate }),
+    [points, to, target, trafficPct, crUpliftPp, eventDate],
   );
   const summary = useMemo(() => pipelineSummary(deals), [deals]);
 
@@ -240,7 +243,7 @@ function WhatIfForecast({
                 totalNow: fc.totalNow,
                 scenarioPace: fc.scenarioPace,
                 scenarioDays: fc.scenarioDays,
-                horizonDays: fc.windowDays * 2,
+                horizonDays: fc.horizonDays,
                 labels: {
                   fact: t('kpi.whatif.chartFact'),
                   forecast: t('kpi.whatif.chartForecast'),
@@ -249,7 +252,11 @@ function WhatIfForecast({
               })}
             />
           </div>
-          <p className="mt-2 text-xs text-slate-500">{t('kpi.whatif.disclaimer')}</p>
+          <p className="mt-2 text-xs text-slate-500">
+            {eventDate
+              ? t('kpi.whatif.disclaimerEventDate', { date: fmtDate(eventDate, locale) })
+              : t('kpi.whatif.disclaimer')}
+          </p>
         </div>
       ) : (
         <div role="tabpanel" aria-label={t('kpi.whatif.tabB2b')}>
@@ -321,6 +328,8 @@ export function GoalsView({
   goalLabel,
   points,
   to,
+  b2cPaid = 0,
+  eventDate,
 }: {
   status: QueryStatus;
   target: number;
@@ -335,6 +344,10 @@ export function GoalsView({
   points: DailyPoint[];
   /** Selected period end (ISO date) — the forecast anchor. */
   to: string;
+  /** ANA-75: manually entered / CSV-imported paid B2C tickets for the period (payments summary). */
+  b2cPaid?: number;
+  /** ANA-75 (БАГ-01): admin EVENT_DATE — the KPI deadline; empty → the heuristic disclaimer. */
+  eventDate?: string;
 }): JSX.Element {
   const { t } = useT();
   if (status === 'pending') return <p className="text-slate-500">{t('common.loading')}</p>;
@@ -345,13 +358,17 @@ export function GoalsView({
       </p>
     );
 
-  // Progress counts confirmed payments toward the 300-ticket goal. When the primary Metrika goal
-  // is a purchase/payment goal (goalLabel.isPaid), its reaches ARE payments and count too; for a
-  // plain application goal we count only B2B paid (заявка ≠ оплата — applications are not payments).
-  const metrikaPaid = goalLabel?.isPaid ? b2cApplications : 0;
-  const current = b2bPaid + metrikaPaid;
+  // ANA-75 (БАГ-02): единый расчёт «Оплачено/Осталось» через shared paidAndGap — тот же, что на
+  // Обзоре, воронке и в снапшоте отчёта. Цель типа «оплата» → заказы Метрики считаются оплатой;
+  // B2C-платежи и B2B-paid складываются всегда. Цифры на экранах совпадают по определению.
+  const { paid: current, gap: remaining } = paidAndGap({
+    target,
+    b2cGoalOrders: b2cApplications,
+    b2cPaidTickets: b2cPaid,
+    b2bPaidTickets: b2bPaid,
+    goalIsPaid: goalLabel?.isPaid ?? false,
+  });
   const progress = target > 0 ? Math.min((current / target) * 100, 100) : 0;
-  const remaining = Math.max(0, target - current);
   // formatGoalLabel (shared) titles the goal in Russian — localise by its isPaid flag instead.
   const goalTitle = goalLabel?.isPaid ? t('an.kpi.orders') : t('an.fn.b2cAppsCount');
   const stageLabel = (stage: B2bDeal['stage']): string => t(stageKey(stage));
@@ -506,7 +523,7 @@ export function GoalsView({
       </div>
 
       {/* «Что если» (ANA-50): pace forecast + scenario sliders + chart, B2B pipeline tab */}
-      <WhatIfForecast points={points} to={to} target={target} deals={deals} />
+      <WhatIfForecast points={points} to={to} target={target} deals={deals} eventDate={eventDate} />
 
       {/* Recommendations */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -572,6 +589,20 @@ export function Goals(): JSX.Element {
   });
   const goalQ = useQuery({ queryKey: ['primary-goal'], queryFn: api.primaryGoal, retry: false });
   const kpiTarget = useKpiTarget();
+  // ANA-75 (БАГ-02): B2C-платежи (ручной ввод / CSV) входят в «Оплачено» — как на Обзоре.
+  const paymentsQ = useQuery({
+    queryKey: ['payments-summary', from, to],
+    queryFn: () => api.paymentsSummary({ from, to }),
+    retry: false,
+  });
+  // ANA-75 (БАГ-01): админская «Дата события» (EVENT_DATE) — единый дедлайн KPI; '' → эвристика.
+  const settingsQ = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.getSettings(),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const eventDate = readEventDate(settingsQ.data);
 
   const status: QueryStatus =
     channelsQ.status === 'pending' || b2bQ.status === 'pending'
@@ -602,6 +633,8 @@ export function Goals(): JSX.Element {
       goalLabel={formatGoalLabel(goalQ.data)}
       points={points}
       to={to}
+      b2cPaid={paymentsQ.data?.b2cPaid ?? 0}
+      eventDate={eventDate}
     />
   );
 }

@@ -4,6 +4,7 @@ import type { Locale } from '../store/prefs';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { ChannelStat, GeoDeviceStat, UtmStat, PageStat, B2bDeal } from '@pca/shared';
+import { paidAndGap, readEventDate } from '@pca/shared';
 import { api } from '../lib/api';
 import { useFilters } from '../store/filters';
 import { useAuth } from '../auth/AuthContext';
@@ -32,6 +33,7 @@ import { applyTestTrafficFilter, isTestChannelRow, isTestPage } from '../lib/tes
 import { useKpiTarget } from '../lib/kpi-target';
 import { utmCoverage } from '../lib/traffic';
 import { dailySeries, trendsOption } from '../lib/trends';
+import { diffDaysIso } from '../lib/forecast';
 import { byCountry, byDevice, audienceBarOption, deviceShareOption } from '../lib/audience';
 import { EChart } from '../components/charts/EChart';
 import { ChartCaption } from '../components/charts/ChartCaption';
@@ -41,10 +43,29 @@ import { shouldShowOnboarding, markOnboarded } from '../lib/onboarding';
 import { weeklyDigest } from '../lib/weekly-digest';
 import { KpiStrip } from '../components/overview/KpiStrip';
 import { DataQualityBlock } from '../components/overview/DataQualityBlock';
-import { goalPace } from '../components/overview/goal-pace';
+import { goalPace, type GoalPace, type PaceStatus } from '../components/overview/goal-pace';
 import { formatGoalLabel, type GoalLabel } from '@pca/shared';
 
 export type QueryStatus = 'pending' | 'error' | 'success';
+
+/**
+ * ANA-75 (БАГ-01): админская «Дата события» (EVENT_DATE) перекрывает эвристический дедлайн героя
+ * («конец периода + 2 длины периода»): дедлайн = дата события, статус пересчитан от неё.
+ */
+function applyDeadline(pace: GoalPace, eventDate?: string): GoalPace {
+  if (!eventDate || pace.status === 'reached') return pace;
+  const deviationDays =
+    pace.forecastDate === null ? null : diffDaysIso(pace.forecastDate, eventDate);
+  const status: PaceStatus =
+    deviationDays === null
+      ? 'unreachable'
+      : deviationDays < 0
+        ? 'onTrack'
+        : deviationDays === 0
+          ? 'onTime'
+          : 'behind';
+  return { ...pace, deadline: eventDate, deviationDays, status };
+}
 
 /** Insight badge with green/red indicator */
 function InsightBadge({
@@ -342,6 +363,8 @@ export function OverviewView({
   afterKpi,
   kpiTarget,
   b2cPaid = 0,
+  eventDate,
+  showDeadlineCaveat,
 }: {
   status: QueryStatus;
   stats: ChannelStat[];
@@ -360,6 +383,10 @@ export function OverviewView({
   kpiTarget?: number;
   /** ANA-19: manually entered / CSV-imported paid B2C tickets for the period (payments summary). */
   b2cPaid?: number;
+  /** ANA-75 (БАГ-01): admin EVENT_DATE — the KPI deadline; empty → the heuristic + caveat. */
+  eventDate?: string;
+  /** ANA-75 (БАГ-01): show the deadline heuristic caveat (same text as the KPI page). */
+  showDeadlineCaveat?: boolean;
 }): JSX.Element {
   const { t, locale } = useT();
   const { segment } = useFilters();
@@ -409,10 +436,24 @@ export function OverviewView({
   }
 
   const goalIsPaid = goalLabel?.isPaid ?? false;
-  const kpi = summarizeChannels(stats, b2bDeals ?? [], goalIsPaid, kpiTarget, b2cPaid);
+  const base = summarizeChannels(stats, b2bDeals ?? [], goalIsPaid, kpiTarget, b2cPaid);
+  // ANA-75 (БАГ-02): единая семантика «Оплачено/Осталось» — тот же helper paidAndGap, что на
+  // /app/kpi, воронке и в снапшоте: цель типа «оплата» → заказы Метрики считаются оплатой;
+  // B2C-платежи и B2B-paid складываются всегда. Цифры на экранах совпадают по определению.
+  const { paid, gap } = paidAndGap({
+    target: base.target,
+    b2cGoalOrders: base.applications,
+    b2cPaidTickets: b2cPaid,
+    b2bPaidTickets: base.b2bPaid,
+    goalIsPaid,
+  });
+  const kpi = { ...base, paid, gap };
   const weak = weakSpots(stats);
   const daily = dailySeries(stats);
-  const pace = goalPace({ points: daily, to, target: kpi.target, current: kpi.paid, goalIsPaid });
+  const pace = applyDeadline(
+    goalPace({ points: daily, to, target: kpi.target, current: kpi.paid, goalIsPaid }),
+    eventDate,
+  );
   const geoRows = geoDevice ? byCountry(geoDevice) : [];
   const devRows = geoDevice ? byDevice(geoDevice) : [];
   const hasGeo = geoRows.length > 0 && devRows.length > 0;
@@ -460,6 +501,13 @@ export function OverviewView({
         showApplicationsCaveat={goalLabel?.showApplicationsCaveat !== false}
         weakSpot={weak[0]}
       />
+
+      {/* ANA-75 (БАГ-01): эвристический дедлайн — одна и та же оговорка на Обзоре и на /app/kpi. */}
+      {showDeadlineCaveat ? (
+        <p data-testid="deadline-caveat" className="text-xs text-slate-500">
+          {t('kpi.whatif.disclaimer')}
+        </p>
+      ) : null}
 
       <DataQualityBlock items={qualityItems} />
 
@@ -669,6 +717,16 @@ export function Overview(): JSX.Element {
     retry: false,
   });
   const kpiTarget = useKpiTarget();
+  // ANA-75 (БАГ-01): админская «Дата события» (EVENT_DATE) — единый дедлайн KPI на всех экранах;
+  // не задана/невалидна → '' → эвристика «+2 длины периода» и оговорка. GET /api/settings читают
+  // все авторизованные роли (секреты маскируются), аналитику она доступна.
+  const settingsQ = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.getSettings(),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const eventDate = readEventDate(settingsQ.data);
 
   // Apply segment filter; ANA-22 hides the test/service rows unless «Показать тестовый трафик».
   const allChannels = q.data ?? [];
@@ -696,6 +754,8 @@ export function Overview(): JSX.Element {
       afterKpi={<OnboardingCard />}
       kpiTarget={kpiTarget}
       b2cPaid={payments.data?.b2cPaid ?? 0}
+      eventDate={eventDate}
+      showDeadlineCaveat={!eventDate}
     />
   );
 }
