@@ -147,6 +147,42 @@ describe('FunnelView (en locale)', () => {
     expect(screen.getByText(/No pages with a critical bounce rate/)).toBeInTheDocument();
     expectNoCyrillic(container);
   });
+
+  it('flags a critical-bounce page after aggregating per-day rows (ANA-75 / БАГ-09)', () => {
+    // Each per-day row stays under the visit threshold (20/25 < 30), but the page aggregates to
+    // 45 visits at 100% bounce — «Нет страниц с критическим bounce» must not contradict the
+    // Behavior table showing it at 100%.
+    render(
+      <FunnelView
+        status="success"
+        stats={stats}
+        deals={deals}
+        geoDevice={[]}
+        pages={[
+          {
+            date: '2025-01-01',
+            page: '/PCxPS_special',
+            visits: 20,
+            users: 20,
+            bounceRate: 1,
+            goalReaches: 0,
+            conversionRate: 0,
+          },
+          {
+            date: '2025-01-02',
+            page: '/PCxPS_special',
+            visits: 25,
+            users: 20,
+            bounceRate: 1,
+            goalReaches: 0,
+            conversionRate: 0,
+          },
+        ]}
+      />,
+    );
+    expect(screen.queryByText(/Нет страниц с критическим bounce/)).not.toBeInTheDocument();
+    expect(screen.getByText(/\/PCxPS_special — 100\.0% при 45 визитах/)).toBeInTheDocument();
+  });
 });
 
 describe('FunnelView — per-issue pc-goals funnel (ANA-21)', () => {

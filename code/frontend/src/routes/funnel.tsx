@@ -18,6 +18,15 @@ import { ChartCaption } from '../components/charts/ChartCaption';
 import { EmptyState } from '../components/EmptyState';
 import { channelRows } from '../lib/traffic';
 import { funnelByChannelOption } from '../lib/funnel-by-channel';
+import { pageRows } from '../lib/behavior';
+import {
+  BOUNCE_HIGH,
+  CR_CRITICAL_TARGET,
+  CR_GOOD_TARGET,
+  CR_LOW_PAGE_TARGET,
+  MIN_PAGE_VISITS,
+  MIN_PAGE_VISITS_CR_LOW,
+} from '../lib/insight-thresholds';
 import { byCountry, audienceBarOption } from '../lib/audience';
 import { localizeChart } from '../lib/chart-i18n';
 import { InsightBadge } from '../components/InsightBadge';
@@ -169,9 +178,17 @@ export function FunnelView({
     return acc;
   }, new Map());
 
-  // Page insights
-  const highBouncePages = pages.filter((p) => p.bounceRate > 0.4 && p.visits > 30);
-  const lowCrPages = pages.filter((p) => p.conversionRate < 0.005 && p.visits > 50);
+  // Page insights — ANA-75 (БАГ-09): the API returns per-day rows; thresholds applied to raw days
+  // let a 100%-bounce page with small daily traffic slip through («Нет страниц с критическим
+  // bounce» next to Behavior showing it at 100%). Aggregate per page first — the same per-page
+  // view the Behavior table shows.
+  const perPage = pageRows(pages);
+  const highBouncePages = perPage.filter(
+    (p) => p.bounceRate > BOUNCE_HIGH && p.visits > MIN_PAGE_VISITS,
+  );
+  const lowCrPages = perPage.filter(
+    (p) => p.conversionRate < CR_LOW_PAGE_TARGET && p.visits > MIN_PAGE_VISITS_CR_LOW,
+  );
 
   // ANA-21: per-issue pc-goals funnel (Визиты → reg_open → cart_open → reg_step1 → Оплата) when
   // the live funnel is available; «Оплата» falls back to manually entered B2B deals paid in the
@@ -226,7 +243,7 @@ export function FunnelView({
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('an.keyInsights')}</h3>
         <div className="flex flex-wrap gap-2">
-          {appConversionRate > 0.02 ? (
+          {appConversionRate >= CR_GOOD_TARGET ? (
             <InsightBadge
               type="good"
               text={t('ins.appCrGood', { cr: formatPercent(appConversionRate) })}
@@ -420,7 +437,7 @@ export function FunnelView({
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('an.recommendations')}</h3>
         <ul className="space-y-2 text-sm text-slate-600">
-          {appConversionRate < 0.01 && (
+          {appConversionRate < CR_CRITICAL_TARGET && (
             <li className="flex items-start gap-2">
               <span className="text-red-500">🔴</span>
               <span>
@@ -446,7 +463,7 @@ export function FunnelView({
               </span>
             </li>
           )}
-          {appConversionRate >= 0.02 && (
+          {appConversionRate >= CR_GOOD_TARGET && (
             <li className="flex items-start gap-2">
               <span className="text-green-500">🟢</span>
               <span>
