@@ -411,6 +411,9 @@ export const ru = {
   // ANA-48 «Обзор»: first screen answers «успеваем к цели?», data-quality notices collapsed.
   'ov.loading': 'Загрузка…',
   'ov.error': 'Не удалось загрузить данные. Запустите синхронизацию и проверьте сервер.',
+  // БАГ-11: пустой Обзор в сегменте B2B — без совета запускать синк (данные B2B вносятся вручную).
+  'ov.b2bEmpty': 'B2B-данные вносятся вручную на странице B2B-сделки.',
+  'ov.b2bEmptyAction': 'Перейти к B2B-сделкам',
   'ov.strip.aria': 'Ключевые показатели',
   'ov.hero.title': 'Успеваем к {target}?',
   'ov.hero.ringAria': 'Прогресс к цели: {current} из {target}',
@@ -1678,6 +1681,9 @@ export const en: Record<DictKey, string> = {
   // ANA-48 Overview
   'ov.loading': 'Loading…',
   'ov.error': 'Could not load data. Run a sync and check the server.',
+  // БАГ-11: empty Overview in the B2B segment — no "run a sync" advice (B2B data is manual).
+  'ov.b2bEmpty': 'B2B data is entered manually on the B2B deals page.',
+  'ov.b2bEmptyAction': 'Open B2B deals',
   'ov.strip.aria': 'Key metrics',
   'ov.hero.title': 'On track for {target}?',
   'ov.hero.ringAria': 'Goal progress: {current} of {target}',

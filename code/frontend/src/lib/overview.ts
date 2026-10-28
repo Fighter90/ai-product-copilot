@@ -2,6 +2,7 @@ import type { ChannelStat, B2bDeal } from '@pca/shared';
 import { KPI_TARGET_PAID_TICKETS, periodTotals } from '@pca/shared';
 import { intTooltip } from './echart-format';
 import { channelColor } from './chart-colors';
+import type { DailyPoint } from './trends';
 
 export interface OverviewKpi {
   readonly target: number;
@@ -46,6 +47,29 @@ export function summarizeChannels(
     paid,
     gap: Math.max(0, target - paid),
   };
+}
+
+/**
+ * БАГ-11: daily pace for the B2B-segment hero — paid deals collapsed by payment date into a
+ * DailyPoint series (reaches = tickets, visits = 0; deals without `datePaid` fall back to
+ * `dateAdded`). The set of deals is the same `summarizeChannels` counts, so the pace and the
+ * KPI ring always show the same money. Empty deals → empty series (goalPace falls back to a
+ * 1-day zero window). Pure and deterministic.
+ */
+export function b2bDailyPoints(deals: B2bDeal[]): DailyPoint[] {
+  const byDate = new Map<string, number>();
+  for (const d of deals) {
+    if (d.stage !== 'paid') continue;
+    const date = d.datePaid ?? d.dateAdded;
+    byDate.set(date, (byDate.get(date) ?? 0) + d.tickets);
+  }
+  // Default lexicographic sort on ISO dates (no comparator branch); keys are Map keys, so the
+  // lookup is always defined.
+  return [...byDate.keys()].sort().map((date) => ({
+    date,
+    visits: 0,
+    reaches: byDate.get(date) as number,
+  }));
 }
 
 export interface WeakSpot {

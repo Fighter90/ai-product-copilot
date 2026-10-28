@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import type { ChannelStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
+import { useFilters } from '../store/filters';
+
+const auth = vi.hoisted(() => ({ isAdmin: false }));
+vi.mock('../auth/AuthContext', () => ({
+  useAuth: () => ({ isAdmin: auth.isAdmin }),
+}));
 
 vi.mock('../lib/api', () => ({
   api: {
@@ -78,5 +84,83 @@ describe('Overview KPI target (en locale)', () => {
     const strip = screen.getByTestId('kpi-strip');
     expect(strip.textContent).toContain('120');
     expectNoCyrillic(container);
+  });
+});
+
+describe('Overview B2B segment (БАГ-11)', () => {
+  const paidDeal = {
+    id: 1,
+    company: 'A',
+    tickets: 30,
+    stage: 'paid' as const,
+    dateAdded: '2025-01-01',
+    datePaid: '2025-01-02',
+  };
+
+  afterEach(() => {
+    useFilters.setState({ segment: 'b2c_b2b' });
+    auth.isAdmin = false;
+  });
+
+  it('B2B (analyst): KPI strip stays («Оплачено B2B vs цель»), empty-state without sync advice', () => {
+    useFilters.setState({ segment: 'b2b' });
+    renderWithProviders(<OverviewView status="success" stats={[]} b2bDeals={[paidDeal]} />);
+    const strip = within(screen.getByTestId('kpi-strip'));
+    expect(strip.getByText('Успеваем к 300?')).toBeInTheDocument();
+    expect(strip.getByRole('img', { name: 'Прогресс к цели: 30 из 300' })).toBeInTheDocument();
+    expect(
+      screen.getByText('B2B-данные вносятся вручную на странице B2B-сделки.'),
+    ).toBeInTheDocument();
+    // Neither the default empty-state nor the sync action for the analyst.
+    expect(screen.queryByText(/Нет данных за выбранный период/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Запустите sync/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Перейти к B2B-сделкам' })).not.toBeInTheDocument();
+  });
+
+  it('B2B (admin): empty-state offers a transition to the B2B deals page', () => {
+    useFilters.setState({ segment: 'b2b' });
+    auth.isAdmin = true;
+    renderWithProviders(<OverviewView status="success" stats={[]} b2bDeals={[paidDeal]} />);
+    expect(screen.getByRole('link', { name: 'Перейти к B2B-сделкам' })).toHaveAttribute(
+      'href',
+      '/app/b2b',
+    );
+    expect(screen.queryByText(/Запустите sync/)).not.toBeInTheDocument();
+  });
+
+  it('B2C+B2B (default): empty screen unchanged — no KPI strip, standard empty-state', () => {
+    renderWithProviders(<OverviewView status="success" stats={[]} />);
+    expect(screen.queryByTestId('kpi-strip')).not.toBeInTheDocument();
+    expect(screen.getByText(/Нет данных за выбранный период/)).toBeInTheDocument();
+  });
+
+  it('B2C: empty screen unchanged — no KPI strip, standard empty-state', () => {
+    useFilters.setState({ segment: 'b2c' });
+    renderWithProviders(<OverviewView status="success" stats={[]} />);
+    expect(screen.queryByTestId('kpi-strip')).not.toBeInTheDocument();
+    expect(screen.getByText(/Нет данных за выбранный период/)).toBeInTheDocument();
+  });
+
+  it('Overview wrapper: B2B segment keeps the KPI strip from CRM deals with the admin target', async () => {
+    useFilters.setState({ segment: 'b2b' });
+    vi.mocked(api.channels).mockResolvedValue([]);
+    vi.mocked(api.primaryGoal).mockRejectedValue(new Error('404'));
+    vi.mocked(api.geoDevice).mockResolvedValue([]);
+    vi.mocked(api.utm).mockResolvedValue([]);
+    vi.mocked(api.pages).mockResolvedValue([]);
+    vi.mocked(api.exitPages).mockResolvedValue([]);
+    vi.mocked(api.b2b).mockResolvedValue([paidDeal]);
+    vi.mocked(api.kpiTarget).mockResolvedValue({ target: 450 });
+    vi.mocked(api.paymentsSummary).mockResolvedValue({
+      b2cPaid: 12,
+      b2bPaid: 30,
+      paid: 42,
+      days: 0,
+    });
+    renderWithProviders(<Overview />);
+    await waitFor(() => expect(screen.getByTestId('kpi-strip').textContent).toContain('450'));
+    // B2B segment counts CRM paid only — the B2C payments figure (12) is not mixed in.
+    expect(screen.getByRole('img', { name: 'Прогресс к цели: 30 из 450' })).toBeInTheDocument();
+    expect(screen.getByText(/B2B-данные вносятся вручную/)).toBeInTheDocument();
   });
 });

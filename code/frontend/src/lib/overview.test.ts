@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { ChannelStat, B2bDeal } from '@pca/shared';
-import { summarizeChannels, channelMixOption, dailyReachesOption, weakSpots } from './overview';
+import {
+  summarizeChannels,
+  channelMixOption,
+  dailyReachesOption,
+  weakSpots,
+  b2bDailyPoints,
+} from './overview';
 
 function stat(over: Partial<ChannelStat>): ChannelStat {
   return {
@@ -142,5 +148,48 @@ describe('dailyReachesOption', () => {
     ]) as { xAxis: { data: string[] }; series: { data: number[] }[] };
     expect(o.xAxis.data).toEqual(['2025-01-01', '2025-01-02']);
     expect(o.series[0]?.data).toEqual([4, 2]);
+  });
+});
+
+describe('b2bDailyPoints (БАГ-11)', () => {
+  it('collapses paid deals by payment date (tickets = reaches), sorted; ignores unpaid', () => {
+    const deals: B2bDeal[] = [
+      {
+        id: 1,
+        company: 'A',
+        tickets: 10,
+        stage: 'paid',
+        dateAdded: '2025-01-01',
+        datePaid: '2025-01-03',
+      },
+      { id: 2, company: 'B', tickets: 5, stage: 'lead', dateAdded: '2025-01-02' },
+      {
+        id: 3,
+        company: 'C',
+        tickets: 2,
+        stage: 'paid',
+        dateAdded: '2025-01-01',
+        datePaid: '2025-01-03',
+      },
+      {
+        id: 4,
+        company: 'D',
+        tickets: 4,
+        stage: 'paid',
+        dateAdded: '2025-01-01',
+        datePaid: '2025-01-02',
+      },
+    ];
+    expect(b2bDailyPoints(deals)).toEqual([
+      { date: '2025-01-02', visits: 0, reaches: 4 },
+      { date: '2025-01-03', visits: 0, reaches: 12 },
+    ]);
+  });
+
+  it('a paid deal without datePaid falls back to dateAdded; empty input → empty series', () => {
+    expect(
+      b2bDailyPoints([{ id: 1, company: 'A', tickets: 7, stage: 'paid', dateAdded: '2025-01-05' }]),
+    ).toEqual([{ date: '2025-01-05', visits: 0, reaches: 7 }]);
+    expect(b2bDailyPoints([])).toEqual([]);
   });
 });
