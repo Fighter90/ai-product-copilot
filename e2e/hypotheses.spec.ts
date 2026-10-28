@@ -109,7 +109,11 @@ test.describe('Hypotheses workspace (ANA-37)', () => {
     await expect(page.getByTestId('hyp-save')).toBeDisabled();
     await expect(editor.getByText(/Скрытые допущения/)).toBeVisible();
     await expect(editor.getByText(/Методы проверки/)).toBeVisible();
-    await editor.getByText('Заполните поле').first().waitFor({ state: 'attached' }).catch(() => {});
+    await editor
+      .getByText('Заполните поле')
+      .first()
+      .waitFor({ state: 'attached' })
+      .catch(() => {});
   });
 
   test('status change moves a card across kanban columns', async ({ page }) => {
