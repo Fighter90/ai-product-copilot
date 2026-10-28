@@ -6,10 +6,11 @@ import { useQuery } from '@tanstack/react-query';
 import type { ChannelStat, GeoDeviceStat, UtmStat, PageStat, B2bDeal } from '@pca/shared';
 import { api } from '../lib/api';
 import { useFilters } from '../store/filters';
+import { useAuth } from '../auth/AuthContext';
 import { formatInt, formatPercent } from '../lib/format';
 import { displayPath } from '../lib/url-path';
 import { EmptyState } from '../components/EmptyState';
-import { channelMixOption, summarizeChannels, weakSpots } from '../lib/overview';
+import { channelMixOption, summarizeChannels, weakSpots, b2bDailyPoints } from '../lib/overview';
 import { applyTestTrafficFilter, isTestChannelRow, isTestPage } from '../lib/test-traffic';
 import { useKpiTarget } from '../lib/kpi-target';
 import { utmCoverage } from '../lib/traffic';
@@ -290,6 +291,15 @@ function PagesTable({ title, pages }: { title: string; pages: PageStat[] }): JSX
   );
 }
 
+/** Admin flag without requiring an <AuthProvider> (same fallback as EmptyState). */
+function useIsAdmin(): boolean {
+  try {
+    return useAuth().isAdmin;
+  } catch {
+    return false;
+  }
+}
+
 /** Pure presentational Overview — testable across all states without the data layer. */
 export function OverviewView({
   status,
@@ -325,6 +335,8 @@ export function OverviewView({
   b2cPaid?: number;
 }): JSX.Element {
   const { t, locale } = useT();
+  const { segment } = useFilters();
+  const isAdmin = useIsAdmin();
   if (status === 'pending') return <p className="text-slate-500">{t('ov.loading')}</p>;
   if (status === 'error')
     return (
@@ -333,13 +345,41 @@ export function OverviewView({
       </p>
     );
 
-  if (stats.length === 0)
+  if (stats.length === 0) {
+    // БАГ-11: в сегменте B2B визитов Метрики нет by construction (segment-filter), но данные
+    // B2B есть в CRM (api.b2b, доступно аналитику) — показываем KPI-полосу («Оплачено B2B vs
+    // цель») и пустое состояние без совета запускать синк: аналитик — просто подсказка,
+    // админ — с переходом на страницу B2B-сделок.
+    if (segment === 'b2b') {
+      const goalIsPaid = goalLabel?.isPaid ?? false;
+      const deals = b2bDeals ?? [];
+      const kpi = summarizeChannels([], deals, goalIsPaid, kpiTarget, 0);
+      const pace = goalPace({
+        points: b2bDailyPoints(deals),
+        to,
+        target: kpi.target,
+        current: kpi.paid,
+        // CRM-оплаты — подтверждённые деньги, темп точный (без оговорки про заявки).
+        goalIsPaid: true,
+      });
+      return (
+        <section className="space-y-6">
+          <KpiStrip kpi={kpi} pace={pace} goalIsPaid={goalIsPaid} showApplicationsCaveat={false} />
+          {afterKpi}
+          <EmptyState
+            message={t('ov.b2bEmpty')}
+            action={isAdmin ? { label: t('ov.b2bEmptyAction'), to: '/app/b2b' } : null}
+          />
+        </section>
+      );
+    }
     return (
       <div className="space-y-6">
         <EmptyState />
         {afterKpi}
       </div>
     );
+  }
 
   const goalIsPaid = goalLabel?.isPaid ?? false;
   const kpi = summarizeChannels(stats, b2bDeals ?? [], goalIsPaid, kpiTarget, b2cPaid);
