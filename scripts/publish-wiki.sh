@@ -12,7 +12,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/docs/wiki"
 TMP="${TMPDIR:-/tmp}/pca-wiki-sync"
-WIKI_GIT="https://github.com/Fighter90/ai-product-copilot.wiki.git"
+# URL можно переопределить (в CI — с токеном для приватного вики-репо).
+WIKI_GIT="${WIKI_GIT_URL:-https://github.com/Fighter90/ai-product-copilot.wiki.git}"
 PUSH=0
 [[ "${1:-}" == "--push" ]] && PUSH=1
 

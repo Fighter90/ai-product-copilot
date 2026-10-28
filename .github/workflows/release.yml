@@ -23,6 +23,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm typecheck
+      # Документация должна называть ту же версию, что и тег (README, CLAUDE, architecture).
+      - run: node scripts/sync-versions.mjs --check
       - run: pnpm coverage
       - run: pnpm build
 
@@ -58,9 +60,23 @@ jobs:
       - name: Checksums
         run: sha256sum productcamp-*.tar.gz productcamp-*.zip > "checksums-${GITHUB_REF_NAME}.txt"
 
+      # Заметки релиза — секция этой версии из CHANGELOG.md (+ автосписок контрибьюторов).
+      - name: Extract the CHANGELOG section for this version
+        run: |
+          node -e '
+            const fs = require("fs");
+            const md = fs.readFileSync("CHANGELOG.md", "utf8");
+            const tag = (process.env.GITHUB_REF_NAME || "").replace(/^v/, "");
+            const re = new RegExp("## \\[" + tag + "\\][^\\n]*\\n([\\s\\S]*?)(?=\\n## \\[|$)");
+            const m = md.match(re);
+            fs.writeFileSync("release-notes.md", m ? m[1].trim() : "См. CHANGELOG.md");
+            console.log("notes for", tag, ":", m ? "found" : "NOT FOUND");
+          '
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: release-notes.md
           generate_release_notes: true
           files: |
             productcamp-analytics-*.tar.gz
