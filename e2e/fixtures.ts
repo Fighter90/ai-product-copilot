@@ -161,7 +161,7 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
   await metric('pages', '**/api/metrics/pages*', PAGES);
   await metric('exit-pages', '**/api/metrics/exit-pages*', EXIT_PAGES);
   await metric('goals', '**/api/metrics/goals*', []);
-  await page.route('**/api/metrics/primary-goal', (r) =>
+  await page.route('**/api/metrics/primary-goal*', (r) =>
     fail.has('primary-goal')
       ? json(r, { error: 'no primary goal detected' }, 404)
       : json(r, {
@@ -189,7 +189,7 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
   });
 
   // Report snapshots list (for History page).
-  await page.route('**/api/report/snapshots', (r) => json(r, []));
+  await page.route('**/api/report/snapshots*', (r) => json(r, []));
 
   // Settings — read/write (stateful in-closure).
   let settingsState = {
@@ -200,7 +200,7 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
     GOAL_ID: 0,
     ANTHROPIC_API_KEY: 'sk-test-xxxx',
   };
-  await page.route('**/api/settings', async (r) => {
+  await page.route('**/api/settings*', async (r) => {
     if (r.request().method() === 'POST') {
       const body = JSON.parse(r.request().postData() ?? '{}') as Record<string, string | number>;
       settingsState = { ...settingsState, ...body };
@@ -215,10 +215,10 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
       ANTHROPIC_API_KEY: 'sk-t****xx',
     });
   });
-  await page.route('**/api/settings/refresh', (r) => json(r, { ok: true }));
+  await page.route('**/api/settings/refresh*', (r) => json(r, { ok: true }));
 
   // B2B — stateful CRUD.
-  await page.route('**/api/b2b', async (r) => {
+  await page.route('**/api/b2b*', async (r) => {
     if (r.request().method() === 'POST') {
       const body = JSON.parse(r.request().postData() ?? '{}') as Record<string, unknown>;
       const deal = { id: nextB2bId++, ...body };
@@ -240,7 +240,7 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
   });
 
   // Hypotheses — stateful create.
-  await page.route('**/api/hypotheses', async (r) => {
+  await page.route('**/api/hypotheses*', async (r) => {
     if (r.request().method() === 'POST') {
       const body = JSON.parse(r.request().postData() ?? '{}') as Record<string, number | string>;
       const score = Number(body.impact) * Number(body.confidence) * Number(body.ease);
@@ -283,7 +283,7 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
   });
 
   // Decisions — stateful create (also flips the linked hypothesis status to the outcome).
-  await page.route('**/api/decisions', async (r) => {
+  await page.route('**/api/decisions*', async (r) => {
     if (r.request().method() === 'POST') {
       const body = JSON.parse(r.request().postData() ?? '{}') as Record<string, unknown>;
       const dec = {
@@ -332,10 +332,10 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
       201,
     ),
   );
-  await page.route('**/api/report/insights', (r) =>
+  await page.route('**/api/report/insights*', (r) =>
     json(r, { narrative: 'AI-анализ: визиты растут, конверсия стабильна.' }),
   );
-  await page.route('**/api/report/hypotheses', (r) =>
+  await page.route('**/api/report/hypotheses*', (r) =>
     json(r, {
       hypotheses: {
         problems: [
@@ -384,7 +384,7 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
       },
     }),
   );
-  await page.route('**/api/report/generate', (r) => {
+  await page.route('**/api/report/generate*', (r) => {
     const body = JSON.parse(r.request().postData() ?? '{}') as { format?: string };
     const ext = body.format === 'pdf' ? 'pdf' : 'docx';
     return json(r, { filePath: `data/reports/snap-e2e.${ext}` });
@@ -404,14 +404,43 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
 
   // --- Cabinet v3 endpoints (ANA-66/72/73): pages fetch these on mount; without mocks the
   // catch-all of some specs ([]) answers where an object is expected and the render crashes.
-  await page.route('**/api/notifications', (r) => json(r, []));
+  await page.route('**/api/notifications*', (r) => json(r, []));
+  // ANA-49: FilterBar probes the cached-data window («Догрузить N дней») — an unmocked 401
+  // here triggers the global 401 interceptor and logs the user out on every page.
+  await page.route('**/api/metrics/kpi-target*', (r) => json(r, { target: 300 }));
+  // Повторное открытие снапшота (History/перезагрузка отчёта) — GET /report/snapshot/:id.
+  await page.route('**/api/report/snapshot/snap-*', (r) =>
+    json(r, {
+      id: 'snap-e2e',
+      generatedAt: '2025-01-05T00:00:00.000Z',
+      period: { from: '2025-01-01', to: '2025-01-07' },
+      kpi: { target: 300, b2cApplications: 30, b2bPaidTickets: 20, gap: 280 },
+      channels: CHANNELS,
+      hypotheses: { problems: [], solutions: [] },
+      decisions: [],
+      b2bSummary: { totalTickets: 0, paidTickets: 0, dealsCount: 0, deals: [], byStage: [] },
+      funnel: { visits: 2647, b2cApplications: 30, b2bPipelineTickets: 0, b2bPaidTickets: 20 },
+      breakdowns: {
+        utm: [{ source: 'vk', medium: 'cpc', campaign: 'spring', visits: 240, goalReaches: 9 }],
+        geoDevice: [
+          { country: 'Россия', device: 'mobile', visits: 520, goalReaches: 22 },
+          { country: 'Россия', device: 'desktop', visits: 280, goalReaches: 16 },
+        ],
+        entryPages: [{ page: '/lp', visits: 380, bounceRate: 0.18, goalReaches: 14 }],
+        exitPages: [{ page: '/checkout', visits: 120, bounceRate: 0.55, goalReaches: 6 }],
+      },
+    }),
+  );
+  await page.route('**/api/metrics/coverage*', (r) =>
+    json(r, { from: '2025-01-01', to: '2025-01-14', days: 14 }),
+  );
   // The report page enables the AI actions only with ≥1 AVAILABLE provider (v3.availableProviders
   // → GET /api/ai/available, ANA-33); the admin list lives at /api/admin/ai/providers.
-  await page.route('**/ai/available', (r) =>
+  await page.route('**/ai/available*', (r) =>
     json(r, [{ id: 'anthropic', name: 'Anthropic', model: 'claude-opus-5-5' }]),
   );
   // NOTE: the real admin path is /api/admin/ai/providers — a '**/api/ai/providers' glob misses it.
-  await page.route('**/ai/providers', (r) =>
+  await page.route('**/ai/providers*', (r) =>
     json(r, [
       {
         id: 'anthropic',
@@ -429,8 +458,8 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
       },
     ]),
   );
-  await page.route('**/api/demo/status', (r) => json(r, { demo: false, counts: {} }));
-  await page.route('**/api/sync/status', (r) =>
+  await page.route('**/api/demo/status*', (r) => json(r, { demo: false, counts: {} }));
+  await page.route('**/api/sync/status*', (r) =>
     json(r, {
       id: 1,
       startedAt: '2025-01-02T00:00:00.000Z',
@@ -441,11 +470,11 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
       errors: [],
     }),
   );
-  await page.route('**/api/payments/summary', (r) =>
+  await page.route('**/api/payments/summary*', (r) =>
     json(r, { b2cPaid: 12, b2bPaid: 20, paid: 32, days: 14 }),
   );
-  await page.route('**/api/payments/b2c', (r) => json(r, []));
-  await page.route('**/api/marketing/weekly', (r) =>
+  await page.route('**/api/payments/b2c*', (r) => json(r, []));
+  await page.route('**/api/marketing/weekly*', (r) =>
     json(r, {
       months: [{ key: '2025-01', ru: 'Январь', en: 'January' }],
       weeks: [
@@ -516,7 +545,7 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
 
   // Cabinet session: LAST registered route wins, so a spec can still override /api/auth/me.
   const user = opts.user === undefined ? CABINET_USER : opts.user;
-  await page.route('**/api/auth/me', (r) => json(r, { user }));
+  await page.route('**/api/auth/me*', (r) => json(r, { user }));
 
   // Deterministic RU interface + skip the first-visit onboarding and the role tour (pca.tour.v1.*
   // — see lib/onboarding.ts, components/onboarding/tour.ts). Specs may override the locale with

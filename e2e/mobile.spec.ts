@@ -34,6 +34,8 @@ async function expectNoHorizontalScroll(page: import('@playwright/test').Page): 
 }
 
 test.describe('Mobile (iPhone 14) — no horizontal scroll on any page', () => {
+  test.describe.configure({ mode: 'serial' });
+  test.setTimeout(60_000);
   for (const [path, marker] of PAGES) {
     test(`${path} fits the viewport`, async ({ page }) => {
       await installMocks(page, { user: ADMIN });

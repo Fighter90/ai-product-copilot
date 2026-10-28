@@ -14,7 +14,9 @@ test.describe('Global filter header (cabinet /app)', () => {
     await expect(range).toHaveText(rangeBefore);
   });
 
-  test('segment toggle is interactive; archived toggle lives on /app/goals (БАГ-06)', async ({ page }) => {
+  test('segment toggle is interactive; archived toggle lives on /app/goals (БАГ-06)', async ({
+    page,
+  }) => {
     await installMocks(page);
     await page.goto('/app');
     await page.getByLabel('Сегмент').selectOption('b2b');
