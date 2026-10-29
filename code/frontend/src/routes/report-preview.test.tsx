@@ -25,7 +25,7 @@ vi.mock('../lib/download', () => ({
 }));
 import { api } from '../lib/api';
 import { downloadFileViaFetch } from '../lib/download';
-import { ReportPreviewView, ReportPreview } from './report-preview';
+import { ReportPreviewView, ReportPreview, ReportFullView } from './report-preview';
 
 const snapshot: ReportSnapshot = {
   id: 'snap-1',
@@ -198,8 +198,8 @@ describe('ReportPreviewView', () => {
     // CR hint appears in the funnel section - use getAllByText since it also appears in report sections
     expect(screen.getAllByText(/CR 5\.0%/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('B2B в работе')).toBeInTheDocument();
-    // ANA-19: B2B paid tickets are labelled as created orders
-    expect(screen.getAllByText('Заказов создано (B2B)').length).toBeGreaterThanOrEqual(1);
+    // REG-08: the tile shows paid B2B tickets under the same label as the Overview («Оплачено B2B»).
+    expect(screen.getAllByText('Оплачено B2B').length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows B2B summary when there are deals', () => {
@@ -303,10 +303,58 @@ describe('ReportPreview (wrapper)', () => {
 });
 
 describe('ReportFullView markdown tables', () => {
-  it('renders pipe tables as <table>, not raw "| … |" text', async () => {
-    const { ReportFullView } = await import('./report-preview');
+  it('renders pipe tables as <table>, not raw "| … |" text', () => {
     const { container } = render(<ReportFullView snapshot={snapshotWithData} />);
     expect(container.querySelector('article table')).not.toBeNull();
     expect(container.textContent ?? '').not.toMatch(/\|\s*-{3,}\s*\|/);
+  });
+});
+
+describe('ReportFullView оглавление (REG-16)', () => {
+  // Chunked AI narrative: the same subheading repeats across chunks — the on-screen TOC
+  // used to list every one of them (60+ entries in production).
+  const withAiNarrative: ReportSnapshot = {
+    ...snapshotWithData,
+    aiNarrative:
+      '## Где мы сейчас\n\nПервый чанк.\n\n## Где мы сейчас\n\nВторой чанк.\n\n## Выводы\n\nИтог.',
+  };
+
+  const tocLinks = (): string[] => {
+    const nav = screen.getByRole('navigation', { name: 'Оглавление' });
+    return Array.from(nav.querySelectorAll('a')).map((a) => a.textContent ?? '');
+  };
+
+  it('keeps curated sections in the TOC but drops AI-narrative subheadings', () => {
+    render(<ReportFullView snapshot={withAiNarrative} />);
+    const links = tocLinks();
+    // Level 1–2 (curated document skeleton) stays listed…
+    expect(links).toContain('Краткие итоги');
+    expect(links).toContain('B2B-пайплайн');
+    // …while the repeated AI subheadings are excluded from the TOC only.
+    expect(links).not.toContain('Где мы сейчас');
+    expect(links).not.toContain('Выводы');
+  });
+
+  it('still renders the AI subheading sections themselves («сами секции не трогать»)', () => {
+    render(<ReportFullView snapshot={withAiNarrative} />);
+    // Each «Где мы сейчас» section remains a collapsible block in the report body.
+    expect(screen.getAllByText('Где мы сейчас').length).toBeGreaterThanOrEqual(2);
+    // TOC anchors keep pointing at real sections: every link target id exists.
+    for (const link of screen
+      .getByRole('navigation', { name: 'Оглавление' })
+      .querySelectorAll('a')) {
+      const id = (link.getAttribute('href') ?? '').slice(1);
+      expect(document.getElementById(id)).not.toBeNull();
+    }
+  });
+
+  it('keeps the single AI section listed when the narrative has no ## subheadings', () => {
+    render(
+      <ReportFullView
+        snapshot={{ ...snapshotWithData, aiNarrative: 'Сплошной текст без заголовков.' }}
+      />,
+    );
+    // No subheadings → the narrative becomes one trailing-conclusion section, still level 1.
+    expect(tocLinks()).toContain('Результирующий вывод');
   });
 });

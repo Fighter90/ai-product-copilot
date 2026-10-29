@@ -4,6 +4,7 @@ import {
   reportPeriodLabel,
   reportSections,
   type AiGenerationInfo,
+  type ReportSection,
   type ReportSnapshot,
 } from '@pca/shared';
 import { api } from '../lib/api';
@@ -46,22 +47,47 @@ function Stat({
 }
 
 /**
+ * REG-16: оглавление (TOC) lists only sections level 1–2 — the document skeleton plus the
+ * hypothesis/decision detail cards. Level 3 = sections that exist solely because the snapshot
+ * carries a chunked AI narrative (its `## ` subheadings: «Где мы сейчас» ×4, «Анализ …» ×2, …).
+ * They are identified without touching the shared builder: reportSections is pure, so re-running
+ * it without aiNarrative drops exactly those sections. They stay rendered below — only the TOC
+ * entry is omitted. A narrative without any `## ` yields a single AI section (level 1) and
+ * keeps its entry.
+ */
+function reportTocEntries(snapshot: ReportSnapshot): Array<{ sec: ReportSection; index: number }> {
+  const all = reportSections(snapshot);
+  const narrative = snapshot.aiNarrative;
+  if (!narrative) return all.map((sec, index) => ({ sec, index }));
+  // Content key: heading + body. Curated sections are byte-identical in both runs; an AI
+  // subheading colliding with a curated heading still differs in body, so it stays excluded.
+  const key = (sec: ReportSection): string => `${sec.heading}\u0000${sec.lines.join('\u0001')}`;
+  const hasSubheadings = narrative.split('\n').some((line) => /^## /.test(line));
+  const base = hasSubheadings
+    ? new Set(reportSections({ ...snapshot, aiNarrative: undefined }).map(key))
+    : null;
+  return all.map((sec, index) => ({ sec, index })).filter(({ sec }) => !base || base.has(key(sec)));
+}
+
+/**
  * On-screen render of the full report — the exact same sections DOCX and PDF produce
  * (via the shared reportSections), so what you read here is byte-for-byte the exported content.
  * ANA-39: a table of contents with anchor links + collapsible sections (`<details>`), so 30+
  * sections are navigable instead of one wall of text. The first two sections start open.
+ * REG-16: the оглавление lists only level 1–2 sections — AI-narrative subheadings are excluded.
  */
 export function ReportFullView({ snapshot }: { snapshot: ReportSnapshot }): JSX.Element {
   const { t } = useT();
   const sections = reportSections(snapshot);
+  const tocEntries = reportTocEntries(snapshot);
   return (
     <article
       aria-label={t('rep.fullReport')}
       className="max-h-[70vh] space-y-4 overflow-auto rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-sm"
     >
       <p className="text-xs text-slate-500">{t('rep.fullReportNote', { n: sections.length })}</p>
-      {/* ANA-39: оглавление — every heading is an anchor into the collapsible body */}
-      {sections.length > 1 && (
+      {/* ANA-39: оглавление — every listed (level 1–2) heading is an anchor into the collapsible body */}
+      {tocEntries.length > 1 && (
         <nav
           aria-label={t('fx.toc.title')}
           className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600"
@@ -70,9 +96,9 @@ export function ReportFullView({ snapshot }: { snapshot: ReportSnapshot }): JSX.
             {t('fx.toc.title')}
           </div>
           <ol className="grid gap-x-4 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
-            {sections.map((sec, i) => (
-              <li key={`${sec.heading}-${i}`}>
-                <a href={`#rep-sec-${i}`} className="hover:text-indigo-700 hover:underline">
+            {tocEntries.map(({ sec, index }) => (
+              <li key={`${sec.heading}-${index}`}>
+                <a href={`#rep-sec-${index}`} className="hover:text-indigo-700 hover:underline">
                   {sec.heading}
                 </a>
               </li>
@@ -402,7 +428,7 @@ export function ReportPreviewView({
                 label={t('rep.funnel.b2bInProgress')}
                 value={formatInt(snapshot.funnel.b2bPipelineTickets)}
               />
-              {/* БАГ-21: плитка «Заказов создано (B2B)» уже есть в KPI-полосе выше — дубль убран. */}
+              {/* БАГ-21: плитка «Оплачено B2B» уже есть в KPI-полосе выше — дубль убран. */}
             </div>
           )}
 
