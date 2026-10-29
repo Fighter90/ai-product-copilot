@@ -96,7 +96,7 @@ see `docs/runbook.md`, the GigaChat section.
 
 **Cause:** no source data (the period before the site launch). **Action:** admin — a Metrika
 window sync + the Sync button; analyst — enter values manually (the sync will not overwrite
-them). Details — [Marketing & influence partners](21-marketing).
+them). Details — [Marketing & influence partners](21-marketing.md).
 
 ### 13. My grid edit «disappeared»
 

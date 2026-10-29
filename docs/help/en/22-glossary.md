@@ -8,7 +8,7 @@ summary: Every dashboard term in one place — from «visit» and «lead» to sy
 # Glossary
 
 Terms grouped by topic. Next to each — the data source and the article where it is used.
-Formulas — in [Formulas and calculations](23-formulas).
+Formulas — in [Formulas and calculations](23-formulas.md).
 
 ## Data and sources
 
@@ -28,17 +28,17 @@ Formulas — in [Formulas and calculations](23-formulas).
 
 ## Funnel and KPI
 
-| Term                     | Definition                                                                                                                          |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **Lead**                 | A primary-goal reach (registration, `GOAL_ID`). NOT a payment.                                                                      |
-| **Payment**              | Confirmed money: B2C payments (`b2c_payments`) + paid B2B deals (`b2b_manual`, stage `paid`). Formula — in [Formulas](23-formulas). |
-| **«Lead ≠ payment»**     | The product's core invariant: a Metrika goal reach is intent, not money. They are never added into one number.                      |
-| **KPI target (300)**     | The paid-ticket plan (the `KPI_TARGET` setting, default 300). Drives «on track for 300?», the progress ring and the forecast.       |
-| **Gap to target**        | `max(0, target − paid)`. What is subtracted depends on the primary goal type (see Formulas).                                        |
-| **B2B paid**             | Sum of tickets of deals in stage `paid`. Pipeline stages: `lead` → `negotiation` → `invoiced` → `paid`.                             |
-| **B2C applications**     | Primary-goal reaches in the period — the B2C funnel leads.                                                                          |
-| **Forecast (What if)**   | Estimated KPI achievement by the deadline with changed traffic/conversion — sliders on the KPI page recompute the outcome.          |
-| **CR (conversion rate)** | `goal_reaches / visits`. Shown per channel, page, UTM.                                                                              |
+| Term                     | Definition                                                                                                                             |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Lead**                 | A primary-goal reach (registration, `GOAL_ID`). NOT a payment.                                                                         |
+| **Payment**              | Confirmed money: B2C payments (`b2c_payments`) + paid B2B deals (`b2b_manual`, stage `paid`). Formula — in [Formulas](23-formulas.md). |
+| **«Lead ≠ payment»**     | The product's core invariant: a Metrika goal reach is intent, not money. They are never added into one number.                         |
+| **KPI target (300)**     | The paid-ticket plan (the `KPI_TARGET` setting, default 300). Drives «on track for 300?», the progress ring and the forecast.          |
+| **Gap to target**        | `max(0, target − paid)`. What is subtracted depends on the primary goal type (see Formulas).                                           |
+| **B2B paid**             | Sum of tickets of deals in stage `paid`. Pipeline stages: `lead` → `negotiation` → `invoiced` → `paid`.                                |
+| **B2C applications**     | Primary-goal reaches in the period — the B2C funnel leads.                                                                             |
+| **Forecast (What if)**   | Estimated KPI achievement by the deadline with changed traffic/conversion — sliders on the KPI page recompute the outcome.             |
+| **CR (conversion rate)** | `goal_reaches / visits`. Shown per channel, page, UTM.                                                                                 |
 
 ## Hypotheses and decisions
 
@@ -54,12 +54,12 @@ Formulas — in [Formulas and calculations](23-formulas).
 
 ## Marketing grid
 
-| Term             | Definition                                                                                                                                                     |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Grid (стата)** | The weekly marketing table on `/app/marketing` — the Google Sheet replacement. 13 weeks × 13 metrics. Article: [Marketing & influence partners](21-marketing). |
-| **Value source** | `manual` (entered by a person) > `import` (loaded from the sheet) > `metrika` (computed by the sync). Manual values are never overwritten.                     |
-| **Backfill**     | Loading data for the period before the sync existed: the Metrika window (`POST /api/sync`) + historical B2B import (`POST /api/b2b/import`).                   |
-| **Empty week**   | A week with no source data. Shown empty (not zero): «no data» ≠ «zero events».                                                                                 |
+| Term             | Definition                                                                                                                                                        |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Grid (стата)** | The weekly marketing table on `/app/marketing` — the Google Sheet replacement. 13 weeks × 13 metrics. Article: [Marketing & influence partners](21-marketing.md). |
+| **Value source** | `manual` (entered by a person) > `import` (loaded from the sheet) > `metrika` (computed by the sync). Manual values are never overwritten.                        |
+| **Backfill**     | Loading data for the period before the sync existed: the Metrika window (`POST /api/sync`) + historical B2B import (`POST /api/b2b/import`).                      |
+| **Empty week**   | A week with no source data. Shown empty (not zero): «no data» ≠ «zero events».                                                                                    |
 
 ## Admin and system
 
