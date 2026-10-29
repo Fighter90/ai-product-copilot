@@ -30,11 +30,20 @@ export type ReportFormat = z.infer<typeof GenerateBody>['format'];
 
 export type InsightsResult =
   | { ok: true; narrative: string; generatedBy?: AiGenerationInfo }
-  | { ok: false; reason: 'not_found' | 'unavailable'; message: string };
+  | {
+      ok: false;
+      // 'provider_error' = сбой выбранного провайдера (например, HTTP 402 — нет кредитов).
+      reason: 'not_found' | 'unavailable' | 'provider_error';
+      message: string;
+    };
 
 export type HypothesesResult =
   | { ok: true; hypotheses: GeneratedHypotheses }
-  | { ok: false; reason: 'not_found' | 'unavailable'; message: string };
+  | {
+      ok: false;
+      reason: 'not_found' | 'unavailable' | 'provider_error';
+      message: string;
+    };
 
 /** A generated report file ready to stream to the browser as a download. */
 export interface ReportDownload {

@@ -215,6 +215,15 @@ export function makeReportRunner(
           snapshot,
         },
       );
+      // REG (v3.3.1): сбой провайдера приходит как «успешный» ответ, чей текст —
+      // «<provider> HTTP <code>: …». Такой текст не должен сохраняться как анализ.
+      if (/^[a-z][a-z0-9_-]*\s+HTTP \d{3}[: ]/i.test(narrative)) {
+        return {
+          ok: false,
+          reason: 'provider_error',
+          message: narrative.slice(0, 400),
+        };
+      }
       const generatedBy = generationInfo(info, ai);
       // Persist the narrative onto the snapshot so DOCX/PDF render it (deterministically) later.
       snapshots.save({
