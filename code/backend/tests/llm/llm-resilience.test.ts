@@ -303,6 +303,48 @@ describe.each(PROVIDER_IDS)('%s adapter through LlmService', (id) => {
   });
 });
 
+describe('REG-07: provider with a failed last test', () => {
+  const failTest = (id: ProviderId, d: DB): void => {
+    d.prepare(
+      'UPDATE ai_providers SET last_test_at = ?, last_test_ok = 0, last_test_message = ? WHERE id = ?',
+    ).run('2026-10-26T10:00:00.000Z', 'HTTP 400: credit balance is too low', id);
+  };
+
+  it('«Авто» skips it and falls back; last_test_ok = 0 counts as failed, 1/null as eligible', async () => {
+    const { svc, calls, fallback } = setup('openrouter', () => res(200, ADAPTERS.openrouter.ok));
+    failTest('openrouter', db);
+    const out = await svc.complete(req, { purpose: 'test' });
+    expect(out.provider).toBe(fallback);
+    expect(calls).toEqual({ primary: 0, fallback: 1 }); // попытки не тратятся
+
+    failTest('anthropic', db);
+    await expect(svc.complete(req, { purpose: 'test' })).rejects.toMatchObject({ status: 503 });
+
+    db.prepare('UPDATE ai_providers SET last_test_ok = NULL WHERE id = ?').run('anthropic');
+    expect((await svc.complete(req, { purpose: 'test' })).provider).toBe('anthropic');
+  });
+
+  it('an explicit choice of the failed provider → 503, never attempted', async () => {
+    const { svc, calls } = setup('openrouter', () => res(200, ADAPTERS.openrouter.ok));
+    failTest('openrouter', db);
+    await expect(
+      svc.complete(req, { purpose: 'test', choice: 'openrouter' }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(calls).toEqual({ primary: 0, fallback: 0 });
+  });
+
+  it('excluded from available(); a successful manual «Проверить соединение» restores it', async () => {
+    const { svc } = setup('openrouter', () => res(200, ADAPTERS.openrouter.ok));
+    failTest('openrouter', db);
+    expect(svc.available().map((p) => p.id)).toEqual(['anthropic']);
+
+    const tested = await svc.test('openrouter', 'admin@x.ru');
+    expect(tested.ok).toBe(true);
+    expect(svc.available().map((p) => p.id)).toContain('openrouter');
+    expect((await svc.complete(req, { purpose: 'test' })).provider).toBe('openrouter');
+  });
+});
+
 describe('PROVIDERS registry', () => {
   it('exposes an LlmProvider per id; test() sends a tiny probe', async () => {
     expect(Object.keys(PROVIDERS)).toEqual([...PROVIDER_IDS]);

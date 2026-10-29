@@ -45,6 +45,20 @@ describe('GET routes', () => {
     ]);
   });
 
+  it('/api/ai/available hides providers with a failed last test (REG-07)', async () => {
+    db.prepare(
+      "UPDATE ai_providers SET last_test_at = '2026-10-26T10:00:00.000Z', last_test_ok = 0 WHERE id = 'openrouter'",
+    ).run();
+    const res = await app.inject({ method: 'GET', url: '/api/ai/available' });
+    expect(res.json()).toEqual([]);
+    // admin list still shows the provider with the stored test result
+    const admin = await app.inject({ method: 'GET', url: '/api/admin/ai/providers' });
+    expect(admin.json()[0]).toMatchObject({
+      id: 'openrouter',
+      lastTest: { ok: false, message: expect.any(String) },
+    });
+  });
+
   it('/api/admin/ai/providers returns masked views', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/admin/ai/providers' });
     expect(res.statusCode).toBe(200);

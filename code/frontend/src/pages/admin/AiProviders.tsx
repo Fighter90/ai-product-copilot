@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, ExternalLink, Plug, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ExternalLink, Plug, XCircle } from 'lucide-react';
 import { v3, type ProviderView } from '../../lib/api-v3';
 import { useT, fmtDate } from '../../i18n';
 import { Card, ErrorBox, PageHeader, Pill, Skeleton } from '../../components/ui';
@@ -40,6 +40,14 @@ function ProviderCard({ p }: { p: ProviderView }): JSX.Element {
           {p.name}
           {p.enabled ? <Pill tone="green">on</Pill> : <Pill tone="neutral">off</Pill>}
           {p.hasSecret && <Pill tone="neutral">{p.secretMask}</Pill>}
+          {/* REG-07: провайдер с проваленной последней проверкой исключён из цепочки и /ai/available. */}
+          {p.lastTest && !p.lastTest.ok && (
+            <Pill tone="amber">
+              <span title={t('admin.ai.lastTestFailed')} className="inline-flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" /> {t('admin.ai.lastTestFailed')}
+              </span>
+            </Pill>
+          )}
         </span>
       }
       actions={

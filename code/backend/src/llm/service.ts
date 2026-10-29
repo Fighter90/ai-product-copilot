@@ -187,10 +187,19 @@ export class LlmService {
     });
   }
 
-  /** Providers usable right now (enabled + secret present), in chain order. */
+  /**
+   * REG-07: a provider whose last connectivity test failed (`last_test_ok = 0`) is excluded from
+   * the chain and from /ai/available — «Авто» must not waste attempts on it. `null` (never tested)
+   * and `1` (last test passed) stay eligible; a fresh successful «Проверить соединение» re-enables.
+   */
+  private usable(r: ProviderRow): boolean {
+    return r.enabled === 1 && this.secretOf(r) !== '' && r.last_test_ok !== 0;
+  }
+
+  /** Providers usable right now (enabled + secret present + last test not failed), in chain order. */
   available(): Array<{ id: ProviderId; name: string; model: string }> {
     return this.rows()
-      .filter((r) => r.enabled === 1 && this.secretOf(r))
+      .filter((r) => this.usable(r))
       .map((r) => ({ id: r.id, name: PROVIDER_META[r.id].name, model: r.model }));
   }
 
@@ -325,7 +334,7 @@ export class LlmService {
   ): Promise<CompletionResult> {
     const choice = opts.choice ?? 'auto';
     const candidates = this.rows().filter(
-      (r) => r.enabled === 1 && this.secretOf(r) && (choice === 'auto' || r.id === choice),
+      (r) => this.usable(r) && (choice === 'auto' || r.id === choice),
     );
     if (candidates.length === 0) {
       throw new ProviderError(
