@@ -3,7 +3,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { BrandMark } from '../../components/BrandMark';
 import { LangToggle, ThemeToggle, VersionBadge } from '../../components/ui';
-import { BuildMismatchBadge } from '../../components/BuildMismatchBadge';
+import { BuildMismatchBadge, BuildMismatchBanner } from '../../components/BuildMismatchBadge';
 import { useT } from '../../i18n';
 import { useAuth } from '../../auth/AuthContext';
 
@@ -90,6 +90,8 @@ export function PublicFooter(): JSX.Element {
           </span>
         </div>
       </div>
+      {/* REG-15: a stale tab learns about a post-deploy version change within 5 minutes. */}
+      <BuildMismatchBanner />
     </footer>
   );
 }

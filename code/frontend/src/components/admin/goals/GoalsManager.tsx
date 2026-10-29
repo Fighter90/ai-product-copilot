@@ -24,7 +24,13 @@ const STATUS_TONE = { present: 'green', missing: 'red', mismatch: 'amber' } as c
 export function GoalsManager(): JSX.Element {
   const { t } = useT();
   const qc = useQueryClient();
-  const audit = useQuery({ queryKey: ['admin', 'goals-audit'], queryFn: () => goalsApi.audit() });
+  // REG-14: the audit endpoint takes ~6s server-side — keep the result fresh for a minute so
+  // remounts/refocuses don't refetch; the refresh button still invalidates explicitly.
+  const audit = useQuery({
+    queryKey: ['admin', 'goals-audit'],
+    queryFn: () => goalsApi.audit(),
+    staleTime: 60_000,
+  });
   const [msg, setMsg] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [pendingInput, setPendingInput] = useState<GoalCreateInput | null>(null);

@@ -1,6 +1,10 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import { BuildMismatchBadge, resetBuildMismatchWarning } from './BuildMismatchBadge';
+import {
+  BuildMismatchBadge,
+  BuildMismatchBanner,
+  resetBuildMismatchWarning,
+} from './BuildMismatchBadge';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
@@ -65,5 +69,53 @@ describe('BuildMismatchBadge', () => {
     const badge = await screen.findByTestId('build-mismatch');
     expect(badge).toHaveTextContent('Outdated build');
     expectNoCyrillic(container);
+  });
+});
+
+describe('BuildMismatchBanner (REG-15)', () => {
+  it('shows a non-blocking banner with a hint to reload when the backend runs a newer build', async () => {
+    mockHealth({ status: 'ok', version: '3.1.0', build: 'fff0000111122223333' });
+    renderWithProviders(<BuildMismatchBanner frontend={front} />);
+    const banner = await screen.findByTestId('build-mismatch-banner');
+    expect(banner).toHaveTextContent('Доступна новая версия');
+    expect(banner).toHaveAttribute('role', 'status');
+    // the console warning belongs to the badge; no auto-reload happens
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('renders nothing when the builds match', async () => {
+    mockHealth({ version: '3.1.0', build: 'abc1234ffff' });
+    renderWithProviders(<BuildMismatchBanner frontend={front} />);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(screen.queryByTestId('build-mismatch-banner')).toBeNull();
+  });
+
+  it('is translated in English', async () => {
+    setTestLocale('en');
+    mockHealth({ version: '3.2.0', build: null });
+    const { container } = renderWithProviders(<BuildMismatchBanner frontend={front} />);
+    const banner = await screen.findByTestId('build-mismatch-banner');
+    expect(banner).toHaveTextContent('A new version is available');
+    expectNoCyrillic(container);
+  });
+
+  it('polls /api/health every 5 minutes so an open tab notices a deploy', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ version: '3.1.0', build: 'fff0000111122223333' }), {
+            status: 200,
+          }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      renderWithProviders(<BuildMismatchBanner frontend={front} />);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

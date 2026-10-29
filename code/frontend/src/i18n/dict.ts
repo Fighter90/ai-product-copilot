@@ -225,6 +225,9 @@ export const ru = {
   'admin.ai.usage': 'Использование за 30 дней',
   'admin.ai.calls': 'вызовов',
   'admin.ai.failures': 'ошибок',
+  // REG-13: бэкенд отдаёт эти подписи только по-русски — UI подменяет их через i18n (EN-паритет).
+  'admin.ai.secretYandexGPT': 'API-ключ (секретная часть)',
+  'admin.ai.extraFolderId': 'ID каталога (folder ID)',
 
   'admin.metrika.title': 'Метрика и данные',
   'admin.metrika.subtitle': 'Подключение счётчика, цели KPI, синхронизация и опасные действия',
@@ -975,6 +978,9 @@ export const ru = {
   'hint.build.badge': 'Устаревшая сборка',
   'hint.build.mismatch':
     'Версия страницы ({front}) не совпадает с сервером ({back}). Обновите страницу (Ctrl+R), чтобы получить новую сборку. Если не помогло — попробуйте Ctrl+Shift+R.',
+  // REG-15: неблокирующий баннер о новой версии после деплоя (опрос /api/health раз в 5 минут).
+  'hint.build.banner': 'Доступна новая версия — обновите страницу.',
+  'hint.build.reload': 'Обновить',
   'hint.tour.step': 'Шаг {n} из {total}',
   'hint.tour.skip': 'Пропустить тур',
   'hint.tour.back': 'Назад',
@@ -1508,6 +1514,9 @@ export const en: Record<DictKey, string> = {
   'admin.ai.usage': 'Usage, last 30 days',
   'admin.ai.calls': 'calls',
   'admin.ai.failures': 'failures',
+  // REG-13: `PROVIDER_META` labels arrive from the backend in Russian — re-mapped here for parity.
+  'admin.ai.secretYandexGPT': 'API key (secret part)',
+  'admin.ai.extraFolderId': 'Folder ID',
 
   'admin.metrika.title': 'Metrika & data',
   'admin.metrika.subtitle': 'Counter connection, KPI goals, sync and dangerous actions',
@@ -2258,6 +2267,9 @@ export const en: Record<DictKey, string> = {
   'hint.build.badge': 'Outdated build',
   'hint.build.mismatch':
     'Page version ({front}) does not match the server ({back}). Reload the page (Ctrl+R) to get the new bundle. If that does not help, try Ctrl+Shift+R.',
+  // REG-15: non-blocking banner about a new version after a deploy (polls /api/health every 5 min).
+  'hint.build.banner': 'A new version is available — please reload the page.',
+  'hint.build.reload': 'Reload',
   'hint.tour.step': 'Step {n} of {total}',
   'hint.tour.skip': 'Skip tour',
   'hint.tour.back': 'Back',

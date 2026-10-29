@@ -42,7 +42,7 @@ import { v3 } from '../lib/api-v3';
 import { api } from '../lib/api';
 import { InfoHint } from './InfoHint';
 import { PageHelpLink } from './PageHelpLink';
-import { BuildMismatchBadge } from './BuildMismatchBadge';
+import { BuildMismatchBadge, BuildMismatchBanner } from './BuildMismatchBadge';
 import { CabinetTour } from './onboarding/OnboardingTour';
 import { termHint } from '@pca/shared';
 import { BrandMark } from './BrandMark';
@@ -511,6 +511,9 @@ export function CabinetLayout(): JSX.Element {
         {/* ANA-18: seed rows must never be mistaken for live Metrika data — a persistent
             banner on every cabinet screen while any is_demo row exists. */}
         <DemoBanner />
+
+        {/* REG-15: a stale tab learns about a post-deploy version change within 5 minutes. */}
+        <BuildMismatchBanner />
 
         <main
           key={location.pathname}

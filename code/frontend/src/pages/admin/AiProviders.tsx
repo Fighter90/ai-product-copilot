@@ -2,8 +2,30 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, ExternalLink, Plug, XCircle } from 'lucide-react';
 import { v3, type ProviderView } from '../../lib/api-v3';
-import { useT, fmtDate } from '../../i18n';
+import { useT, fmtDate, type DictKey } from '../../i18n';
 import { Card, ErrorBox, PageHeader, Pill, Skeleton } from '../../components/ui';
+
+/**
+ * REG-13: the backend `PROVIDER_META` labels (secret + extras) come in Russian only. The known
+ * YandexGPT ones are re-mapped through i18n for RU/EN parity; anything unknown falls back to the
+ * server value (so a new provider/extra still renders before the dictionary catches up).
+ */
+const SECRET_LABEL_KEY: Partial<Record<ProviderView['id'], DictKey>> = {
+  yandexgpt: 'admin.ai.secretYandexGPT',
+};
+const EXTRA_LABEL_KEY: Record<string, DictKey> = { folderId: 'admin.ai.extraFolderId' };
+
+type Translate = (key: DictKey, vars?: Record<string, string | number>) => string;
+
+function secretLabel(p: ProviderView, t: Translate): string {
+  const key = SECRET_LABEL_KEY[p.id];
+  return key ? t(key) : p.secretLabel;
+}
+
+function extraLabel(ex: { key: string; label: string }, t: Translate): string {
+  const key = EXTRA_LABEL_KEY[ex.key];
+  return key ? t(key) : ex.label;
+}
 
 function ProviderCard({ p }: { p: ProviderView }): JSX.Element {
   const { t, locale } = useT();
@@ -70,7 +92,7 @@ function ProviderCard({ p }: { p: ProviderView }): JSX.Element {
       >
         <label className="block sm:col-span-2">
           <span className="label">
-            {t('admin.ai.secret')} · {p.secretLabel}
+            {t('admin.ai.secret')} · {secretLabel(p, t)}
           </span>
           <input
             type="password"
@@ -108,7 +130,7 @@ function ProviderCard({ p }: { p: ProviderView }): JSX.Element {
         </label>
         {p.extras.map((ex) => (
           <label key={ex.key} className="block sm:col-span-2">
-            <span className="label">{ex.label}</span>
+            <span className="label">{extraLabel(ex, t)}</span>
             <input
               className="input"
               value={extras[ex.key] ?? ''}
