@@ -96,6 +96,36 @@ describe('goalReachesByDay', () => {
     ]);
   });
 
+  it('validates with a schema that accepts the real nested bytime metrics (prod sync bug)', async () => {
+    const { client } = fakeClient();
+    await goalReachesByDay(client, {
+      counterId: 1,
+      from: '2025-01-01',
+      to: '2025-01-03',
+      goalIds: [80, 90],
+    });
+    const get = (client as unknown as { get: ReturnType<typeof vi.fn> }).get;
+    const schema = get.mock.calls[0]?.[2] as { safeParse: (v: unknown) => { success: boolean } };
+    // Live response captured from Metrika: metrics[i] is the per-day series of metric i.
+    const live = {
+      data: [
+        {
+          dimensions: [],
+          metrics: [
+            [0.0, 2.0, 0.0],
+            [24.0, 32.0, 5.0],
+          ],
+        },
+      ],
+      totals: [
+        [0.0, 2.0, 0.0],
+        [24.0, 32.0, 5.0],
+      ],
+    };
+    expect(schema.safeParse(live).success).toBe(true);
+    expect(schema.safeParse(bytimeFixture).success).toBe(true);
+  });
+
   it('returns no rows for an empty data response', async () => {
     const client = {
       get: vi.fn(async () => ({ data: [] })),

@@ -1,6 +1,6 @@
 import type { MetrikaClient } from '../client';
 import { ENDPOINTS } from '../endpoints';
-import { StatDataResponseSchema, type StatDataResponse } from '../schemas';
+import { StatByTimeResponseSchema, type StatByTimeResponse } from '../schemas';
 import { statFilters } from '../traffic-filter';
 import { mergeByKey } from './dedupe';
 
@@ -84,7 +84,7 @@ export function mergeGoalDayRows(rows: readonly GoalDayRow[]): GoalDayRow[] {
 export async function goalReachesByDay(
   client: MetrikaClient,
   opts: GoalReachesQueryOptions,
-): Promise<{ raw: StatDataResponse; rows: GoalDayRow[] }> {
+): Promise<{ raw: StatByTimeResponse; rows: GoalDayRow[] }> {
   const filters = opts.filters ?? statFilters();
   const raw = await client.get(
     ENDPOINTS.statByTime,
@@ -96,7 +96,7 @@ export async function goalReachesByDay(
       date2: opts.to,
       ...(filters ? { filters } : {}),
     },
-    StatDataResponseSchema,
+    StatByTimeResponseSchema,
   );
   const days = daysBetween(opts.from, opts.to);
   // With no dimensions the response holds a single row; series[i] = values of metric i over days.
