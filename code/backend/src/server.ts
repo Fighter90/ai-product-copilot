@@ -7,6 +7,7 @@ import { HypothesesRepo } from './db/repositories/hypotheses-repo';
 import { DecisionsRepo } from './db/repositories/decisions-repo';
 import { B2bRepo } from './db/repositories/b2b-repo';
 import { MarketingRepo } from './db/repositories/marketing-repo';
+import { B2cPaymentsRepo } from './db/repositories/b2c-payments-repo';
 import { SnapshotRepo } from './db/repositories/snapshot-repo';
 import { SnapshotBuilder } from './report/snapshot-builder';
 import { makeSyncRunner } from './metrika/production-sync';
@@ -60,6 +61,9 @@ async function main(): Promise<void> {
     KPI_TARGET: '300',
   });
   // Report snapshots read the admin's runtime KPI target and pinned goal on every build.
+  // REG-03 (ANA-92): «Оплачено/Осталось» в отчёте — подтверждённые деньги, включая B2C-платежи
+  // (b2c_payments) за период отчёта; заказы Метрики в оплату не входят.
+  const b2cPayments = new B2cPaymentsRepo(db);
   const builder = new SnapshotBuilder({
     metrics,
     hypotheses,
@@ -67,6 +71,7 @@ async function main(): Promise<void> {
     b2b,
     kpiTarget: () => settings.get('KPI_TARGET'),
     primaryGoalId: () => settings.getNumber('GOAL_ID'),
+    b2cPaid: (range) => b2cPayments.sumTickets(range),
   });
 
   const llm = new LlmService(db, appSecret, globalThis.fetch as unknown as HttpFetch);

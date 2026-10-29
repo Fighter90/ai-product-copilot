@@ -4,6 +4,7 @@ import { MetricsRepo } from '../../src/db/repositories/metrics-repo';
 import { HypothesesRepo } from '../../src/db/repositories/hypotheses-repo';
 import { DecisionsRepo } from '../../src/db/repositories/decisions-repo';
 import { B2bRepo } from '../../src/db/repositories/b2b-repo';
+import { B2cPaymentsRepo } from '../../src/db/repositories/b2c-payments-repo';
 import { SnapshotBuilder } from '../../src/report/snapshot-builder';
 import { freshDb, validHypothesis } from '../db/helpers';
 
@@ -137,8 +138,8 @@ describe('SnapshotBuilder', () => {
     expect(snap.funnel.b2bPaidTickets).toBe(20);
   });
 
-  it('counts purchase-goal reaches as payments in the gap (goalLabel.isPaid)', () => {
-    // Seed a purchase goal so the primary goal classifies as «purchase» → its reaches are payments.
+  it('REG-03: purchase-goal reaches are NOT payments — gap = target − B2C paid − B2B paid', () => {
+    // Seed a purchase goal: its reaches are orders («Заказов»), never payments.
     metrics.upsertGoals([
       {
         id: 1,
@@ -151,10 +152,28 @@ describe('SnapshotBuilder', () => {
     ]);
     const snap = builder.build({ id: 'p', generatedAt: 'T', from: '2025-01-01', to: '2025-01-07' });
     expect(snap.goalLabel).toMatchObject({ title: 'Заказов', isPaid: true });
-    // gap = target 300 − B2B paid 20 − Metrika purchases 7 = 273.
-    expect(snap.kpi.gap).toBe(273);
+    // 7 Metrika orders stay a separate metric; gap = 300 − 0 (B2C) − 20 (B2B) = 280.
+    expect(snap.kpi.b2cApplications).toBe(7);
+    expect(snap.kpi.gap).toBe(280);
   });
 
+  it('REG-03: gap subtracts B2C payments (b2c_payments) for the report period', () => {
+    const b2c = new B2cPaymentsRepo(db);
+    b2c.upsert({ date: '2025-01-05', tickets: 12 }, { source: 'manual', now: () => 'T' });
+    b2c.upsert({ date: '2025-01-09', tickets: 5 }, { source: 'csv', now: () => 'T' }); // outside
+    const deps = {
+      metrics,
+      hypotheses: new HypothesesRepo(db),
+      decisions: new DecisionsRepo(db),
+      b2b: new B2bRepo(db),
+    };
+    const opts = { id: 'm', generatedAt: 'T', from: '2025-01-01', to: '2025-01-07' };
+    const snap = new SnapshotBuilder({ ...deps, b2cPaid: (r) => b2c.sumTickets(r) }).build(opts);
+    // gap = 300 − 12 (B2C in period) − 20 (B2B) = 268; the 5 out-of-period tickets don't count.
+    expect(snap.kpi).toEqual({ target: 300, b2cApplications: 7, b2bPaidTickets: 20, gap: 268 });
+    // Without the dep (legacy single-user mode) the B2C money is simply absent → gap 280.
+    expect(builder.build(opts).kpi.gap).toBe(280);
+  });
   it('uses the runtime KPI target setting for target + gap (default 300 when unset/invalid)', () => {
     const deps = {
       metrics,

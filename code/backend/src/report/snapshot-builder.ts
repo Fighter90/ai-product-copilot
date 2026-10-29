@@ -15,6 +15,11 @@ export interface SnapshotBuilderDeps {
   readonly kpiTarget?: () => number | string;
   /** Admin-pinned KPI goal (runtime GOAL_ID; 0 = auto-detect) — same goal the sync used. */
   readonly primaryGoalId?: () => number;
+  /**
+   * REG-03 (ANA-92): Σ paid B2C tickets for the report period (b2c_payments). «Оплачено/Осталось»
+   * counts confirmed money only; absent (legacy single-user mode) → 0.
+   */
+  readonly b2cPaid?: (range: { from: string; to: string }) => number;
 }
 
 export interface BuildOptions {
@@ -88,17 +93,16 @@ export class SnapshotBuilder {
     const goalLabel = formatGoalLabel(
       resolvePrimaryGoal(this.deps.metrics.listGoals(true), this.deps.primaryGoalId?.()),
     );
-    // ANA-75 (БАГ-02): единая семантика «Оплачено/Осталось» — тот же helper paidAndGap, что на
-    // Обзоре, /app/kpi и воронке: цель типа «оплата» → заказы Метрики считаются оплатой;
-    // B2C-платежи и B2B-paid складываются всегда. B2C-платежей у снапшота нет (они живут
-    // в payments-репозитории кабинета), поэтому здесь b2cPaidTickets = 0.
+    // REG-03 (ANA-92), инвариант «заявка ≠ оплата»: единая семантика «Оплачено/Осталось» — тот же
+    // helper paidAndGap, что на Обзоре и /app/kpi. В оплату входят ТОЛЬКО подтверждённые деньги:
+    // B2C-платежи за период (b2c_payments) + B2B-paid. Заказы Метрики (b2cApplications) —
+    // отдельная метрика «заявки/заказы» и в оплату не входят, какой бы ни был тип цели.
+    const b2cPaidTickets = this.deps.b2cPaid?.(range) ?? 0;
     const target = resolveKpiTarget(this.deps.kpiTarget?.());
     const { gap } = paidAndGap({
       target,
-      b2cGoalOrders: b2cApplications,
-      b2cPaidTickets: 0,
+      b2cPaidTickets,
       b2bPaidTickets,
-      goalIsPaid: goalLabel.isPaid,
     });
 
     return {

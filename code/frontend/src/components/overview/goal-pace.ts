@@ -28,16 +28,21 @@ export interface GoalPaceInput {
   /** Period end (ISO date); defaults to the last fact date. */
   readonly to?: string;
   readonly target: number;
-  /** Confirmed payments so far (the KPI strip's «paid»: B2B paid + purchase-goal reaches). */
+  /** Confirmed payments so far (the KPI strip's «paid»: B2C + B2B money only — REG-03). */
   readonly current: number;
-  /** Primary goal is a purchase goal → its reaches are payments and the pace is exact. */
+  /**
+   * True when `points` count confirmed money (the B2B segment's paid CRM deals) — the pace is
+   * exact. False for reach-based series: reaches are never payments (заявка ≠ оплата, REG-03 —
+   * even a purchase goal's reaches are orders), so the pace is only an upper estimate.
+   */
   readonly goalIsPaid: boolean;
 }
 
 /**
  * Linear «успеваем?» forecast for the Overview hero. Progress counts confirmed payments (agrees
- * with the KPI strip gap); the pace is goal reaches/day from {@link paceInfo} — exact for a
- * purchase goal, an upper estimate for an application goal (заявка ≠ оплата). Pure.
+ * with the KPI strip gap); the pace is goal reaches/day from {@link paceInfo} — an upper estimate
+ * whenever the series is reach-based, exact only for the B2B segment (paid CRM deals per day).
+ * Pure.
  */
 export function goalPace(input: GoalPaceInput): GoalPace {
   const { points, target, current, goalIsPaid } = input;

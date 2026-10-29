@@ -358,15 +358,14 @@ export function GoalsView({
       </p>
     );
 
-  // ANA-75 (БАГ-02): единый расчёт «Оплачено/Осталось» через shared paidAndGap — тот же, что на
-  // Обзоре, воронке и в снапшоте отчёта. Цель типа «оплата» → заказы Метрики считаются оплатой;
-  // B2C-платежи и B2B-paid складываются всегда. Цифры на экранах совпадают по определению.
+  // REG-03 (ANA-92), инвариант «заявка ≠ оплата»: единый расчёт «Оплачено/Осталось» через shared
+  // paidAndGap — тот же, что на Обзоре и в снапшоте отчёта. В оплату входят ТОЛЬКО подтверждённые
+  // деньги: B2C-платежи + B2B-paid. Заказы Метрики (b2cApplications) показываются отдельной
+  // метрикой «заявки/заказы» и в оплату не входят, какой бы ни был тип цели.
   const { paid: current, gap: remaining } = paidAndGap({
     target,
-    b2cGoalOrders: b2cApplications,
     b2cPaidTickets: b2cPaid,
     b2bPaidTickets: b2bPaid,
-    goalIsPaid: goalLabel?.isPaid ?? false,
   });
   const progress = target > 0 ? Math.min((current / target) * 100, 100) : 0;
   // formatGoalLabel (shared) titles the goal in Russian — localise by its isPaid flag instead.

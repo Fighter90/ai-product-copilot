@@ -6,31 +6,28 @@
 export interface PaidAndGapInput {
   /** KPI-цель (платные билеты) — админская «Цель по оплатам». */
   readonly target: number;
-  /** Достижения KPI-цели в Метрике за период (заказы для цели типа «оплата», иначе заявки). */
-  readonly b2cGoalOrders: number;
   /** Подтверждённые B2C-платежи (ручной ввод / CSV, платные билеты). */
   readonly b2cPaidTickets: number;
   /** Билеты B2B-сделок в стадии «paid». */
   readonly b2bPaidTickets: number;
-  /** KPI-цель — цель типа «оплата»: заказы Метрики считаются оплатой. */
-  readonly goalIsPaid: boolean;
 }
 
 export interface PaidAndGap {
-  /** Оплачено к цели. */
+  /** Оплачено к цели (только подтверждённые деньги). */
   readonly paid: number;
   /** Осталось до цели: target − paid, не меньше 0. */
   readonly gap: number;
 }
 
 /**
- * ANA-75 (БАГ-02): единая семантика «Оплачено». Цель типа «оплата» → заказы Метрики считаются
- * оплатой; B2C-платежи и B2B-paid складываются всегда. Gap = target − paid (не меньше 0).
- * Один расчёт для Обзора, /app/kpi, воронки и снапшота отчёта — цифры совпадают по определению.
+ * Единая семантика «Оплачено» (REG-03 / ANA-92, инвариант «заявка ≠ оплата»): только
+ * подтверждённые деньги — B2C-платежи (b2c_payments) + билеты B2B-сделок в стадии «paid».
+ * Заказы/заявки Метрики оплатой НЕ считаются ни для какого типа цели — это отдельная метрика
+ * «заявки/заказы». Gap = target − paid (не меньше 0). Один расчёт для Обзора, /app/kpi,
+ * воронки и снапшота отчёта — цифры совпадают по определению.
  */
 export function paidAndGap(input: PaidAndGapInput): PaidAndGap {
-  const metrikaPaid = input.goalIsPaid ? Math.max(0, input.b2cGoalOrders) : 0;
-  const paid = metrikaPaid + Math.max(0, input.b2cPaidTickets) + Math.max(0, input.b2bPaidTickets);
+  const paid = Math.max(0, input.b2cPaidTickets) + Math.max(0, input.b2bPaidTickets);
   return { paid, gap: Math.max(0, input.target - paid) };
 }
 

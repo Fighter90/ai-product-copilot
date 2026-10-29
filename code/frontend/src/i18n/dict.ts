@@ -688,7 +688,7 @@ export const ru = {
   'dh.demo.bannerText':
     'В базе показаны выдуманные демонстрационные данные (pnpm seed). При первом синке с Метрикой они будут удалены автоматически.',
   'dh.kpi.paidLabel': 'Оплачено',
-  'dh.kpi.paidSplit': 'Сейчас: B2C — {b2c}, B2B — {b2b}.',
+  'dh.kpi.paidSplit': 'Оплачено = B2C-оплаты ({b2c}) + B2B ({b2b}).',
   'dh.mk.testPatterns.label': 'Тестовые страницы и UTM',
   'dh.mk.testPatterns.hint':
     'Шаблоны через запятую: фрагменты URL тестовых страниц (/test_1, page312425509.html) и значения UTM (metrika_test, qa). Визиты с ними исключаются из синка. Применяется со следующего синка.',
@@ -842,7 +842,8 @@ export const ru = {
   'an.kpi.tickets': 'билетов',
   'an.kpi.orders': 'Заказов',
   'an.kpi.metrikaCount': '{title} (Метрика): {n}',
-  'an.kpi.paidNote': 'Достижения цели-покупки из Метрики (это оплаты).',
+  'an.kpi.paidNote':
+    'Достижения цели-покупки из Метрики — это заказы, не оплаты: в «Оплачено» не входят.',
   'an.kpi.appsNote':
     'Верхняя оценка потенциала. Это заявки, не оплаты (заявка ≠ оплата); прогресс к цели считается только по подтверждённым оплатам.',
   'an.kpi.b2bPaid': 'B2B оплачено:',
@@ -996,7 +997,7 @@ export const ru = {
   'hint.metric.b2bPaid':
     'Оплаченные B2B-пакеты: сделки раздела «B2B» в статусе «Оплачен». Источник: B2B-выгрузка (CRM).',
   'hint.metric.gap':
-    'До цели: цель минус оплачено (билеты + B2B) — сколько осталось продать к дедлайну. Источник: расчёт по цели и сделкам B2B.',
+    'До цели: цель минус оплачено (B2C-оплаты + B2B) — сколько осталось продать к дедлайну. Источник: расчёт по цели, платежам B2C и сделкам B2B.',
   'hint.tour.welcome.title': 'Добро пожаловать в кабинет',
   'hint.tour.welcome.analyst':
     'Короткий тур по кабинету: выберем период, найдём слабые места воронки и соберём гипотезы.',
@@ -1978,7 +1979,7 @@ export const en: Record<DictKey, string> = {
   'dh.demo.bannerText':
     'The database currently holds made-up demo data (pnpm seed). The first Metrika sync removes it automatically.',
   'dh.kpi.paidLabel': 'Paid',
-  'dh.kpi.paidSplit': 'Now: B2C — {b2c}, B2B — {b2b}.',
+  'dh.kpi.paidSplit': 'Paid = B2C payments ({b2c}) + B2B ({b2b}).',
   'dh.mk.testPatterns.label': 'Test pages and UTM',
   'dh.mk.testPatterns.hint':
     'Comma-separated patterns: test-page URL fragments (/test_1, page312425509.html) and UTM values (metrika_test, qa). Visits matching them are excluded from the sync. Applies from the next sync.',
@@ -2132,7 +2133,8 @@ export const en: Record<DictKey, string> = {
   'an.kpi.tickets': 'tickets',
   'an.kpi.orders': 'Orders',
   'an.kpi.metrikaCount': '{title} (Metrika): {n}',
-  'an.kpi.paidNote': 'Purchase-goal reaches from Metrika (these are payments).',
+  'an.kpi.paidNote':
+    'Purchase-goal reaches from Metrika are orders, not payments — not counted in Paid.',
   'an.kpi.appsNote':
     'An upper estimate of the potential. These are applications, not payments (application ≠ payment); progress towards the goal counts confirmed payments only.',
   'an.kpi.b2bPaid': 'B2B paid:',
@@ -2285,7 +2287,7 @@ export const en: Record<DictKey, string> = {
   'hint.metric.b2bPaid':
     'Paid B2B packages: “B2B” deals with the status “Paid”. Source: the B2B export (CRM).',
   'hint.metric.gap':
-    'Gap to target: target minus paid (tickets + B2B) — what is left to sell by the deadline. Source: computed from the goal and B2B deals.',
+    'Gap to target: target minus paid (B2C payments + B2B) — what is left to sell by the deadline. Source: computed from the goal, B2C payments and B2B deals.',
   'hint.tour.welcome.title': 'Welcome to the cabinet',
   'hint.tour.welcome.analyst':
     'A short tour of the cabinet: pick a period, find funnel weak spots and build hypotheses.',

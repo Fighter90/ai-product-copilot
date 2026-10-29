@@ -192,6 +192,24 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
     expect(screen.queryByText('Direct traffic')).not.toBeInTheDocument();
   });
 
+  it('REG-03 (заявка ≠ оплата): purchase-goal orders do NOT inflate the ring — money only', () => {
+    render(
+      <OverviewView
+        status="success"
+        stats={[{ ...sample, visits: 1000, goalReaches: 52 }]}
+        b2bDeals={[{ id: 1, company: 'A', tickets: 30, stage: 'paid', dateAdded: '2025-01-01' }]}
+        goalLabel={{
+          title: 'Заказов',
+          isPaid: true,
+          showApplicationsCaveat: false,
+          showEstimate: false,
+        }}
+      />,
+    );
+    // paid = B2C 0 + B2B 30 → «30 из 300»; the 52 Metrika orders stay a separate metric.
+    expect(screen.getByRole('img', { name: 'Прогресс к цели: 30 из 300' })).toBeInTheDocument();
+  });
+
   it('shows entry/exit pages as normalized paths with the full URL in the title (БАГ-07)', () => {
     const page: PageStat = {
       date: '2025-01-01',

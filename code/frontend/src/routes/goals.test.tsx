@@ -79,6 +79,20 @@ describe('KPI & forecast (GoalsView)', () => {
     expectNoCyrillic(container);
   });
 
+  it('REG-03 (заявка ≠ оплата): ring/remaining count money only — Metrika orders are separate', () => {
+    view({
+      goalLabel: {
+        title: 'Заказов',
+        isPaid: true,
+        showApplicationsCaveat: false,
+        showEstimate: false,
+      },
+    });
+    // paid = B2C 0 + B2B paid 20 → remaining 280; the 40 Metrika orders are NOT payments.
+    expect(screen.getAllByText('280').length).toBeGreaterThan(0);
+    expect(screen.getByText(/это заказы, не оплаты/)).toBeInTheDocument();
+  });
+
   it('keeps loading and error states in English', () => {
     setTestLocale('en');
     const { container, rerender } = view({ status: 'pending' });

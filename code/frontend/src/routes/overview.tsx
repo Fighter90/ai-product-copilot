@@ -438,21 +438,21 @@ export function OverviewView({
 
   const goalIsPaid = goalLabel?.isPaid ?? false;
   const base = summarizeChannels(stats, b2bDeals ?? [], goalIsPaid, kpiTarget, b2cPaid);
-  // ANA-75 (БАГ-02): единая семантика «Оплачено/Осталось» — тот же helper paidAndGap, что на
-  // /app/kpi, воронке и в снапшоте: цель типа «оплата» → заказы Метрики считаются оплатой;
-  // B2C-платежи и B2B-paid складываются всегда. Цифры на экранах совпадают по определению.
+  // REG-03 (ANA-92), инвариант «заявка ≠ оплата»: единая семантика «Оплачено/Осталось» — тот же
+  // helper paidAndGap, что на /app/kpi и в снапшоте: ТОЛЬКО подтверждённые деньги (B2C-платежи +
+  // B2B-paid). Заказы Метрики (applications) — отдельная метрика и в оплату не входят.
   const { paid, gap } = paidAndGap({
     target: base.target,
-    b2cGoalOrders: base.applications,
     b2cPaidTickets: b2cPaid,
     b2bPaidTickets: base.b2bPaid,
-    goalIsPaid,
   });
   const kpi = { ...base, paid, gap };
   const weak = weakSpots(stats);
   const daily = dailySeries(stats);
+  // Темп по достижениям цели — всегда верхняя оценка оплат (заказы ≠ оплаты, REG-03), даже для
+  // цели-покупки; точный денежный темп — только в сегменте B2B (series = оплаченные сделки CRM).
   const pace = applyDeadline(
-    goalPace({ points: daily, to, target: kpi.target, current: kpi.paid, goalIsPaid }),
+    goalPace({ points: daily, to, target: kpi.target, current: kpi.paid, goalIsPaid: false }),
     eventDate,
   );
   const geoRows = geoDevice ? byCountry(geoDevice) : [];
