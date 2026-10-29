@@ -50,7 +50,9 @@ describe('B2cPaymentsCard (ANA-19)', () => {
     expect(await screen.findByTestId('b2c-row-2026-10-19')).toBeInTheDocument();
     expect(screen.getByTestId('b2c-row-2026-10-20')).toBeInTheDocument();
     expect(screen.getByTestId('b2c-days-count')).toHaveTextContent('Оплачено: 30');
-    expect(screen.getByTestId('b2c-days-count')).toHaveTextContent('B2C — 10, B2B — 20');
+    // REG-03: единое «Оплачено» (деньги), раскладка — в скобках.
+    expect(screen.getByTestId('b2c-days-count')).toHaveTextContent('Оплачено: 30');
+    expect(screen.getByTestId('b2c-days-count')).toHaveTextContent('B2C-оплаты (10) + B2B (20)');
   });
 
   it('saves one day (PUT upsert) with parsed numbers', async () => {
