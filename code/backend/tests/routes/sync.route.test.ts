@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { syncRoutes, withDefaultGoal, type SyncRunner } from '../../src/routes/sync';
+import { syncRoutes, withDefaultGoal, outcomeOf, type SyncRunner } from '../../src/routes/sync';
 
 function appWith(runSync: SyncRunner): FastifyInstance {
   const app = Fastify();
@@ -85,6 +85,23 @@ describe('withDefaultGoal (runtime GOAL_ID)', () => {
       { from: 'a', to: 'b' },
       { from: 'a', to: 'b', goalId: 99 },
     ]);
+  });
+});
+
+// REG-05: one outcome function shared by POST /api/sync and the CLI sync (`pnpm sync`) — the CLI
+// used to record an unconditional «ok» even when optional steps had failed.
+describe('outcomeOf (REG-05)', () => {
+  const base = { goals: 1, days: 1 };
+
+  it('ok when the summary has no (or an empty) errors list', () => {
+    expect(outcomeOf(base as never)).toBe('ok');
+    expect(outcomeOf({ ...base, errors: [] } as never)).toBe('ok');
+  });
+
+  it('partial when any optional step failed', () => {
+    expect(outcomeOf({ ...base, errors: [{ step: 'utm', message: '400' }] } as never)).toBe(
+      'partial',
+    );
   });
 });
 

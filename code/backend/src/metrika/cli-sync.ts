@@ -6,6 +6,9 @@ import { MarketingRepo } from '../db/repositories/marketing-repo';
 import { recomputeWeekly } from '../marketing/sync';
 import { windowFor } from './sync-window';
 import { makeSyncRunner } from './production-sync';
+// REG-05: the CLI must record the same run outcome as POST /api/sync — «partial» when the summary
+// carries per-step errors, not an unconditional «ok».
+import { outcomeOf } from '../routes/sync';
 
 /** CLI: `pnpm --filter @pca/backend sync [--from=YYYY-MM-DD] [--to=YYYY-MM-DD] [--days=N] [--goalId=ID]`.
  *  Excluded from coverage. */
@@ -39,7 +42,13 @@ async function main(): Promise<void> {
       to: window.to,
       goalId: goalIdRaw ? Number(goalIdRaw) : undefined,
     });
-    runs.finish(runId, 'ok', summary as unknown as Record<string, unknown>);
+    // REG-05: failed optional steps (summary.errors) → «partial», not «ok»; only a clean run is ok.
+    runs.finish(
+      runId,
+      outcomeOf(summary),
+      summary as unknown as Record<string, unknown>,
+      summary.errors ?? [],
+    );
     console.log(`sync done (counter ${config.COUNTER_ID}):`, summary);
 
     // ANA-74: после успешного синка пересчитываем syncable-ячейки маркетинговой сетки

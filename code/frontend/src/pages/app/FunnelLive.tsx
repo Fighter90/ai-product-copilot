@@ -130,10 +130,17 @@ export function FunnelLive(): JSX.Element {
                           <div className="flex items-baseline justify-between gap-3 text-sm">
                             <span className="font-medium">
                               {i + 1}. {locale === 'ru' ? st.ru : st.en}
+                              {/* REG-06: a step without a goal in the counter has no data of its
+                                  own — warn instead of showing a silent 0 in the chain. */}
+                              {st.goalId === null && (
+                                <span className="ml-2 text-xs text-amber-700">
+                                  {t('funnel.noGoal')}
+                                </span>
+                              )}
                             </span>
                             <span className="tabular-nums">
                               <b className="text-lg">{fmtNum(st.value, locale)}</b>
-                              {st.fromPrevious !== null && (
+                              {st.fromPrevious !== null && st.fromPrevious <= 1 && (
                                 <span className="ml-2 text-xs text-muted">
                                   {fmtNum(st.fromPrevious * 100, locale, 1)}% {t('funnel.fromPrev')}
                                 </span>

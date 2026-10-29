@@ -589,10 +589,12 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
               .slice(0, i)
               .reverse()
               .find((p) => p.goalId !== null);
-            return {
-              ...st,
-              fromPrevious: st.goalId === null || !prev ? null : ratio(st.value, prev.value),
-            };
+            const r = st.goalId === null || !prev ? null : ratio(st.value, prev.value);
+            // REG-06: pc-goals counts each goal independently, so a later step can outgrow the
+            // previous one (only the *_apply goal exists, the intermediate goals are stale or
+            // absent) — a >100 % «conversion» is noise. Drop it; the step value itself stays in
+            // the chain (the chain is never zeroed out by a missing intermediate step).
+            return { ...st, fromPrevious: r !== null && r <= 1 ? r : null };
           }),
         };
       }),

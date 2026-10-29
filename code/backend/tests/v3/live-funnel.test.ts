@@ -21,6 +21,8 @@ const REACHES: Record<number, number> = {
   22: 15, // clevel_part1
   // clevel_part2 not configured
   24: 5, // clevel_apply
+  30: 7, // clevel_view — REG-06 scenario: stale intermediate goal
+  32: 24, // clevel_apply — REG-06 scenario: outgrows the previous step
 };
 
 let app: FastifyInstance;
@@ -140,5 +142,23 @@ describe('GET /live/funnel — role funnels', () => {
     // Speaker has no goals at all: zeros and no ratios.
     const speaker = body.roleFunnels[1];
     expect(speaker.steps.every((s: { goalId: number | null }) => s.goalId === null)).toBe(true);
+  });
+
+  it('REG-06: a step outgrowing the previous one reports no ratio; the chain keeps its values', async () => {
+    // Only view (stale, 7) and apply (24) exist in the counter — apply «converts» 342.9 %.
+    await build([...BASE, action(30, 'clevel_view'), action(32, 'clevel_apply')]);
+    const body = (await app.inject({ method: 'GET', url: '/api/live/funnel' })).json();
+    const clevel = body.roleFunnels[0];
+    expect(clevel.steps.map((s: { key: string; value: number }) => [s.key, s.value])).toEqual([
+      ['view', 7],
+      ['start', 0],
+      ['part1', 0],
+      ['part2', 0],
+      ['apply', 24],
+    ]);
+    // 24/7 > 100 % → the ratio is dropped, not shown.
+    expect(clevel.steps[4].fromPrevious).toBeNull();
+    // The intermediate gap (start, no goal) does not zero the chain — apply keeps its 24.
+    expect(clevel.steps[1]).toMatchObject({ goalId: null, value: 0, fromPrevious: null });
   });
 });

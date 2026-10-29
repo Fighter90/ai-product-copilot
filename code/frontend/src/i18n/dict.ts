@@ -168,6 +168,7 @@ export const ru = {
   'funnel.roles': 'Заявки по ролям',
   'funnel.note': 'Заказ ≠ оплата: оплаты учитываются отдельно (B2B-сделки, импорт).',
   'funnel.missing': 'В счётчике нет целей для событий: {list}',
+  'funnel.noGoal': 'нет цели в счётчике',
 
   'explore.title': 'Данные',
   'explore.subtitle':
@@ -1447,6 +1448,7 @@ export const en: Record<DictKey, string> = {
   'funnel.roles': 'Applications by role',
   'funnel.note': 'Order ≠ payment: payments are tracked separately (B2B deals, import).',
   'funnel.missing': 'The counter has no goals for events: {list}',
+  'funnel.noGoal': 'no goal in the counter',
 
   'explore.title': 'Data',
   'explore.subtitle': 'Detailed live Metrika tables with sorting, filters and export',

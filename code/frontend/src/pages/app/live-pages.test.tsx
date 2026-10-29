@@ -321,3 +321,47 @@ describe('Explore — weighted totals (БАГ-08)', () => {
     });
   });
 });
+
+// REG-06 (ANA-95): «Заявки по ролям» — a role step whose goal is missing from the counter shows a
+// warning instead of a silent 0, a >100 % step ratio is never rendered, and the chain keeps the
+// values of the steps that do have goals.
+describe('FunnelLive — role steps without a counter goal (REG-06)', () => {
+  it('marks goal-less steps, hides >100% conversions, keeps the chain', async () => {
+    vi.mocked(v3.liveFunnel).mockResolvedValue({
+      ...FUNNEL,
+      roleFunnels: [
+        {
+          key: 'clevel',
+          ru: 'C-level',
+          en: 'C-level',
+          steps: [
+            {
+              key: 'view',
+              ru: 'Открыл анкету',
+              en: 'Opened the form',
+              value: 7,
+              goalId: null,
+              fromPrevious: null,
+            },
+            {
+              key: 'apply',
+              ru: 'Отправил заявку',
+              en: 'Submitted',
+              value: 24,
+              goalId: 9,
+              fromPrevious: 24 / 7,
+            },
+          ],
+        },
+      ],
+    });
+    setTestLocale('ru');
+    renderWithProviders(<FunnelLive />);
+    // The goal-less step is flagged…
+    expect(await screen.findByText('нет цели в счётчике')).toBeInTheDocument();
+    // …the «Отправил заявку» value survives the gap (chain is not zeroed)…
+    expect(screen.getByText('24')).toBeInTheDocument();
+    // …and the 342,9 % ratio (24/7) is not shown.
+    expect(screen.queryByText(/342,9/)).not.toBeInTheDocument();
+  });
+});

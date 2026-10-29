@@ -15,6 +15,14 @@ export type SyncRunner = (body: z.infer<typeof SyncBody>) => Promise<SyncSummary
 export type SyncRunOutcome = 'ok' | 'partial' | 'failed';
 
 /**
+ * REG-05: one source of truth for the recorded outcome — «partial» when any optional step failed
+ * (`summary.errors`), «ok» otherwise. Used by the route and the CLI sync (`pnpm sync`) so both
+ * record the same status for the same summary.
+ */
+export const outcomeOf = (summary: SyncSummary): SyncRunOutcome =>
+  (summary.errors ?? []).length > 0 ? 'partial' : 'ok';
+
+/**
  * ANA-15: persistence boundary for sync runs (implemented by SyncRunRepo). The route records the
  * outcome around the runner call so the admin UI can show the last result and its step errors.
  */
@@ -63,7 +71,7 @@ export async function syncRoutes(app: FastifyInstance, opts: SyncRouteOptions): 
       const errors = summary.errors ?? [];
       opts.recordRun?.finish(
         runId,
-        errors.length > 0 ? 'partial' : 'ok',
+        outcomeOf(summary),
         summary as unknown as Record<string, unknown>,
         errors,
       );
