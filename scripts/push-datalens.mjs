@@ -160,7 +160,17 @@ async function buildDatasetSpec(datasetId, workbookId, connectionId, revisionId)
   });
   const all = v1.dataset.result_schema;
   const missing = Object.keys(FIELDS).filter((src) => !all.some((f) => f.source === src));
-  if (missing.length) throw new Error(`В источнике Метрики нет полей: ${missing.join(', ')}`);
+  if (missing.length) {
+    // ANA-110: опциональные поля не роняют пуш — датасет собирается без них (WARN), чтобы
+    // таймер pca-datalens ходил, пока список целей в коннекторе не обновится (goal_orders).
+    // missing — ключи (метрики), сравниваем по guid'у: опционален только goal_orders.
+    const hard = missing.filter((m) => FIELDS[m] !== 'goal_orders');
+    if (hard.length) throw new Error(`В источнике Метрики нет полей: ${hard.join(', ')}`);
+    for (const m of missing) {
+      console.warn(`WARN: поле ${m} отсутствует в источнике коннектора — датасет без него`);
+      delete FIELDS[m];
+    }
+  }
   const v2 = await rpc('validateDataset', {
     datasetId,
     workbookId,
