@@ -27,7 +27,7 @@ const g = (
 ): CounterGoal => ({ id, name, type, conditions, ...(status ? { status } : {}) });
 
 describe('PC_GOALS_REFERENCE', () => {
-  it('covers exactly the events the live funnel reads, coded G-01…G-18', () => {
+  it('covers exactly the events the live funnel reads, coded G-01…G-21', () => {
     const live = [
       ...PC_FUNNEL_GOAL_STEPS.map((s) => s.event),
       ...TICKET_TYPES.flatMap((t) => [
@@ -39,7 +39,7 @@ describe('PC_GOALS_REFERENCE', () => {
     ];
     expect(PC_GOALS_REFERENCE.map((r) => r.event).sort()).toEqual([...live].sort());
     expect(PC_GOALS_REFERENCE[0]!.code).toBe('G-01');
-    expect(PC_GOALS_REFERENCE.at(-1)!.code).toBe('G-18');
+    expect(PC_GOALS_REFERENCE.at(-1)!.code).toBe('G-21');
     for (const r of PC_GOALS_REFERENCE) {
       expect(r.type).toBe('action');
       expect(r.condition).toEqual({ type: 'exact', url: r.event });

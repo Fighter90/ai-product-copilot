@@ -256,8 +256,8 @@ describe('GET /api/metrics/goal-roles', () => {
     const { roles } = res.json() as {
       roles: Array<{ code: string; event: string; ru: string; en: string; group: string }>;
     };
-    // The whole reference is served (18 entries: 5 funnel stages, 3×3 tickets, 4 applications).
-    expect(roles.length).toBe(18);
+    // The whole reference is served (21 entries: 5 funnel stages, 4×4 tickets, 4 applications).
+    expect(roles.length).toBe(21);
     expect(roles[0]).toMatchObject({ code: 'G-01', group: 'funnel' });
     // The Goals page joins by JS-event name — codes and events are unique.
     const events = roles.map((r) => r.event);
