@@ -62,6 +62,17 @@ describe('decisions API', () => {
     expect(res.json().error).toBe('invalid decision');
   });
 
+  it('rejects an incomplete body with 400 instead of 500 (REG-02)', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/decisions',
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('invalid body');
+    expect(Array.isArray(res.json().issues)).toBe(true);
+  });
+
   it('returns 500 on a non-validation error (bad hypothesis FK)', async () => {
     const res = await ctx.app.inject({
       method: 'POST',

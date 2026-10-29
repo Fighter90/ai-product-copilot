@@ -16,6 +16,55 @@ const StatusBody = z.object({
   status: z.enum(['draft', 'in_progress', 'green', 'yellow', 'red', 'expired']),
 });
 
+const AssumptionBody = z.object({
+  category: z.enum(['behavior', 'market', 'tech']),
+  text: z.string().min(1),
+});
+
+const ValidationMethodBody = z.object({
+  type: z.enum(['synthetic', 'live', 'quantitative', 'market']),
+  plan: z.string().min(1),
+  cost: z.string().optional(),
+});
+
+const EvidenceBody = z.object({
+  type: z.string().min(1),
+  rawResponseId: z.number().int().optional(),
+  slice: z.string().optional(),
+  note: z.string().optional(),
+});
+
+/** REG-02: shape of NewHypothesis; completeness itself stays in the repo (422, not 400). */
+const CreateBody = z.object({
+  diamondPhase: z.enum(['define', 'develop']),
+  kind: z.enum(['problem', 'solution']),
+  subject: z.string().min(1),
+  action: z.string().min(1),
+  solution: z.string().min(1),
+  condition: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  parentId: z.number().int().positive().optional(),
+  hiddenAssumptions: z.array(AssumptionBody),
+  validationMethods: z.array(ValidationMethodBody),
+  impact: z.number().int().min(1).max(10),
+  confidence: z.number().int().min(1).max(10),
+  ease: z.number().int().min(1).max(10),
+  impactRationale: z.string().min(1),
+  confidenceRationale: z.string().min(1),
+  easeRationale: z.string().min(1),
+  greenCriteria: z.string().min(1),
+  yellowCriteria: z.string().min(1),
+  redCriteria: z.string().min(1),
+  deadlineDays: z.number().int().min(1),
+  evidence: z.array(EvidenceBody).optional(),
+  isDemo: z.boolean().optional(),
+  source: z.enum(['manual', 'ai']).optional(),
+  aiProvider: z.string().optional(),
+  aiModel: z.string().optional(),
+  unverifiedNumbers: z.array(z.string()).optional(),
+});
+
 const idOf = (params: unknown): number => Number((params as { id: string }).id);
 
 /**
@@ -34,8 +83,13 @@ export async function hypothesesRoutes(
   });
 
   app.post('/hypotheses', { schema: { tags: ['hypotheses'] } }, async (req, reply) => {
+    // REG-02: validate before touching fields — a partial body used to 500 on undefined.
+    const parsed = CreateBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });
+    }
     try {
-      return reply.code(201).send(opts.repo.create(req.body as NewHypothesis));
+      return reply.code(201).send(opts.repo.create(parsed.data as NewHypothesis));
     } catch (err) {
       if (err instanceof HypothesisValidationError) {
         return reply.code(422).send({ error: 'invalid hypothesis', issues: err.errors });

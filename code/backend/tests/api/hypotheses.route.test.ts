@@ -41,6 +41,19 @@ describe('hypotheses API', () => {
     expect(Array.isArray(res.json().issues)).toBe(true);
   });
 
+  it('rejects an incomplete body with 400 instead of 500 (REG-02)', async () => {
+    for (const payload of [{ title: 'x' }, {}]) {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: '/api/hypotheses',
+        payload,
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('invalid body');
+      expect(Array.isArray(res.json().issues)).toBe(true);
+    }
+  });
+
   it('returns 500 when the repo throws a non-validation error (bad parent FK)', async () => {
     const res = await ctx.app.inject({
       method: 'POST',
