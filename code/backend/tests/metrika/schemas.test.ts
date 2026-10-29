@@ -1,5 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { StatDataResponseSchema } from '../../src/metrika/schemas';
+import { StatByTimeResponseSchema, StatDataResponseSchema } from '../../src/metrika/schemas';
+
+describe('StatByTimeResponseSchema (/stat/v1/data/bytime)', () => {
+  it('accepts nested per-day metric series (number[][]) as bytime returns', () => {
+    const res = StatByTimeResponseSchema.safeParse({
+      data: [
+        {
+          dimensions: [],
+          metrics: [
+            [0, 2, null],
+            [24, 32, 5],
+          ],
+        },
+      ],
+      totals: [
+        [0, 2, 0],
+        [24, 32, 5],
+      ],
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it('rejects flat metrics — that is the /stat/v1/data shape, not bytime', () => {
+    const res = StatByTimeResponseSchema.safeParse({
+      data: [{ dimensions: [], metrics: [1, 2] }],
+    });
+    expect(res.success).toBe(false);
+  });
+});
 
 describe('StatDataResponseSchema (real Metrika shapes)', () => {
   it('accepts flat per-metric totals (number[]) as /stat/v1/data returns', () => {
