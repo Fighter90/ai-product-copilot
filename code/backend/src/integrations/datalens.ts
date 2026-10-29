@@ -97,6 +97,51 @@ export const DATASETS: Dataset[] = [
           FROM channel_stats WHERE date BETWEEN :from AND :to GROUP BY date ORDER BY date`,
   },
   {
+    // ANA-111: pc-goals goal catalog with ticket-tariff labels for DataLens. Labels are derived
+    // from the goal names the sync stores (reference-named «G-XX Название (event)» or the bare
+    // event the customer used, e.g. «ticket_halloween»). goals_daily stays the KPI aggregate —
+    // per-tariff reaches are live-only (see /live/funnel), so the catalog is the honest way to
+    // join ticket_type/ticket names onto DataLens charts, not a daily-per-goal dataset.
+    id: 'goals_catalog',
+    ru: 'Цели pc-goals: тарифы и шаги',
+    en: 'pc-goals goals: tariffs and steps',
+    ranged: false,
+    columns: [
+      c('goal_id', 'integer', 'ID цели', 'Goal ID'),
+      c('name', 'string', 'Название цели', 'Goal name'),
+      c('event', 'string', 'JS-событие', 'JS event'),
+      c(
+        'goal_group',
+        'string',
+        'Группа (funnel/ticket/role/other)',
+        'Group (funnel/ticket/role/other)',
+      ),
+      c('ticket_type', 'string', 'Тариф билета', 'Ticket type'),
+      c('ticket_stage', 'string', 'Шаг (pick/buy/checkout)', 'Step (pick/buy/checkout)'),
+      c('archived', 'integer', 'Архивная (1/0)', 'Archived (1/0)'),
+    ],
+    sql: `SELECT id, name, event,
+            CASE WHEN event IN ('volunteer_apply','speaker_apply','clevel_apply','partner_apply')
+                 THEN 'role'
+                 WHEN event LIKE 'ticket%' THEN 'ticket'
+                 WHEN type = 'action' THEN 'funnel'
+                 ELSE 'other' END,
+            CASE WHEN event LIKE 'ticket%halloween' THEN 'halloween'
+                 WHEN event LIKE 'ticket%standard' THEN 'standard'
+                 WHEN event LIKE 'ticket%optimal' THEN 'optimal'
+                 WHEN event LIKE 'ticket%max' THEN 'max' END,
+            CASE WHEN event LIKE 'ticket_pick%' THEN 'pick'
+                 WHEN event LIKE 'ticket_checkout%' THEN 'checkout'
+                 WHEN event LIKE 'ticket%' THEN 'buy' END,
+            is_archived
+          FROM (SELECT id, name, type, is_archived,
+                  CASE WHEN instr(name,'(') > 0 AND instr(name,')') > instr(name,'(') + 1
+                       THEN trim(substr(name, instr(name,'(')+1,
+                                        instr(name,')')-instr(name,'(')-1))
+                       ELSE name END AS event
+                FROM goals) ORDER BY id`,
+  },
+  {
     id: 'funnel_daily',
     ru: 'Воронка по дням',
     en: 'Funnel by day',

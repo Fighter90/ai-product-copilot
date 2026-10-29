@@ -170,6 +170,7 @@ describe('dataLensRoutes', () => {
     expect(list.map((d: { id: string }) => d.id)).toEqual([
       'channels_daily',
       'goals_daily',
+      'goals_catalog',
       'funnel_daily',
       'utm_daily',
       'pages_daily',
@@ -205,6 +206,22 @@ describe('dataLensRoutes', () => {
       (await app.inject({ method: 'GET', url: '/api/integrations/datalens/export/nope' }))
         .statusCode,
     ).toBe(404);
+  });
+
+  it('GET /export/goals_catalog.csv: ticket_type/ticket_stage columns in the ru header (ANA-111)', async () => {
+    await build();
+    db.prepare(
+      "INSERT INTO goals (id, name, type, is_b2b, is_archived, synced_at) VALUES (44, 'ticket_halloween', 'action', 0, 0, '2026-10-30T00:00:00Z')",
+    ).run();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/integrations/datalens/export/goals_catalog.csv?lang=ru',
+    });
+    expect(res.statusCode).toBe(200);
+    const [header, row] = res.body.split('\r\n');
+    expect(header).toContain('Тариф билета');
+    expect(header).toContain('Шаг (pick/buy/checkout)');
+    expect(row).toContain('ticket,halloween,buy,0');
   });
 
   it('GET /export rejects a malformed range with 400', async () => {
@@ -524,6 +541,79 @@ describe('datasets registry and exports (ANA-55)', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual(['2025-01-01', 150, 120, 15, 10]);
     expect(rows[1]).toEqual(['2025-01-02', 60, 50, 3, 5]);
+  });
+
+  it('goals_catalog derives event, group, ticket_type and ticket_stage from goal names (ANA-111)', () => {
+    const ins = db.prepare(
+      'INSERT INTO goals (id, name, type, is_b2b, is_archived, synced_at) VALUES (?, ?, ?, 0, ?, ?)',
+    );
+    ins.run(1, 'G-01 Увидел блок билетов (price_view)', 'action', 0, '2026-10-30T00:00:00Z');
+    ins.run(
+      2,
+      'G-06 Выбор билета standard (ticket_pick_standard)',
+      'action',
+      0,
+      '2026-10-30T00:00:00Z',
+    );
+    ins.run(3, 'G-12 Покупка max (ticket_buy_max)', 'action', 0, '2026-10-30T00:00:00Z');
+    ins.run(4, 'ticket_halloween', 'action', 0, '2026-10-30T00:00:00Z'); // ANA-111: customer-named buy goal, no «buy» part
+    ins.run(
+      5,
+      'G-16 Переход к оплате halloween (ticket_checkout_halloween)',
+      'action',
+      1,
+      '2026-10-30T00:00:00Z',
+    );
+    ins.run(6, 'G-18 Заявка волонтёра (volunteer_apply)', 'action', 0, '2026-10-30T00:00:00Z');
+    ins.run(7, 'Старая URL-цель', 'url', 1, '2026-10-30T00:00:00Z'); // non-action type → «other», no ticket labels
+    const ds = DATASETS.find((d) => d.id === 'goals_catalog')!;
+    const rows = exportDataset(db, ds, '2000-01-01', '2100-01-01') as unknown[][];
+    expect(rows).toHaveLength(7);
+    const byId = new Map(rows.map((r) => [r[0] as number, r]));
+    // id, name, event, group, ticket_type, ticket_stage, archived
+    expect(byId.get(1)).toEqual([
+      1,
+      'G-01 Увидел блок билетов (price_view)',
+      'price_view',
+      'funnel',
+      null,
+      null,
+      0,
+    ]);
+    expect(byId.get(2)![3]).toBe('ticket');
+    expect(byId.get(2)![4]).toBe('standard');
+    expect(byId.get(2)![5]).toBe('pick');
+    expect(byId.get(3)![4]).toBe('max');
+    expect(byId.get(3)![5]).toBe('buy');
+    // The bare customer-named goal: name doubles as the event, halloween «buy».
+    expect(byId.get(4)).toEqual([
+      4,
+      'ticket_halloween',
+      'ticket_halloween',
+      'ticket',
+      'halloween',
+      'buy',
+      0,
+    ]);
+    expect(byId.get(5)![4]).toBe('halloween');
+    expect(byId.get(5)![5]).toBe('checkout');
+    expect(byId.get(5)![6]).toBe(1); // archived flag passes through
+    expect(byId.get(6)).toEqual([
+      6,
+      'G-18 Заявка волонтёра (volunteer_apply)',
+      'volunteer_apply',
+      'role',
+      null,
+      null,
+      0,
+    ]);
+    expect(byId.get(7)).toEqual([7, 'Старая URL-цель', 'Старая URL-цель', 'other', null, null, 1]);
+  });
+
+  it('goals_catalog returns [] when the goals table is absent (no sync yet)', () => {
+    db.exec('DROP TABLE goals');
+    const ds = DATASETS.find((d) => d.id === 'goals_catalog')!;
+    expect(exportDataset(db, ds, '2000-01-01', '2100-01-01')).toEqual([]);
   });
 
   it('funnel_daily joins Metrika days with manual B2B dates (no gaps in the day axis)', () => {

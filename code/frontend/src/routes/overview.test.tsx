@@ -22,6 +22,8 @@ vi.mock('../lib/api-v3', () => ({
 }));
 import { api } from '../lib/api';
 import { v3 } from '../lib/api-v3';
+import { addDaysIso } from '../lib/forecast';
+import { fmtDate } from '../i18n';
 import { OverviewView, Overview } from './overview';
 
 const sample: ChannelStat = {
@@ -67,6 +69,22 @@ describe('OverviewView', () => {
     expect(screen.getAllByTestId('echart')).toHaveLength(2);
     expect(screen.getByText(/Нет слабых мест/)).toBeInTheDocument();
     expect(screen.queryByText(/KPI-цель определена автоматически/)).not.toBeInTheDocument();
+  });
+
+  it('REG-17 (ANA-105): the deadline caveat equals the расчёт — coverage days ×2 and the computed date', () => {
+    // 3 fact days → window = 3 → deadline = 2025-01-03 + 6 (the coverage-based heuristic goalPace runs).
+    const stats = [
+      sample,
+      { ...sample, date: '2025-01-02', visits: 80, goalReaches: 3 },
+      { ...sample, date: '2025-01-03', visits: 60, goalReaches: 4 },
+    ];
+    render(<OverviewView status="success" stats={stats} showDeadlineCaveat />);
+    const caveat = screen.getByTestId('deadline-caveat');
+    const deadline = addDaysIso('2025-01-03', 3 * 2);
+    expect(caveat).toHaveTextContent(`2 × 3`);
+    expect(caveat).toHaveTextContent(fmtDate(deadline, 'ru'));
+    // The old idealized caption («конец периода + 2 длины периода») must be gone.
+    expect(caveat).not.toHaveTextContent('2 длины периода');
   });
 
   it('shows the auto-detected KPI goal badge when a primary goal is provided', () => {

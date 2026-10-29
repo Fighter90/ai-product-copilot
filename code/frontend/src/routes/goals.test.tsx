@@ -1,6 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { B2bDeal } from '@pca/shared';
+import { forecastGoal } from '../lib/forecast';
+import { fmtDate } from '../i18n';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 import { GoalsView } from './goals';
 
@@ -141,6 +143,49 @@ describe('KPI & forecast (GoalsView)', () => {
     expect(screen.getByTestId('forecast-partial')).toHaveTextContent(
       'forecast based on partial data',
     );
+    expectNoCyrillic(container);
+  });
+
+  it('REG-17 (ANA-105): the forecast note equals the расчёт — deadline, window and base from the same inputs', () => {
+    view();
+    // Same расчёт the panel runs (forecastGoal on the same points/to/target, zero scenario).
+    const fc = forecastGoal({
+      points,
+      to: '2025-01-02',
+      target: 300,
+      trafficPct: 0,
+      crUpliftPp: 0,
+    });
+    const note = screen.getByTestId('deadline-note');
+    // The deadline shown is exactly the расчёт's (coverage-based), not the idealized «2 длины периода».
+    expect(note).toHaveTextContent(fmtDate(fc.horizonDate, 'ru'));
+    expect(note).toHaveTextContent(`2 × ${fc.windowDays}`);
+    // The base label matches the last ≤7 fact days the расчёт's recent pace reads.
+    expect(note).toHaveTextContent(`${fmtDate('2025-01-01', 'ru')}–${fmtDate('2025-01-02', 'ru')}`);
+    expect(note).not.toHaveTextContent('2 длины периода');
+  });
+
+  it('REG-17 (ANA-105): with EVENT_DATE the note shows the event date the расчёт used', () => {
+    view({ eventDate: '2026-04-15' });
+    const fc = forecastGoal({
+      points,
+      to: '2025-01-02',
+      target: 300,
+      trafficPct: 0,
+      crUpliftPp: 0,
+      deadlineDate: '2026-04-15',
+    });
+    const note = screen.getByTestId('deadline-note');
+    expect(note).toHaveTextContent(fmtDate(fc.horizonDate, 'ru'));
+    expect(note).not.toHaveTextContent('2 ×');
+  });
+
+  it('REG-17 (ANA-105): the note keeps English wording (no Cyrillic)', () => {
+    setTestLocale('en');
+    const { container } = view({ eventDate: '2026-04-15' });
+    const note = screen.getByTestId('deadline-note');
+    expect(note).toHaveTextContent('event date');
+    expect(note).toHaveTextContent(`${fmtDate('2025-01-01', 'en')}–${fmtDate('2025-01-02', 'en')}`);
     expectNoCyrillic(container);
   });
 });

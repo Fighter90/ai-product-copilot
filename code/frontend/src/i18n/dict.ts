@@ -333,6 +333,12 @@ export const ru = {
     'Линейная модель по дневным достижениям цели; дедлайн = конец периода + 2 длины периода (дата события в системе не задана). Сезонность и разовые акции не учитываются.',
   'kpi.whatif.disclaimerEventDate':
     'Линейная модель по дневным достижениям цели; дедлайн — дата события {date}. Сезонность и разовые акции не учитываются.',
+  'kpi.whatif.disclaimerComputed':
+    'Линейная модель по дневным достижениям цели; текущий темп — по последним 7 дням: {base}. Дедлайн = конец периода + 2 × {days} дн. покрытия данных = {date}. Сезонность и разовые акции не учитываются.',
+  'kpi.whatif.disclaimerEventDateComputed':
+    'Линейная модель по дневным достижениям цели; текущий темп — по последним 7 дням: {base}. Дедлайн — дата события {date}. Сезонность и разовые акции не учитываются.',
+  'ov.deadlineCaveatComputed':
+    'Дедлайн = конец периода + 2 × {days} дн. покрытия данных = {date}. Дата события не задана — задайте её в «Метрика и данные», и дедлайн KPI станет точным.',
   'kpi.whatif.chartFact': 'Факт (накопленно)',
   'kpi.whatif.chartForecast': 'Прогноз (сценарий)',
   'kpi.whatif.chartTarget': 'Цель {n}',
@@ -1628,6 +1634,12 @@ export const en: Record<DictKey, string> = {
     'Linear model over daily goal reaches; deadline = period end + 2× period length (no event date in the system). Seasonality and one-off campaigns are not modelled.',
   'kpi.whatif.disclaimerEventDate':
     'Linear model over daily goal reaches; deadline = the event date {date}. Seasonality and one-off campaigns are not modelled.',
+  'kpi.whatif.disclaimerComputed':
+    'Linear model over daily goal reaches; the current pace reads the last 7 days: {base}. Deadline = period end + 2 × {days} days of data coverage = {date}. Seasonality and one-off campaigns are not modelled.',
+  'kpi.whatif.disclaimerEventDateComputed':
+    'Linear model over daily goal reaches; the current pace reads the last 7 days: {base}. Deadline = the event date {date}. Seasonality and one-off campaigns are not modelled.',
+  'ov.deadlineCaveatComputed':
+    'Deadline = period end + 2 × {days} days of data coverage = {date}. No event date is set — set it in «Metrika & data» to make the KPI deadline exact.',
   'kpi.whatif.chartFact': 'Actual (cumulative)',
   'kpi.whatif.chartForecast': 'Forecast (scenario)',
   'kpi.whatif.chartTarget': 'Target {n}',

@@ -122,6 +122,14 @@ function WhatIfForecast({
   );
   const summary = useMemo(() => pipelineSummary(deals), [deals]);
 
+  // REG-17 (ANA-105): база «текущего темпа» — те же points, что в расчёте: последние ≤7 дней факта.
+  const recent = points.slice(-7);
+  const recentLast = recent.at(-1);
+  const baseLabel =
+    recent[0] && recentLast
+      ? `${fmtDate(recent[0].date, locale)}–${fmtDate(recentLast.date, locale)}`
+      : '—';
+
   const scenarioDateLabel = fc.scenarioDate
     ? fmtDate(fc.scenarioDate, locale)
     : fc.reached
@@ -190,7 +198,7 @@ function WhatIfForecast({
               </div>
               {deviation}
               {/* REG-04 (ANA-93): the pace forecast extrapolates a partially covered period —
-                  the «прогноз по неполным данным» caption sits right by the deadline. */}
+                  the «forecast based on partial data» caption sits right by the deadline. */}
               {coveragePartial && (
                 <div
                   data-testid="forecast-partial"
@@ -273,10 +281,20 @@ function WhatIfForecast({
               })}
             />
           </div>
-          <p className="mt-2 text-xs text-slate-500">
-            {eventDate
-              ? t('kpi.whatif.disclaimerEventDate', { date: fmtDate(eventDate, locale) })
-              : t('kpi.whatif.disclaimer')}
+          {/* REG-17 (ANA-105): the forecast note equals the calculation — the recent-pace base and
+              the deadline are read from fc (forecastGoal on the same inputs); the static
+              «period end + 2× period length» text that contradicted the calculation is gone. */}
+          <p className="mt-2 text-xs text-slate-500" data-testid="deadline-note">
+            {fc.deadlineFromEventDate
+              ? t('kpi.whatif.disclaimerEventDateComputed', {
+                  base: baseLabel,
+                  date: fmtDate(fc.horizonDate, locale),
+                })
+              : t('kpi.whatif.disclaimerComputed', {
+                  base: baseLabel,
+                  days: fc.windowDays,
+                  date: fmtDate(fc.horizonDate, locale),
+                })}
           </p>
         </div>
       ) : (

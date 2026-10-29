@@ -508,7 +508,16 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
       ...(paymentEvent ? [paymentEvent] : []),
       ...ROLE_FUNNELS.flatMap((f) => f.steps.map((s) => roleEvent(s.events) ?? '')),
     ].filter((e) => e && !wanted.includes(e));
-    const present = [...new Set([...wanted.filter((e) => byEvent.has(e)), ...optional])];
+    // ANA-111: the halloween tariff names its buy goal without the «buy» part — the counter has
+    // «ticket_halloween» where the pc-goals reference expects «ticket_buy_halloween». The plain
+    // `ticket_<type>` events are read-side aliases: queried only when the counter has them, never
+    // reported as missing, and used for the buy step when the exact goal is absent.
+    const ticketAliases = TICKET_TYPES.map((t) => `ticket_${t}`).filter(
+      (e) => byEvent.has(e) && !wanted.includes(e),
+    );
+    const present = [
+      ...new Set([...wanted.filter((e) => byEvent.has(e)), ...optional, ...ticketAliases]),
+    ];
     const values = new Map<string, number>();
     for (let i = 0; i < present.length; i += 18) {
       const chunk = present.slice(i, i + 18);
@@ -601,7 +610,9 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
       tickets: TICKET_TYPES.map((t) => ({
         type: t,
         pick: values.get(`ticket_pick_${t}`) ?? 0,
-        buy: values.get(`ticket_buy_${t}`) ?? 0,
+        // The exact `ticket_buy_<type>` goal wins (even at 0); the plain `ticket_<type>` event
+        // (halloween's naming) is the fallback — see the ticketAliases comment above.
+        buy: values.get(`ticket_buy_${t}`) ?? values.get(`ticket_${t}`) ?? 0,
         checkout: values.get(`ticket_checkout_${t}`) ?? 0,
       })),
       roles: ROLE_EVENTS.map((r) => ({

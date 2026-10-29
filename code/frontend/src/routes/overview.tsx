@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { channelName, translate, useT, type DictKey } from '../i18n';
+import { channelName, fmtDate, translate, useT, type DictKey } from '../i18n';
 import type { Locale } from '../store/prefs';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -504,10 +504,15 @@ export function OverviewView({
         weakSpot={weak[0]}
       />
 
-      {/* ANA-75 (БАГ-01): эвристический дедлайн — одна и та же оговорка на Обзоре и на /app/kpi. */}
+      {/* ANA-75 (BUG-01): the heuristic deadline gets the same caveat on Overview and /app/kpi.
+          REG-17 (ANA-105): the caveat equals the calculation — the real coverage days and the
+          computed deadline (pace.deadline after applyDeadline), not a static «+ 2× period» text. */}
       {showDeadlineCaveat ? (
         <p data-testid="deadline-caveat" className="text-xs text-slate-500">
-          {t('kpi.whatif.disclaimer')}
+          {t('ov.deadlineCaveatComputed', {
+            days: pace.windowDays,
+            date: fmtDate(pace.deadline, locale),
+          })}
         </p>
       ) : null}
 

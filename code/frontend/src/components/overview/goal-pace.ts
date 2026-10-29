@@ -17,6 +17,8 @@ export interface GoalPace {
   readonly forecastDate: string | null;
   /** Deadline: period end + 2× the fact window — the same horizon the KPI page («Что если») uses. */
   readonly deadline: string;
+  /** REG-17 (ANA-105): coverage days the deadline heuristic multiplies — the caveat shows the real formula. */
+  readonly windowDays: number;
   /** forecast − deadline in days: negative = ahead, positive = behind, null = unreachable. */
   readonly deviationDays: number | null;
   readonly status: PaceStatus;
@@ -69,6 +71,7 @@ export function goalPace(input: GoalPaceInput): GoalPace {
     isUpperEstimate: !goalIsPaid,
     forecastDate,
     deadline,
+    windowDays: pace.days,
     deviationDays,
     status,
   };

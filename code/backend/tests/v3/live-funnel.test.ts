@@ -23,6 +23,16 @@ const REACHES: Record<number, number> = {
   24: 5, // clevel_apply
   30: 7, // clevel_view — REG-06 scenario: stale intermediate goal
   32: 24, // clevel_apply — REG-06 scenario: outgrows the previous step
+  40: 30, // ticket_pick_standard
+  41: 12, // ticket_buy_standard
+  42: 6, // ticket_checkout_standard
+  43: 25, // ticket_pick_halloween
+  44: 9, // ticket_halloween — ANA-111: the customer's buy goal without the «buy» part
+  45: 5, // ticket_checkout_halloween
+  46: 20, // ticket_buy_max (exact buy goal)
+  47: 999, // ticket_max — ANA-111: alias must lose to the exact goal
+  48: 2, // ticket_pick_max
+  49: 1, // ticket_checkout_max
 };
 
 let app: FastifyInstance;
@@ -107,6 +117,41 @@ describe('GET /live/funnel — Визит … Оплата', () => {
       fromPrevious: null,
       fromFirst: null,
     });
+  });
+});
+
+describe('GET /live/funnel — ticket tariffs (ANA-111)', () => {
+  it('halloween «buy» falls back to the plain ticket_halloween goal (customer naming)', async () => {
+    await build([
+      ...BASE,
+      action(43, 'ticket_pick_halloween'),
+      action(44, 'ticket_halloween'),
+      action(45, 'ticket_checkout_halloween'),
+    ]);
+    const body = (await app.inject({ method: 'GET', url: '/api/live/funnel' })).json();
+    const hw = body.tickets.find((x: { type: string }) => x.type === 'halloween');
+    expect(hw).toEqual({ type: 'halloween', pick: 25, buy: 9, checkout: 5 });
+    // The alias must not leak into tariffs whose goals are absent.
+    const std = body.tickets.find((x: { type: string }) => x.type === 'standard');
+    expect(std).toEqual({ type: 'standard', pick: 0, buy: 0, checkout: 0 });
+    // The alias itself is not reported missing; the reference-named event stays flagged —
+    // that contract gap is the goals-audit's job (G-17 is still absent from the counter).
+    expect(body.missing).not.toContain('ticket_halloween');
+    expect(body.missing).toContain('ticket_buy_halloween');
+  });
+
+  it('an exact ticket_buy_<type> goal wins over the plain alias; the alias is still queried', async () => {
+    await build([
+      ...BASE,
+      action(48, 'ticket_pick_max'),
+      action(46, 'ticket_buy_max'),
+      action(47, 'ticket_max'),
+      action(49, 'ticket_checkout_max'),
+    ]);
+    const body = (await app.inject({ method: 'GET', url: '/api/live/funnel' })).json();
+    const mx = body.tickets.find((x: { type: string }) => x.type === 'max');
+    expect(mx).toEqual({ type: 'max', pick: 2, buy: 20, checkout: 1 });
+    expect(body.missing).not.toContain('ticket_buy_max');
   });
 });
 
