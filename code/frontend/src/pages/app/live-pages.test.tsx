@@ -204,6 +204,25 @@ describe('Explore — goal selector honours the archived filter', () => {
   });
 });
 
+describe('Explore — unknown preset (REG-09)', () => {
+  it('redirects a bogus preset to the default sources report instead of the 404 error screen', async () => {
+    setTestLocale('ru');
+    renderWithProviders(
+      <Routes>
+        <Route path="/app/explore/:preset" element={<Explore />} />
+      </Routes>,
+      '/app/explore/bogus',
+    );
+    // The sources report loads (after the redirect) and the doomed «bogus» request never fires.
+    await waitFor(() => {
+      expect(vi.mocked(v3.liveTable).mock.calls.some(([preset]) => preset === 'sources')).toBe(
+        true,
+      );
+    });
+    expect(vi.mocked(v3.liveTable).mock.calls.every(([preset]) => preset !== 'bogus')).toBe(true);
+  });
+});
+
 describe('Live pages in English', () => {
   it('Live renders without Cyrillic', async () => {
     setTestLocale('en');

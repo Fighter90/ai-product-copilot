@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { v3, type LiveTable } from '../../lib/api-v3';
 import { useT, channelName, type DictKey } from '../../i18n';
 import { DataGrid, type GridColumn, type GridKind } from '../../components/DataGrid';
@@ -59,6 +59,9 @@ export function Explore(): JSX.Element {
   const p = useLiveParams();
   const showArchived = useFilters((s) => s.showArchived);
   const [goal, setGoal] = useState<number | undefined>(undefined);
+  // REG-09: a hand-edited URL / stale bookmark (/app/explore/<bogus>) used to hit the API
+  // «unknown preset» 404 and render the error screen — bounce to the default report instead.
+  const known = PRESETS.some(([id]) => id === preset);
   const goals = useQuery({
     queryKey: ['live', 'goals', p.from, p.to, p.test],
     queryFn: () => v3.liveGoals(p),
@@ -68,7 +71,9 @@ export function Explore(): JSX.Element {
     queryKey: ['live', 'table', preset, p.from, p.to, p.test, goal],
     queryFn: () => v3.liveTable(preset, { ...p, goal }),
     refetchInterval: p.refetchInterval,
+    enabled: known,
   });
+  if (!known) return <Navigate to="/app/explore/sources" replace />;
   if (q.error && isNotConfigured(q.error)) return <NotConfigured />;
   const d = q.data;
 
