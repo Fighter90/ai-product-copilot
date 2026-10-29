@@ -209,6 +209,26 @@ describe('buildDocx', () => {
     });
   });
 
+  describe('REG-04 (ANA-93) partial data coverage', () => {
+    it('prints «Покрытие данных: …» in Краткие итоги when the cache starts inside the period', async () => {
+      const buf = await buildDocx({
+        ...snapshot,
+        coverage: { from: '2025-01-04', to: '2025-01-07', days: 4 },
+      });
+      const document = await readDocxXml(buf, DOCX_PARTS.document);
+      expect(document).toContain('Покрытие данных: 04.01–07.01 (4 из 7 дней)');
+    });
+
+    it('omits the coverage note when the period is fully covered', async () => {
+      const buf = await buildDocx({
+        ...snapshot,
+        coverage: { from: '2024-12-01', to: '2025-01-07', days: 38 },
+      });
+      const document = await readDocxXml(buf, DOCX_PARTS.document);
+      expect(document).not.toContain('Покрытие данных');
+    });
+  });
+
   describe('ANA-39 human-readable period label', () => {
     it('shows the human period label on the cover instead of raw ISO dates', async () => {
       // 2025-01-01 … 2025-01-07 is not month-aligned → «01.01.2025 – 07.01.2025».

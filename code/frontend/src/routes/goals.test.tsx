@@ -114,4 +114,33 @@ describe('KPI & forecast (GoalsView)', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Failed to load goal data.');
     expectNoCyrillic(container);
   });
+
+  it('REG-04 (ANA-93): captions the forecast «прогноз по неполным данным» by the deadline', () => {
+    view({ from: '2024-12-25', coverageFrom: '2025-01-01' });
+    // The cache starts 2025-01-01 but the period starts 2024-12-25 → partial coverage.
+    const flag = screen.getByTestId('forecast-partial');
+    expect(flag).toHaveTextContent('прогноз по неполным данным');
+    // …right by the deadline («К дедлайну …»).
+    const cell = flag.parentElement;
+    expect(cell).toHaveTextContent('К дедлайну');
+  });
+
+  it('REG-04 (ANA-93): no partial-data caption when coverage starts before the period', () => {
+    view({ from: '2024-12-25', coverageFrom: '2024-12-01' });
+    expect(screen.queryByTestId('forecast-partial')).not.toBeInTheDocument();
+  });
+
+  it('REG-04 (ANA-93): no partial-data caption while coverage is unknown', () => {
+    view({ from: '2024-12-25', coverageFrom: null });
+    expect(screen.queryByTestId('forecast-partial')).not.toBeInTheDocument();
+  });
+
+  it('REG-04 (ANA-93): captions the partial forecast without Cyrillic in en', () => {
+    setTestLocale('en');
+    const { container } = view({ from: '2024-12-25', coverageFrom: '2025-01-01' });
+    expect(screen.getByTestId('forecast-partial')).toHaveTextContent(
+      'forecast based on partial data',
+    );
+    expectNoCyrillic(container);
+  });
 });

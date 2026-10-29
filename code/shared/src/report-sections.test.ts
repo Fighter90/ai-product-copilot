@@ -940,3 +940,42 @@ describe('reportSections — locale en (ANA-42)', () => {
     );
   });
 });
+
+describe('reportSections — data coverage (REG-04/ANA-93)', () => {
+  // 17 cached days (04.01–07.01) inside the 7-day period → «17 из 30»-style note.
+  const partiallyCovered: ReportSnapshot = {
+    ...baseSnapshot,
+    coverage: { from: '2025-01-04', to: '2025-01-07', days: 4 },
+  };
+
+  it('leads «Краткие итоги» with «Покрытие данных: …» when the period starts before the cache', () => {
+    const lines = findSection(partiallyCovered, (h) => h === 'Краткие итоги');
+    expect(lines[0]).toBe(
+      'Покрытие данных: 04.01–07.01 (4 из 7 дней): период покрыт данными частично, итоговые цифры занижены.',
+    );
+  });
+
+  it('keeps the byte-identical RU summary when the period is fully covered (no note)', () => {
+    const full = {
+      ...baseSnapshot,
+      coverage: { from: '2024-12-01', to: '2025-01-07', days: 38 },
+    };
+    const covered = findSection(full, (h) => h === 'Краткие итоги');
+    const legacy = findSection(baseSnapshot, (h) => h === 'Краткие итоги');
+    expect(covered).toEqual(legacy);
+    expect(covered.join('\n')).not.toContain('Покрытие данных');
+  });
+
+  it('legacy snapshots without coverage render the unchanged summary', () => {
+    const lines = findSection(baseSnapshot, (h) => h === 'Краткие итоги');
+    expect(lines.join('\n')).not.toContain('Покрытие данных');
+  });
+
+  it('localises the coverage note in en (ANA-42)', () => {
+    const sections = reportSections(partiallyCovered, 'en');
+    const summary = sections.find((sec) => sec.heading === 'Key results')!;
+    expect(summary.lines[0]).toBe(
+      'Data coverage: 04.01–07.01 (4 of 7 days): the period is only partially covered, totals are understated.',
+    );
+  });
+});

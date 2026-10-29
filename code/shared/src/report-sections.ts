@@ -19,6 +19,13 @@ import { aiGenerationLabel } from './types/report';
 import { iceBucket } from './validation';
 import type { ReportLocale } from './report-locale';
 import { REPORT_TEXT } from './report-sections-text';
+import {
+  coveredDaysInPeriod,
+  coveredToInPeriod,
+  isPartialCoverage,
+  periodDays,
+  shortDmy,
+} from './report-coverage';
 import { buildReportRecommendations } from './report-recommendations';
 import { chartRecommendation, reportChartTitles } from './report-charts';
 import {
@@ -535,6 +542,22 @@ export function reportSections(s: ReportSnapshot, locale: ReportLocale = 'ru'): 
     (s.generatedHypotheses?.solutions.length ?? 0) > 0;
   const totalVisits = s.channels.reduce((acc, c) => acc + c.visits, 0);
 
+  // REG-04 (ANA-93): the cached data starts inside the selected period → «Покрытие данных:
+  // 13.10–29.10 (17 из 30 дней)» leads the «Краткие итоги» so DOCX/PDF never silently
+  // present understated totals as complete. Legacy snapshots (no coverage) stay as-is.
+  const coverageLines =
+    s.coverage && isPartialCoverage(s.period, s.coverage)
+      ? [
+          T.summaryCoverage(
+            shortDmy(s.coverage.from),
+            shortDmy(coveredToInPeriod(s.period, s.coverage)),
+            coveredDaysInPeriod(s.period, s.coverage),
+            periodDays(s.period.from, s.period.to),
+          ),
+          '',
+        ]
+      : [];
+
   const sections: ReportSection[] = [
     {
       heading: T.titleHeading,
@@ -552,6 +575,7 @@ export function reportSections(s: ReportSnapshot, locale: ReportLocale = 'ru'): 
     {
       heading: T.summaryHeading,
       lines: [
+        ...coverageLines,
         T.summaryGoal(T.goalTitle(s.goalLabel), s.kpi.b2cApplications),
         T.summaryPaid(s.kpi.b2bPaidTickets),
         T.summaryGap(s.kpi.gap),

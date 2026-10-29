@@ -191,29 +191,29 @@ export function FilterBar(): JSX.Element {
           {t('dq.prevPeriodVs', { from: fmtDate(prevFrom, locale), to: fmtDate(prevTo, locale) })}
         </p>
 
-        {/* ANA-49: «Догрузить N дней» when the cached data starts inside the selected period */}
+        {/* REG-04 (ANA-93): the incomplete-coverage warning is for EVERY role — previously only
+            admins got the banner (via the «Догрузить» action). The backfill action itself stays
+            admin-only; analysts/others still learn that the selected period is partially covered. */}
         {needsBackfill && coverageFrom && (
           <div
             role="status"
             className="flex w-full flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800 md:w-auto"
           >
-            <span>
-              {t('dq.backfillNeeded', { date: fmtDate(coverageFrom, locale), n: missingDays })}
-            </span>
-            <button
-              type="button"
-              onClick={runBackfill}
-              disabled={!isAdmin || backfill === 'running'}
-              title={isAdmin ? undefined : t('dq.backfillAdminOnly')}
-              className="rounded bg-amber-600 px-2 py-0.5 text-xs text-white hover:bg-amber-700 focus-visible:ring-2 focus-visible:ring-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {backfill === 'running'
-                ? t('dq.backfillRunning')
-                : t('dq.backfillAction', { n: missingDays })}
-            </button>
-            {!isAdmin && <span className="sr-only">{t('dq.backfillAdminOnly')}</span>}
-            {backfill === 'done' && <span>{t('dq.backfillDone')}</span>}
-            {backfill === 'failed' && (
+            <span>{t('dq.coveragePartial', { date: fmtDate(coverageFrom, locale) })}</span>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={runBackfill}
+                disabled={backfill === 'running'}
+                className="rounded bg-amber-600 px-2 py-0.5 text-xs text-white hover:bg-amber-700 focus-visible:ring-2 focus-visible:ring-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {backfill === 'running'
+                  ? t('dq.backfillRunning')
+                  : t('dq.backfillAction', { n: missingDays })}
+              </button>
+            )}
+            {isAdmin && backfill === 'done' && <span>{t('dq.backfillDone')}</span>}
+            {isAdmin && backfill === 'failed' && (
               <span role="alert" className="text-red-700">
                 {t('dq.backfillFailed')}
               </span>

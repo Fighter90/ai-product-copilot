@@ -115,6 +115,33 @@ describe('SnapshotBuilder', () => {
     expect(JSON.stringify(builder.build(opts))).toBe(JSON.stringify(builder.build(opts)));
   });
 
+  it('REG-04 (ANA-93): exposes cached-data coverage (statsCoverage) in the snapshot', () => {
+    const snap = builder.build({ id: 'c', generatedAt: 'T', from: '2025-01-01', to: '2025-01-07' });
+    // The seed has a single synced day (2025-01-02) inside the 7-day period.
+    expect(snap.coverage).toEqual({ from: '2025-01-02', to: '2025-01-02', days: 1 });
+  });
+
+  it('REG-04 (ANA-93): omits coverage while nothing has been synced', () => {
+    const emptyDb = freshDb();
+    try {
+      const emptyBuilder = new SnapshotBuilder({
+        metrics: new MetricsRepo(emptyDb),
+        hypotheses: new HypothesesRepo(emptyDb),
+        decisions: new DecisionsRepo(emptyDb),
+        b2b: new B2bRepo(emptyDb),
+      });
+      const snap = emptyBuilder.build({
+        id: 'e',
+        generatedAt: 'T',
+        from: '2025-01-01',
+        to: '2025-01-07',
+      });
+      expect(snap.coverage).toBeUndefined();
+    } finally {
+      emptyDb.close();
+    }
+  });
+
   it('excludes channel rows outside the requested period', () => {
     const snap = builder.build({ id: 'x', generatedAt: 'T', from: '2025-02-01', to: '2025-02-07' });
     expect(snap.channels).toHaveLength(0);

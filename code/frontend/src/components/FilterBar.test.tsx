@@ -1,18 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { FilterBar } from './FilterBar';
 import { useFilters } from '../store/filters';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 // The bar reads the session role for the «Догрузить N дней» action (ANA-49); the harness
-// renders FilterBar without the real AuthProvider, so the hook is mocked here.
+// renders FilterBar without the real AuthProvider, so the hook is mocked here. The mutable
+// `mocks` object lets individual REG-04 tests flip the role without re-mocking the module.
+const mocks = vi.hoisted(() => ({
+  isAdmin: true,
+  coverageFrom: new Date(Date.now() - 15 * 86_400_000).toISOString().slice(0, 10),
+}));
 vi.mock('../auth/AuthContext', () => ({
   useAuth: () => ({
     user: null,
     loading: false,
     unavailable: false,
-    isAdmin: true,
+    isAdmin: mocks.isAdmin,
     login: async () => {
       throw new Error('not used in FilterBar tests');
     },
@@ -23,11 +28,12 @@ vi.mock('../auth/AuthContext', () => ({
 
 // Coverage probe (ANA-49): answer deterministically with a range that fully covers any test
 // period (starts before the default 14-day window) so the backfill prompt stays hidden here.
+// REG-04 tests override `mocks.coverageFrom` to point inside the selected period.
 vi.mock('../lib/api', () => ({
   http: async (path: string) => {
     if (path === '/metrics/coverage') {
       return {
-        from: new Date(Date.now() - 15 * 86_400_000).toISOString().slice(0, 10),
+        from: mocks.coverageFrom,
         to: new Date(Date.now()).toISOString().slice(0, 10),
         days: 15,
       };
@@ -275,6 +281,55 @@ describe('FilterBar', () => {
       'aria-expanded',
       'false',
     );
+  });
+});
+
+describe('FilterBar — partial data coverage (REG-04/ANA-93)', () => {
+  afterEach(() => {
+    mocks.isAdmin = true;
+    mocks.coverageFrom = new Date(Date.now() - 15 * 86_400_000).toISOString().slice(0, 10);
+    setTestLocale('ru');
+  });
+
+  it('warns non-admins that the selected period is partially covered (REG-04)', async () => {
+    mocks.isAdmin = false;
+    // The cache starts 5 days ago — inside the default 14-day window → partial coverage.
+    mocks.coverageFrom = isoOffset(-5);
+    renderBar();
+
+    const banner = await screen.findByRole('status');
+    expect(banner).toHaveTextContent(/Данные есть с/);
+    expect(banner).toHaveTextContent(/период покрыт частично/);
+    // The «Догрузить» action stays admin-only; non-admins get the warning only.
+    expect(screen.queryByRole('button', { name: /Догрузить/ })).not.toBeInTheDocument();
+  });
+
+  it('admins still get the «Догрузить» action next to the same warning', async () => {
+    mocks.isAdmin = true;
+    mocks.coverageFrom = isoOffset(-5);
+    renderBar();
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/период покрыт частично/);
+    expect(screen.getByRole('button', { name: /Догрузить/ })).toBeEnabled();
+  });
+
+  it('hides the warning once the cache covers the whole period', async () => {
+    renderBar(); // coverage starts 15 days ago — before the default 14-day window
+    await act(async () => {}); // let the coverage probe resolve
+    // No status banner and no backfill action when the period is fully covered.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Догрузить/ })).not.toBeInTheDocument();
+  });
+
+  it('renders the warning without Cyrillic in en', async () => {
+    setTestLocale('en');
+    mocks.isAdmin = false;
+    mocks.coverageFrom = isoOffset(-5);
+    const { container } = renderBar();
+
+    const banner = await screen.findByRole('status');
+    expect(banner).toHaveTextContent(/only partially covered/);
+    expectNoCyrillic(container);
   });
 });
 

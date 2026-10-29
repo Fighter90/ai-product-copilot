@@ -78,6 +78,8 @@ export class SnapshotBuilder {
     const b2b = this.deps.b2b.list();
 
     const b2cApplications = channels.reduce((acc, c) => acc + c.goalReaches, 0);
+    // REG-04 (ANA-93): how far back the cached data reaches (null while nothing is synced).
+    const coverage = this.deps.metrics.statsCoverage();
     const b2bPaidTickets = b2b
       .filter((d) => d.stage === 'paid')
       .reduce((acc, d) => acc + d.tickets, 0);
@@ -109,6 +111,9 @@ export class SnapshotBuilder {
       id: opts.id,
       generatedAt: opts.generatedAt,
       period: { from: opts.from, to: opts.to },
+      // REG-04 (ANA-93): cached-data coverage rides in the snapshot, so DOCX/PDF/screen can
+      // say «Покрытие данных: …» when the period starts before the first synced day.
+      ...(coverage ? { coverage } : {}),
       kpi: {
         target,
         b2cApplications,

@@ -138,6 +138,13 @@ export interface ReportSnapshot {
    */
   readonly goalLabel?: GoalLabel;
   /**
+   * REG-04 (ANA-93): cached-data coverage at snapshot build time — the first/last synced day
+   * (metrics.statsCoverage) and the day count. Absent in legacy snapshots or an empty DB.
+   * When period.from < coverage.from the period is only partially covered: DOCX/PDF/screen
+   * print «Покрытие данных: …» instead of silently building on incomplete data.
+   */
+  readonly coverage?: { readonly from: string; readonly to: string; readonly days: number };
+  /**
    * Optional rendered chart PNGs (base64), produced once from the snapshot numbers via headless
    * ECharts at report-generation time and embedded identically into DOCX and PDF. The render path
    * stays deterministic — it only reads these bytes. Absent → report renders text/tables only.

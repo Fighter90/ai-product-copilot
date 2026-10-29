@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { B2bDeal, ChannelStat, GoalLabel } from '@pca/shared';
 import { paidAndGap, periodTotals, formatGoalLabel, readEventDate } from '@pca/shared';
-import { api } from '../lib/api';
+import { api, http } from '../lib/api';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
 import { dailySeries, type DailyPoint } from '../lib/trends';
@@ -14,6 +14,13 @@ import { EChart } from '../components/charts/EChart';
 import { useT, fmtDate, fmtNum, type DictKey } from '../i18n';
 
 type QueryStatus = 'pending' | 'error' | 'success';
+
+/** GET /api/metrics/coverage (ANA-49): how far back the cached data reaches (REG-04). */
+interface Coverage {
+  from: string | null;
+  to: string | null;
+  days: number;
+}
 
 /** Progress ring showing goal completion */
 function GoalRing({
@@ -91,6 +98,7 @@ function WhatIfForecast({
   target,
   deals,
   eventDate,
+  coveragePartial,
 }: {
   points: DailyPoint[];
   to: string;
@@ -98,6 +106,8 @@ function WhatIfForecast({
   deals: B2bDeal[];
   /** ANA-75 (БАГ-01): admin EVENT_DATE — the deadline; empty → the «+2× window» heuristic. */
   eventDate?: string;
+  /** REG-04 (ANA-93): the selected period starts before the first cached day. */
+  coveragePartial?: boolean;
 }): JSX.Element {
   const { t, locale } = useT();
   const [trafficPct, setTrafficPct] = useState(0);
@@ -178,6 +188,16 @@ function WhatIfForecast({
                 {t('kpi.whatif.deviationLabel', { date: fmtDate(fc.horizonDate, locale) })}
               </div>
               {deviation}
+              {/* REG-04 (ANA-93): the pace forecast extrapolates a partially covered period —
+                  the «прогноз по неполным данным» caption sits right by the deadline. */}
+              {coveragePartial && (
+                <div
+                  data-testid="forecast-partial"
+                  className="mt-1 text-xs font-medium text-amber-700"
+                >
+                  {t('kpi.whatif.partialData')}
+                </div>
+              )}
             </div>
           </div>
           <p className="mt-2 text-xs text-slate-500">
@@ -327,9 +347,11 @@ export function GoalsView({
   deals,
   goalLabel,
   points,
+  from,
   to,
   b2cPaid = 0,
   eventDate,
+  coverageFrom,
 }: {
   status: QueryStatus;
   target: number;
@@ -342,12 +364,16 @@ export function GoalsView({
   goalLabel?: GoalLabel;
   /** Daily fact (visits + goal reaches) — feeds the «Что если» pace forecast. */
   points: DailyPoint[];
+  /** Selected period start (ISO date) — REG-04: paired with coverageFrom for the partial hint. */
+  from?: string;
   /** Selected period end (ISO date) — the forecast anchor. */
   to: string;
   /** ANA-75: manually entered / CSV-imported paid B2C tickets for the period (payments summary). */
   b2cPaid?: number;
   /** ANA-75 (БАГ-01): admin EVENT_DATE — the KPI deadline; empty → the heuristic disclaimer. */
   eventDate?: string;
+  /** REG-04 (ANA-93): first cached day (GET /api/metrics/coverage); null → coverage unknown. */
+  coverageFrom?: string | null;
 }): JSX.Element {
   const { t } = useT();
   if (status === 'pending') return <p className="text-slate-500">{t('common.loading')}</p>;
@@ -522,7 +548,15 @@ export function GoalsView({
       </div>
 
       {/* «Что если» (ANA-50): pace forecast + scenario sliders + chart, B2B pipeline tab */}
-      <WhatIfForecast points={points} to={to} target={target} deals={deals} eventDate={eventDate} />
+      <WhatIfForecast
+        points={points}
+        to={to}
+        target={target}
+        deals={deals}
+        eventDate={eventDate}
+        // REG-04 (ANA-93): from < coverage.from → the forecast runs on incomplete data.
+        coveragePartial={!!from && !!coverageFrom && from < coverageFrom}
+      />
 
       {/* Recommendations */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -603,6 +637,14 @@ export function Goals(): JSX.Element {
   });
   const eventDate = readEventDate(settingsQ.data);
 
+  // REG-04 (ANA-93): cached-data coverage — the forecast must admit it runs on partial data.
+  const coverageQ = useQuery({
+    queryKey: ['coverage'],
+    queryFn: () => http<Coverage>('/metrics/coverage'),
+    staleTime: 60_000,
+    retry: false,
+  });
+
   const status: QueryStatus =
     channelsQ.status === 'pending' || b2bQ.status === 'pending'
       ? 'pending'
@@ -631,9 +673,11 @@ export function Goals(): JSX.Element {
       deals={deals}
       goalLabel={formatGoalLabel(goalQ.data)}
       points={points}
+      from={from}
       to={to}
       b2cPaid={paymentsQ.data?.b2cPaid ?? 0}
       eventDate={eventDate}
+      coverageFrom={coverageQ.data?.from ?? null}
     />
   );
 }

@@ -1,8 +1,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   aiGenerationLabel,
+  coveredDaysInPeriod,
+  coveredToInPeriod,
+  isPartialCoverage,
+  periodDays,
   reportPeriodLabel,
   reportSections,
+  shortDmy,
   type AiGenerationInfo,
   type ReportSection,
   type ReportSnapshot,
@@ -391,6 +396,23 @@ export function ReportPreviewView({
               at: fmtDate(snapshot.generatedAt, locale, true),
             })}
           </p>
+
+          {/* REG-04 (ANA-93): the cached data starts inside the report period — the slice (and
+              the DOCX/PDF built from it) is based on incomplete data, so say so right here. */}
+          {snapshot.coverage && isPartialCoverage(snapshot.period, snapshot.coverage) && (
+            <p
+              role="status"
+              data-testid="report-coverage"
+              className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            >
+              {t('rep.coveragePartial', {
+                from: shortDmy(snapshot.coverage.from),
+                to: shortDmy(coveredToInPeriod(snapshot.period, snapshot.coverage)),
+                days: coveredDaysInPeriod(snapshot.period, snapshot.coverage),
+                n: periodDays(snapshot.period.from, snapshot.period.to),
+              })}
+            </p>
+          )}
 
           {/* KPI strip — primary-goal label follows the snapshot («Заказов» for a purchase goal:
               the Ecommerce goal fires on order creation, not on payment — ANA-19). */}

@@ -129,6 +129,31 @@ describe('ReportPreviewView', () => {
     expect(screen.queryByText('Заявок B2C')).not.toBeInTheDocument();
   });
 
+  it('REG-04 (ANA-93): shows «Покрытие данных» when the slice covers the period partially', () => {
+    const partial = {
+      ...snapshot,
+      coverage: { from: '2025-01-04', to: '2025-01-07', days: 4 },
+    };
+    render(<ReportPreviewView {...baseProps} snapshot={partial} />);
+    expect(screen.getByTestId('report-coverage')).toHaveTextContent(
+      'Покрытие данных: 04.01–07.01 (4 из 7 дн.): период покрыт данными частично',
+    );
+  });
+
+  it('REG-04 (ANA-93): no coverage note for a fully covered period or a legacy slice', () => {
+    const { unmount } = render(
+      <ReportPreviewView
+        {...baseProps}
+        snapshot={{ ...snapshot, coverage: { from: '2024-12-01', to: '2025-01-07', days: 38 } }}
+      />,
+    );
+    expect(screen.queryByTestId('report-coverage')).not.toBeInTheDocument();
+    unmount();
+    // Legacy snapshot without the coverage field — unchanged rendering.
+    render(<ReportPreviewView {...baseProps} snapshot={snapshot} />);
+    expect(screen.queryByTestId('report-coverage')).not.toBeInTheDocument();
+  });
+
   it('AI insights: the chosen provider rides along, «Авто» is the default (ANA-33)', () => {
     const onInsights = vi.fn();
     render(<ReportPreviewView {...baseProps} snapshot={snapshot} onInsights={onInsights} />);

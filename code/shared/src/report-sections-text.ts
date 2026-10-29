@@ -210,6 +210,9 @@ const RU = {
   summaryPaid: (n: number) => `Оплачено B2B (билетов): ${n}`,
   summaryGap: (n: number) => `Gap до цели (по оплатам): ${n}`,
   summaryVisits: (n: number) => `Суммарно визитов в выборке каналов: ${n}`,
+  // REG-04 (ANA-93): the period is only partially covered by the cached data (17 из 30 дней).
+  summaryCoverage: (from: string, to: string, covered: number, total: number) =>
+    `Покрытие данных: ${from}–${to} (${covered} из ${total} дней): период покрыт данными частично, итоговые цифры занижены.`,
   summaryGapText: [
     'Главный разрыв: заявка ≠ оплата. Формальные цели Метрики (заявки) и фактические оплаты',
     'разведены везде в отчёте и не суммируются. Цель отчёта — показать, какой трафик приносит',
@@ -539,6 +542,9 @@ const EN: ReportText = {
   summaryPaid: (n) => `B2B paid (tickets): ${n}`,
   summaryGap: (n) => `Gap to target (by payments): ${n}`,
   summaryVisits: (n) => `Total visits in the channel sample: ${n}`,
+  // REG-04 (ANA-93): the period is only partially covered by the cached data.
+  summaryCoverage: (from, to, covered, total) =>
+    `Data coverage: ${from}–${to} (${covered} of ${total} days): the period is only partially covered, totals are understated.`,
   summaryGapText: [
     'The main gap: application ≠ payment. Formal Metrika goals (applications) and actual payments',
     'are kept apart throughout the report and never added up. The report shows which traffic brings',

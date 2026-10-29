@@ -1,6 +1,7 @@
 export * from './constants';
 export * from './validation';
 export * from './report-sections';
+export * from './report-coverage';
 export * from './report-period-label';
 export * from './report-locale';
 export * from './report-recommendations';
