@@ -296,7 +296,7 @@ describe('liveRoutes', () => {
     expect(body.missing).toContain('price_view');
     expect(body.missing).toContain('ticket_pick_standard');
     expect(body.missing).toContain('volunteer_apply');
-    expect(body.tickets).toHaveLength(3);
+    expect(body.tickets).toHaveLength(4);
     expect(body.roles).toHaveLength(4);
   });
 

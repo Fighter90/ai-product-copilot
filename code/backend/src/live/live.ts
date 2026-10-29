@@ -133,7 +133,7 @@ export const ROLE_FUNNELS: ReadonlyArray<RoleFunnelDef> = [
  * visits/payment split and the filtered version live in the upcoming live.ts refactor —
  * replace this alias with it when that lands.
  */
-export const TICKET_TYPES = ['standard', 'optimal', 'max'] as const;
+export const TICKET_TYPES = ['standard', 'optimal', 'max', 'halloween'] as const;
 
 export const ROLE_EVENTS: ReadonlyArray<{ key: string; event: string; ru: string; en: string }> = [
   {
