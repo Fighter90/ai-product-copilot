@@ -208,6 +208,9 @@ export const api = {
     http<SyncSummary>('/sync', { method: 'POST', body: JSON.stringify(body) }),
   /** List all report snapshots (for the History page). */
   listSnapshots: () => http<SnapshotSummary[]>('/report/snapshots'),
+  /** REG-10: delete a snapshot (admin only; REG-11 reuses it for one-off cleanup). */
+  deleteSnapshot: (id: string) =>
+    http<{ ok: boolean }>(`/report/snapshots/${id}`, { method: 'DELETE' }),
   /** Get current settings (secrets are masked). */
   getSettings: () => http<SettingsStatus>('/settings'),
   /** Save settings to .env. */

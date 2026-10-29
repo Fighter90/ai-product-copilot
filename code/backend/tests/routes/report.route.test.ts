@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { GeneratedHypotheses, ReportSnapshot } from '@pca/shared';
-import type { User } from '../../src/auth/users-repo';
+import type { User, UsersRepo } from '../../src/auth/users-repo';
 import { reportRoutes, type ReportRunner } from '../../src/routes/report';
 
 const snap = {
@@ -22,9 +22,9 @@ const snap = {
   funnel: { visits: 100, b2cApplications: 7, b2bPipelineTickets: 0, b2bPaidTickets: 20 },
 } as unknown as ReportSnapshot;
 
-function appWith(runner: ReportRunner): FastifyInstance {
+function appWith(runner: ReportRunner, opts: { users?: UsersRepo } = {}): FastifyInstance {
   const app = Fastify();
-  app.register(reportRoutes, { prefix: '/api', runner });
+  app.register(reportRoutes, { prefix: '/api', runner, ...opts });
   return app;
 }
 
@@ -35,6 +35,7 @@ describe('report routes', () => {
       get: vi.fn(),
       list: vi.fn().mockReturnValue([]),
       generate: vi.fn(),
+      remove: vi.fn(),
       download: vi.fn(),
       insights: vi.fn(),
       hypotheses: vi.fn(),
@@ -58,6 +59,7 @@ describe('report routes', () => {
       get: vi.fn(),
       list: vi.fn().mockReturnValue([]),
       generate: vi.fn(),
+      remove: vi.fn(),
       download: vi.fn(),
       insights: vi.fn(),
       hypotheses: vi.fn(),
@@ -96,6 +98,7 @@ describe('report routes', () => {
       get: vi.fn(),
       list: vi.fn(),
       generate: vi.fn(),
+      remove: vi.fn(),
       download: vi.fn(),
       insights: vi.fn(),
       hypotheses: vi.fn(),
@@ -115,6 +118,7 @@ describe('report routes', () => {
       get: vi.fn((id: string) => (id === 'snap-1' ? snap : undefined)),
       list: vi.fn(),
       generate: vi.fn(),
+      remove: vi.fn(),
       download: vi.fn(),
       insights: vi.fn(),
       hypotheses: vi.fn(),
@@ -137,6 +141,7 @@ describe('report routes', () => {
       get: vi.fn(),
       list: vi.fn().mockReturnValue(summaries),
       generate: vi.fn(),
+      remove: vi.fn(),
       download: vi.fn(),
       insights: vi.fn(),
       hypotheses: vi.fn(),
@@ -153,6 +158,7 @@ describe('report routes', () => {
       build: vi.fn(),
       get: vi.fn(),
       list: vi.fn(),
+      remove: vi.fn(),
       generate: vi.fn(async (id: string, format: string) =>
         id === 'snap-1' ? { filePath: `data/reports/snap-1.${format}` } : undefined,
       ),
@@ -200,6 +206,7 @@ describe('report routes', () => {
       get: vi.fn(),
       list: vi.fn(),
       generate: vi.fn(),
+      remove: vi.fn(),
       download: vi.fn(),
       insights: vi.fn(async (id: string) => {
         if (id === 'ok') return { ok: true as const, narrative: 'анализ' };
@@ -276,6 +283,7 @@ describe('report routes', () => {
       get: vi.fn(),
       list: vi.fn(),
       generate: vi.fn(),
+      remove: vi.fn(),
       download: vi.fn(),
       insights: vi.fn(),
       hypotheses: vi.fn(async (id: string) => {
@@ -328,6 +336,7 @@ describe('report routes', () => {
       get: vi.fn(),
       list: vi.fn(),
       generate: vi.fn(),
+      remove: vi.fn(),
       download: vi.fn(async (id: string, format: 'docx' | 'pdf') =>
         id === 'snap-1'
           ? {
@@ -362,6 +371,83 @@ describe('report routes', () => {
     // Unknown lang degrades to ru instead of failing the download.
     await app.inject({ method: 'GET', url: '/api/report/download/snap-1/docx?lang=de' });
     expect(runner.download).toHaveBeenLastCalledWith('snap-1', 'docx', 'ru');
+    await app.close();
+  });
+});
+
+describe('DELETE /api/report/snapshots/:id (REG-10)', () => {
+  const admin: User = {
+    id: 1,
+    email: 'admin@example.com',
+    name: 'Admin',
+    role: 'admin',
+    isActive: true,
+    locale: 'ru',
+    createdAt: '',
+    lastLoginAt: null,
+  };
+  const analyst: User = { ...admin, id: 2, email: 'analyst@example.com', role: 'analyst' };
+  const fakeUsers = (): UsersRepo => ({ audit: vi.fn() }) as unknown as UsersRepo;
+
+  function runnerWithRemove(): ReportRunner {
+    return {
+      build: vi.fn(),
+      get: vi.fn(),
+      list: vi.fn(),
+      generate: vi.fn(),
+      download: vi.fn(),
+      remove: vi.fn((id: string) => id === 'snap-1'),
+      insights: vi.fn(),
+      hypotheses: vi.fn(),
+    } as unknown as ReportRunner;
+  }
+
+  function asUser(app: FastifyInstance, user: User | null): void {
+    // Same decoration registerAuth performs; the getter yields a fresh object per request.
+    app.decorateRequest('user', { getter: () => user ?? undefined });
+  }
+
+  it('admin deletes a snapshot; the deletion is audited; unknown id → 404', async () => {
+    const runner = runnerWithRemove();
+    const users = fakeUsers();
+    const app = appWith(runner, { users });
+    asUser(app, admin);
+
+    const ok = await app.inject({ method: 'DELETE', url: '/api/report/snapshots/snap-1' });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual({ ok: true });
+    expect(runner.remove).toHaveBeenCalledWith('snap-1');
+    expect(users.audit).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'admin@example.com' }),
+      'report.snapshot_delete',
+      'snap-1',
+    );
+
+    const missing = await app.inject({ method: 'DELETE', url: '/api/report/snapshots/none' });
+    expect(missing.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('analyst gets 403 — nothing is deleted and nothing is audited', async () => {
+    const runner = runnerWithRemove();
+    const users = fakeUsers();
+    const app = appWith(runner, { users });
+    asUser(app, analyst);
+
+    const res = await app.inject({ method: 'DELETE', url: '/api/report/snapshots/snap-1' });
+    expect(res.statusCode).toBe(403);
+    expect(runner.remove).not.toHaveBeenCalled();
+    expect(users.audit).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('legacy mode (no users repo) allows deletion without a session', async () => {
+    const runner = runnerWithRemove();
+    const app = appWith(runner); // no users → legacy single-user mode
+
+    const res = await app.inject({ method: 'DELETE', url: '/api/report/snapshots/snap-1' });
+    expect(res.statusCode).toBe(200);
+    expect(runner.remove).toHaveBeenCalledWith('snap-1');
     await app.close();
   });
 });

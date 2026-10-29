@@ -72,4 +72,10 @@ export class SnapshotRepo {
         .all() as SnapshotRow[]
     ).map(toRecord);
   }
+
+  /** REG-10: delete one snapshot row by id (false when the id is unknown). Only the snapshot
+   *  row goes — related report data (B2B deals, hypotheses, decisions, files) is untouched. */
+  remove(id: string): boolean {
+    return this.db.prepare('DELETE FROM report_snapshots WHERE id = ?').run(id).changes > 0;
+  }
 }

@@ -1,13 +1,20 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import type { ChannelStat, ReportSnapshot } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
+
+// REG-10: History reads the role from AuthContext — keep it controllable per test.
+const session = vi.hoisted(() => ({ isAdmin: false }));
+vi.mock('../auth/AuthContext', () => ({
+  useAuth: () => ({ isAdmin: session.isAdmin }),
+}));
 
 vi.mock('../lib/api', () => ({
   api: {
     listSnapshots: vi.fn(),
     getSnapshot: vi.fn(),
+    deleteSnapshot: vi.fn(),
   },
 }));
 import { api } from '../lib/api';
@@ -283,7 +290,10 @@ describe('SnapshotCompare (БАГ-12: сравнение снапшотов)', (
 });
 
 describe('History (data wrapper)', () => {
-  afterEach(() => vi.resetAllMocks());
+  afterEach(() => {
+    vi.resetAllMocks();
+    session.isAdmin = false;
+  });
 
   it('loads and renders snapshots', async () => {
     vi.mocked(api.listSnapshots).mockResolvedValue([
@@ -296,6 +306,72 @@ describe('History (data wrapper)', () => {
     ]);
     renderWithProviders(<History />);
     expect(await screen.findByText('История отчётов')).toBeInTheDocument();
+  });
+});
+
+describe('HistoryView — удаление снапшота (REG-10)', () => {
+  const snapshots = [
+    {
+      id: 'snap-1',
+      generatedAt: '2025-01-01T00:00:00Z',
+      dateFrom: '2025-01-01',
+      dateTo: '2025-01-07',
+    },
+  ];
+
+  afterEach(() => {
+    vi.resetAllMocks();
+    vi.restoreAllMocks();
+    session.isAdmin = false;
+  });
+
+  it('hides the delete button for non-admins', () => {
+    renderWithProviders(<HistoryView status="success" snapshots={snapshots} />);
+    expect(screen.queryByRole('button', { name: 'Удалить' })).not.toBeInTheDocument();
+  });
+
+  it('admin: confirm accepted → onDelete fires with the snapshot id', () => {
+    session.isAdmin = true;
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const onDelete = vi.fn();
+    renderWithProviders(
+      <HistoryView status="success" snapshots={snapshots} isAdmin onDelete={onDelete} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить' }));
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Удалить Отчёт 01.01–07.01.2025? Действие необратимо.',
+    );
+    expect(onDelete).toHaveBeenCalledWith('snap-1');
+  });
+
+  it('History wrapper: admin deletion calls the API and refreshes the list', async () => {
+    session.isAdmin = true;
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(api.listSnapshots).mockResolvedValue(snapshots);
+    vi.mocked(api.deleteSnapshot).mockResolvedValue({ ok: true });
+    renderWithProviders(<History />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Удалить' }));
+    await waitFor(() => expect(api.deleteSnapshot).toHaveBeenCalledWith('snap-1'));
+    // Инвалидирование ['snapshots'] → список перезагружен после удаления.
+    await waitFor(() => expect(api.listSnapshots).toHaveBeenCalledTimes(2));
+  });
+
+  it('admin: confirm declined → no deletion', () => {
+    session.isAdmin = true;
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const onDelete = vi.fn();
+    renderWithProviders(
+      <HistoryView status="success" snapshots={snapshots} isAdmin onDelete={onDelete} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить' }));
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it('shows the error alert when the deletion failed', () => {
+    renderWithProviders(
+      <HistoryView status="success" snapshots={snapshots} isAdmin onDelete={vi.fn()} deleteError />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Не удалось удалить отчёт.');
   });
 });
 

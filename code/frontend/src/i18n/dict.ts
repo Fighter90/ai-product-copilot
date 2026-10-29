@@ -554,6 +554,10 @@ export const ru = {
   'hist.col.period': 'Период',
   'hist.col.action': 'Действие',
   'hist.view': 'Просмотреть',
+  // REG-10: admin deletes a snapshot from History (with confirmation).
+  'hist.delete': 'Удалить',
+  'hist.delete.confirm': 'Удалить {name}? Действие необратимо.',
+  'hist.delete.error': 'Не удалось удалить отчёт.',
   'hist.total': 'Всего отчётов: {n}',
   'hist.filter.from': 'Период с',
   'hist.filter.to': 'по',
@@ -1834,6 +1838,10 @@ export const en: Record<DictKey, string> = {
   'hist.col.period': 'Period',
   'hist.col.action': 'Action',
   'hist.view': 'View',
+  // REG-10: admin deletes a snapshot from History (with confirmation).
+  'hist.delete': 'Delete',
+  'hist.delete.confirm': 'Delete {name}? This cannot be undone.',
+  'hist.delete.error': 'Could not delete the report.',
   'hist.total': 'Total reports: {n}',
   'hist.filter.from': 'Period from',
   'hist.filter.to': 'to',

@@ -159,6 +159,8 @@ export function makeReportRunner(
         dateTo: r.dateTo,
         author: r.createdBy,
       })),
+    // REG-10: only the snapshot row goes — report files on disk and all other tables stay.
+    remove: (id) => snapshots.remove(id),
     generate: async (snapshotId, format) => {
       const record = snapshots.getById(snapshotId);
       if (!record) return undefined;

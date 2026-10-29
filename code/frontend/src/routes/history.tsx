@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { formatInt } from '../lib/format';
 import { snapshotDiff } from '../lib/snapshot-diff';
+import { useAuth } from '../auth/AuthContext';
 import { fmtDate, translate, useT, type DictKey } from '../i18n';
 import type { Locale } from '../store/prefs';
 
@@ -254,9 +255,17 @@ function SnapshotCompare({ snapshots }: { snapshots: SnapshotRow[] }): JSX.Eleme
 export function HistoryView({
   status,
   snapshots,
+  isAdmin = false,
+  onDelete,
+  deleteError = false,
 }: {
   status: QueryStatus;
   snapshots: SnapshotRow[];
+  /** REG-10: admins get a per-row delete button (with confirm); everyone else — read-only. */
+  isAdmin?: boolean;
+  /** REG-10: called after the confirm dialog accepts (wired to the delete mutation). */
+  onDelete?: (id: string) => void;
+  deleteError?: boolean;
 }): JSX.Element {
   const { t, locale } = useT();
   // ANA-39: фильтр по периоду (пересечение периодов) и по автору сборки снапшота.
@@ -358,6 +367,13 @@ export function HistoryView({
         </span>
       </div>
 
+      {/* REG-10: surface a failed deletion (e.g. 403 after a role change) near the table. */}
+      {deleteError && (
+        <p role="alert" className="text-sm text-red-700">
+          {t('hist.delete.error')}
+        </p>
+      )}
+
       {filtered.length === 0 ? (
         <p role="status" className="text-sm text-slate-500">
           {t('hist.filter.none')}
@@ -399,12 +415,33 @@ export function HistoryView({
                     {s.author ?? t('fx.hist.unknownAuthor')}
                   </td>
                   <td>
-                    <Link
-                      to={`/app/report?snapshot=${s.id}`}
-                      className="rounded bg-indigo-600 px-3 py-1 text-xs text-white hover:bg-indigo-700"
-                    >
-                      {t('hist.view')}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        to={`/app/report?snapshot=${s.id}`}
+                        className="rounded bg-indigo-600 px-3 py-1 text-xs text-white hover:bg-indigo-700"
+                      >
+                        {t('hist.view')}
+                      </Link>
+                      {isAdmin && onDelete && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                t('hist.delete.confirm', {
+                                  name: formatSnapshotName(s.dateFrom, s.dateTo, locale),
+                                }),
+                              )
+                            ) {
+                              onDelete(s.id);
+                            }
+                          }}
+                          className="rounded border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
+                        >
+                          {t('hist.delete')}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -425,6 +462,21 @@ export function HistoryView({
 
 /** Data wrapper. */
 export function History(): JSX.Element {
+  const qc = useQueryClient();
+  const { isAdmin } = useAuth();
+  // REG-10: admin deletes a snapshot (confirm lives in HistoryView) → refresh the list.
+  const del = useMutation({
+    mutationFn: (id: string) => api.deleteSnapshot(id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['snapshots'] }),
+  });
   const q = useQuery({ queryKey: ['snapshots'], queryFn: api.listSnapshots });
-  return <HistoryView status={q.status} snapshots={q.data ?? []} />;
+  return (
+    <HistoryView
+      status={q.status}
+      snapshots={q.data ?? []}
+      isAdmin={isAdmin}
+      onDelete={(id) => del.mutate(id)}
+      deleteError={del.isError}
+    />
+  );
 }

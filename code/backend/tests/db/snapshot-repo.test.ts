@@ -46,4 +46,24 @@ describe('SnapshotRepo', () => {
   it('returns undefined for a missing snapshot', () => {
     expect(repo.getById('nope')).toBeUndefined();
   });
+
+  it('remove (REG-10) deletes only the target row and reports unknown ids', () => {
+    const save = (id: string): void =>
+      repo.save({
+        id,
+        generatedAt: '2025-01-10T00:00:00.000Z',
+        dateFrom: '2025-01-01',
+        dateTo: '2025-01-07',
+        payload: { ok: true },
+      });
+    save('snap-1');
+    save('snap-2');
+    expect(repo.remove('snap-1')).toBe(true);
+    expect(repo.getById('snap-1')).toBeUndefined();
+    // Соседние срезы не затронуты.
+    expect(repo.getById('snap-2')).toBeDefined();
+    // Неизвестный id → false, ничего не удалено.
+    expect(repo.remove('nope')).toBe(false);
+    expect(repo.list()).toHaveLength(1);
+  });
 });

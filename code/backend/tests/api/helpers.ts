@@ -51,6 +51,7 @@ export function buildTestApp(
         dateFrom: r.dateFrom,
         dateTo: r.dateTo,
       })),
+    remove: (id) => snapshots.remove(id),
     generate: async (id, format) =>
       snapshots.getById(id) ? { filePath: `data/reports/${id}.${format}` } : undefined,
     download: async (id, format) =>

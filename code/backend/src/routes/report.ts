@@ -7,6 +7,7 @@ import {
   type ReportLocale,
   type ReportSnapshot,
 } from '@pca/shared';
+import type { UsersRepo } from '../auth/users-repo';
 
 const SnapshotBody = z.object({ from: z.string(), to: z.string() });
 const GenerateBody = z.object({ snapshotId: z.string(), format: z.enum(['docx', 'pdf']) });
@@ -65,10 +66,16 @@ export interface ReportRunner {
     format: ReportFormat,
     locale?: ReportLocale,
   ) => Promise<ReportDownload | undefined>;
+  /** REG-10: delete a snapshot row by id (false when the id is unknown). Related report data
+   *  is never touched. */
+  remove: (id: string) => boolean;
 }
 
 export interface ReportRouteOptions {
   readonly runner: ReportRunner;
+  /** REG-10: cabinet users repo — gates DELETE on the admin role and writes the audit entry.
+   *  Absent in legacy single-user mode, where deletion is allowed without roles. */
+  readonly users?: UsersRepo;
 }
 
 /** Build/fetch immutable report snapshots and generate report files. */
@@ -89,6 +96,21 @@ export async function reportRoutes(app: FastifyInstance, opts: ReportRouteOption
 
   /** List all report snapshots (for the "History" page). */
   app.get('/report/snapshots', async () => opts.runner.list());
+
+  /**
+   * REG-10: delete a snapshot (History page, admin only; REG-11 reuses it for one-off cleanup).
+   * /api/report sits outside the ADMIN_RULES prefixes, so the admin role is checked here.
+   * Legacy single-user mode has no users repo and no roles — deletion is allowed there.
+   */
+  app.delete('/report/snapshots/:id', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    if (opts.users && req.user?.role !== 'admin') {
+      return reply.code(403).send({ error: 'forbidden', code: 'ADMIN_ONLY' });
+    }
+    if (!opts.runner.remove(id)) return reply.code(404).send({ error: 'snapshot not found' });
+    opts.users?.audit(req.user ?? null, 'report.snapshot_delete', id);
+    return { ok: true };
+  });
 
   app.post('/report/generate', async (req, reply) => {
     const parsed = GenerateBody.safeParse(req.body);

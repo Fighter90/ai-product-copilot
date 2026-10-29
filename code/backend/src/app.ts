@@ -171,7 +171,13 @@ export function buildServer(
     // ANA-15: record every run so the admin sync-status UI can show the result + step errors.
     recordRun: cab ? new SyncRunRepo(cab.db) : undefined,
   });
-  app.register(reportRoutes, { prefix: '/api', runner: deps.report });
+  app.register(reportRoutes, {
+    prefix: '/api',
+    runner: deps.report,
+    // REG-10: cabinet users repo enables the admin-only snapshot DELETE + its audit entry
+    // (absent in legacy single-user mode, where deletion needs no role).
+    ...(cab ? { users: cab.users } : {}),
+  });
   if (cab) {
     // ANA-19: manual B2C payments (admin/analyst data entry + CSV import) + the «Оплачено» KPI
     // summary. Cabinet-only: the legacy single-user demo mode has no payments UI.
