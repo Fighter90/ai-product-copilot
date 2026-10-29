@@ -105,7 +105,7 @@ Detailed live Metrika tables. Preset tabs: Sources, Search engines, UTM tags, En
 
 ## Report (`/app/report`)
 
-An immutable data snapshot for a period, DOCX/PDF and AI. Buttons: build snapshot, rebuild report, “Export DOCX”, “Export PDF”, generate AI analysis; a “Hypothesis draft” card with “Remove draft”. The full pipeline and step-by-step instructions — “How reports are built” (`/help/reports-how`).
+An immutable data snapshot for a period, DOCX/PDF and AI. Buttons: “Build report” (creates a new snapshot and saves it to History right away), “Export DOCX”, “Export PDF”, generate AI analysis; a “Hypothesis draft” card with “Remove draft”. The full pipeline and step-by-step instructions — “How reports are built” (`/help/reports-how`).
 
 ## History (`/app/history`)
 

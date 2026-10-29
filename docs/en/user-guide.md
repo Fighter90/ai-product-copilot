@@ -234,20 +234,20 @@ Administrators get everything in §15 plus:
 
 Details — help `/help/analyst-guide` ([docs/help/en/20-analyst-guide.md](../help/en/20-analyst-guide.md)).
 
-| Page                                           | Functions                                                                                             |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Overview (`/app`)                              | KPI strip, weekly digest, charts by day/channel/country/device, UTM coverage, weak spots → hypothesis |
-| Live (`/app/live`)                             | live visits and metrics by hour/day; pause, refresh, test traffic                                     |
-| Metrika goals (`/app/goals`, `/app/goals/:id`) | live/sleeping/dead statuses, duplicates, filter, CSV; goal detail with dynamics and breakdowns        |
-| pc-goals funnel (`/app/funnel-live`)           | funnel steps with conversions, ticket tariffs, applications by role                                   |
-| Traffic (`/app/traffic`)                       | channels, visits vs applications, fullscreen UTM Sankey, channel and UTM tables                       |
-| Behaviour (`/app/behavior`)                    | observations, conversion and bounce charts, entry/exit page tables, recommendations                   |
-| Funnel & B2B (`/app/funnel`)                   | “application ≠ payment” funnel, losses, channels, countries, B2B by stage, problem pages              |
-| KPI & forecast (`/app/kpi`)                    | progress ring to 300, “What if” (traffic and conversion sliders), B2B tab                             |
-| Data (`/app/explore/:preset`)                  | 11 Reporting API presets, chart, table, goal-for-columns picker, CSV                                  |
-| Report (`/app/report`)                         | snapshot, rebuild, AI hypotheses, AI analysis, Export DOCX/PDF, hypothesis draft                      |
-| History (`/app/history`)                       | snapshot list, “View” without regenerating                                                            |
-| B2B deals (`/app/b2b`)                         | 4-stage kanban, add, change stage, delete                                                             |
-| DataLens (`/app/datalens`)                     | 5 CSV datasets, native connector guide, team dashboards, request to an administrator                  |
-| Help & assistant                               | `/help` with search; the assistant answers only from the help, with sources                           |
-| Language, theme, notifications                 | RU/EN, 🌙/☀️, bell                                                                                    |
+| Page                                           | Functions                                                                                                  |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Overview (`/app`)                              | KPI strip, weekly digest, charts by day/channel/country/device, UTM coverage, weak spots → hypothesis      |
+| Live (`/app/live`)                             | live visits and metrics by hour/day; pause, refresh, test traffic                                          |
+| Metrika goals (`/app/goals`, `/app/goals/:id`) | live/sleeping/dead statuses, duplicates, filter, CSV; goal detail with dynamics and breakdowns             |
+| pc-goals funnel (`/app/funnel-live`)           | funnel steps with conversions, ticket tariffs, applications by role                                        |
+| Traffic (`/app/traffic`)                       | channels, visits vs applications, fullscreen UTM Sankey, channel and UTM tables                            |
+| Behaviour (`/app/behavior`)                    | observations, conversion and bounce charts, entry/exit page tables, recommendations                        |
+| Funnel & B2B (`/app/funnel`)                   | “application ≠ payment” funnel, losses, channels, countries, B2B by stage, problem pages                   |
+| KPI & forecast (`/app/kpi`)                    | progress ring to 300, “What if” (traffic and conversion sliders), B2B tab                                  |
+| Data (`/app/explore/:preset`)                  | 11 Reporting API presets, chart, table, goal-for-columns picker, CSV                                       |
+| Report (`/app/report`)                         | “Build report” (snapshot, saved to History), AI hypotheses, AI analysis, Export DOCX/PDF, hypothesis draft |
+| History (`/app/history`)                       | snapshot list, “View” without regenerating                                                                 |
+| B2B deals (`/app/b2b`)                         | 4-stage kanban, add, change stage, delete                                                                  |
+| DataLens (`/app/datalens`)                     | 5 CSV datasets, native connector guide, team dashboards, request to an administrator                       |
+| Help & assistant                               | `/help` with search; the assistant answers only from the help, with sources                                |
+| Language, theme, notifications                 | RU/EN, 🌙/☀️, bell                                                                                         |
