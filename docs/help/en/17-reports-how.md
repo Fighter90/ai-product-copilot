@@ -34,7 +34,7 @@ If no sync covered the period, the report is empty: the recommendations block sa
 
 ## Step 2. The data snapshot
 
-The “Build data snapshot” button (RU label «Сформировать срез данных») builds a snapshot for the period in the global filter. It reads **only the local database** (no live Metrika calls) and freezes:
+The “Build report” button (RU label «Собрать отчёт») builds a snapshot for the period in the global filter. It reads **only the local database** (no live Metrika calls) and freezes:
 
 - **KPI** — the 300 paid-ticket target, B2C applications (sum of primary-goal reaches), B2B paid tickets and the gap to target. If the primary goal is a purchase goal, its reaches also count as payments;
 - **channels** — visits, users, bounces, goal reaches per channel;
@@ -101,7 +101,7 @@ AI is used only through providers configured by an administrator (“Administrat
 - **ICE** — the model only sets Impact, Confidence and Ease (1–10) with rationales. The final score is **computed in code**: Impact × Confidence × Ease (a product, scale 1–1000). Any score the model might suggest is ignored;
 - **Decision Log** — after the hypotheses the model proposes at least 3 decision entries (method, period, findings, outcome green / yellow / red).
 
-Because generation runs in the background, the “AI hypotheses” counter may say “not generated” right after building. Open the snapshot from History a few minutes later and the hypotheses and decisions will be there. If generation failed, click “Rebuild report” — a new snapshot and a new attempt are created.
+Because generation runs in the background, the “AI hypotheses” counter may say “not generated” right after building. Open the snapshot from History a few minutes later and the hypotheses and decisions will be there. If generation failed, click “Build report” again — a new snapshot and a new attempt are created.
 
 **Anti-hallucination.** The model only receives a text digest of the snapshot numbers — no raw visits and no personal data. Its instructions forbid inventing numbers and mixing applications with payments; the hypotheses answer must be strict JSON and is schema-validated. Charts, traffic lights and the ICE score are never touched by AI. AI sections in the document are an interpretation: verify every number against the tables.
 
@@ -115,15 +115,15 @@ Result — `VERDICT: PASS`, `PASS-WITH-WARNINGS` or `FAIL`; exit code 0 for the 
 
 ## Step by step on the Report page
 
-The Report page controls are currently labelled in Russian: «Сформировать срез данных» (build snapshot), «Сгенерировать AI-анализ» (generate AI analysis), «Перестроить отчёт» (rebuild report), «Export DOCX», «Export PDF».
+Report page controls (English UI / Russian UI): “Build report” / «Собрать отчёт», “Generate AI analysis” / «Сгенерировать AI-анализ», “Export DOCX”, “Export PDF”.
 
 1. Choose the period in the top filter (7d / 14d / 30d / 90d / 1y or custom dates). Use a meaningful interval — a week or a month.
-2. Click **“Build data snapshot”**. You will see the snapshot id, period, the KPI strip (target, applications or orders for the primary goal, B2B orders, gap), the funnel summary, the B2B pipeline and the full on-screen report.
+2. Click **“Build report”** (it reads “Building…” while working). You will see the period and build time, the KPI strip (target, applications or orders for the primary goal, B2B orders, gap), the funnel summary, the B2B pipeline and the full on-screen report.
 3. Wait for the background AI hypotheses (if a provider is configured), then open the snapshot from History to see them.
 4. Optionally click **“Generate AI analysis”** and wait for the progress bar (5–10 minutes). No need to reload the page.
 5. Click **“Export DOCX”** or **“Export PDF”** — `productcamp-report-<id>.docx` / `.pdf` downloads to your computer. Charts are rendered at export time, so the first export takes a few seconds.
 6. Open the DOCX in Word and update fields (F9) so the Contents get page numbers.
-7. Need fresh data or other filters — **“Rebuild report”** creates a new snapshot. The old one stays in History.
+7. Need fresh data or other filters — click **“Build report”** again: a new snapshot is created, the old one stays in History. There is no separate “Save” button — a snapshot is saved the moment it is built.
 
 If you arrived from Overview or Traffic via a “→ hypothesis” link, a “Hypothesis draft” card appears at the top with segment, problem, action, barrier and evidence fields. The draft lives in the browser until the session ends; “Remove draft” deletes it.
 
@@ -135,5 +135,5 @@ If you arrived from Overview or Traffic via a “→ hypothesis” link, a “Hy
 | The DOCX has no figures                 | Chrome was not found on the server — an administrator sets `PUPPETEER_EXECUTABLE_PATH`.          |
 | Contents have no page numbers           | Update fields in Word (F9, or accept the update prompt on open).                                 |
 | “AI analysis unavailable”               | No enabled provider with a key — see “LLM provider keys” (`/help/llm-keys`).                     |
-| Hypotheses did not appear               | Reopen the snapshot from History in a few minutes; if still empty — “Rebuild report”.            |
+| Hypotheses did not appear               | Reopen the snapshot from History in a few minutes; if still empty — “Build report” again.        |
 | Can I fix numbers inside a snapshot?    | No, snapshots are immutable by design. Fix the data (sync, B2B deals) and build a new snapshot.  |
