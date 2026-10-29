@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { B2bDeal, ChannelStat, GoalLabel } from '@pca/shared';
 import { paidAndGap, periodTotals, formatGoalLabel, readEventDate } from '@pca/shared';
 import { api, http } from '../lib/api';
+import { v3 } from '../lib/api-v3';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
 import { dailySeries, type DailyPoint } from '../lib/trends';
@@ -629,9 +630,10 @@ export function Goals(): JSX.Element {
     retry: false,
   });
   // ANA-75 (БАГ-01): админская «Дата события» (EVENT_DATE) — единый дедлайн KPI; '' → эвристика.
+  // REG-12: читаем публичный срез /api/settings/public — GET /api/settings теперь только для админа.
   const settingsQ = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => api.getSettings(),
+    queryKey: ['settings-public'],
+    queryFn: v3.settingsPublic,
     retry: false,
     staleTime: 60_000,
   });

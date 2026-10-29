@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ChannelStat, GeoDeviceStat, UtmStat, PageStat, B2bDeal } from '@pca/shared';
 import { paidAndGap, readEventDate } from '@pca/shared';
 import { api } from '../lib/api';
+import { v3 } from '../lib/api-v3';
 import { useFilters } from '../store/filters';
 import { useAuth } from '../auth/AuthContext';
 import { formatInt, formatPercent } from '../lib/format';
@@ -719,11 +720,11 @@ export function Overview(): JSX.Element {
   });
   const kpiTarget = useKpiTarget();
   // ANA-75 (БАГ-01): админская «Дата события» (EVENT_DATE) — единый дедлайн KPI на всех экранах;
-  // не задана/невалидна → '' → эвристика «+2 длины периода» и оговорка. GET /api/settings читают
-  // все авторизованные роли (секреты маскируются), аналитику она доступна.
+  // не задана/невалидна → '' → эвристика «+2 длины периода» и оговорка. REG-12: публичный срез
+  // GET /api/settings/public (только KPI_TARGET/EVENT_DATE) — GET /api/settings теперь только админ.
   const settingsQ = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => api.getSettings(),
+    queryKey: ['settings-public'],
+    queryFn: v3.settingsPublic,
     retry: false,
     staleTime: 60_000,
   });

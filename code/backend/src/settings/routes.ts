@@ -22,6 +22,15 @@ export async function appSettingsRoutes(
 ): Promise<void> {
   app.get('/settings', async () => opts.settings.view());
 
+  /**
+   * REG-12 (ANA-100): the only settings non-admins may read — the KPI bar / deadline fields.
+   * Same `{ value }` shape as the admin view so `readEventDate` works on both responses.
+   */
+  app.get('/settings/public', async () => ({
+    KPI_TARGET: { value: opts.settings.get('KPI_TARGET') },
+    EVENT_DATE: { value: opts.settings.get('EVENT_DATE') },
+  }));
+
   app.post('/settings', async (req, reply) => {
     const body = Patch.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid body', code: 'BAD_INPUT' });

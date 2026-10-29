@@ -85,6 +85,8 @@ afterAll(async () => {
 const ADMIN_ONLY: Array<{ method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; url: string }> = [
   { method: 'POST', url: '/api/sync' },
   { method: 'POST', url: '/api/%73ync' }, // percent-encoded path must not dodge the rule
+  // REG-12 (ANA-100): the masked view is admin-only; analysts read /api/settings/public.
+  { method: 'GET', url: '/api/settings' },
   { method: 'POST', url: '/api/settings' },
   { method: 'POST', url: '/api/settings/refresh' },
   { method: 'POST', url: '/api/settings/datalens-token' },
@@ -133,10 +135,46 @@ describe('cabinet role guard', () => {
   });
 
   it('analyst keeps read access and own-work routes', async () => {
-    for (const url of ['/api/settings', '/api/metrics/channels', '/api/metrics/kpi-target']) {
+    for (const url of [
+      '/api/settings/public', // REG-12: the public slice replaces the analyst's /api/settings read
+      '/api/metrics/channels',
+      '/api/metrics/kpi-target',
+    ]) {
       const res = await app.inject({ method: 'GET', url, headers: { cookie: analystCookie } });
       expect(res.statusCode, url).toBe(200);
     }
+  });
+
+  it('analyst reads only KPI_TARGET/EVENT_DATE from /api/settings/public (REG-12)', async () => {
+    settings.set('KPI_TARGET', '300', 'admin@x.ru');
+    settings.set('EVENT_DATE', '2025-11-20', 'admin@x.ru');
+    settings.set('DATALENS_LINKS', 'https://datalens.example/secret', 'admin@x.ru');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/settings/public',
+      headers: { cookie: analystCookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      KPI_TARGET: { value: '300' },
+      EVENT_DATE: { value: '2025-11-20' },
+    });
+    expect(res.body).not.toContain('secret');
+  });
+
+  it('admin still reads the full masked view (REG-12 does not break the settings page)', async () => {
+    settings.set('YANDEX_OAUTH_TOKEN', 'plain-oauth-token', 'admin@x.ru');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/settings',
+      headers: { cookie: adminCookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().YANDEX_OAUTH_TOKEN).toEqual({
+      value: '••••oken',
+      isSecret: true,
+      source: 'db',
+    });
   });
 });
 

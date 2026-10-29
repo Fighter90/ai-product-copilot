@@ -74,9 +74,12 @@ export function isSessionProbe(method: string, url: string): boolean {
  * `/api/admin-x` route is protected by default). Everything that changes infrastructure or kicks off a Metrika pull is admin-only; analysts keep
  * write access to their own work (hypotheses, decisions, B2B, reports, notifications).
  */
-const ADMIN_RULES: Array<{ method?: string; prefix: string }> = [
+const ADMIN_RULES: Array<{ method?: string; prefix: string; except?: string }> = [
   { prefix: '/api/admin' },
   { prefix: '/api/users' },
+  // REG-12 (ANA-100): masked secrets + DataLens config — admin only. Analysts/pages read the
+  // narrow public slice ({KPI_TARGET, EVENT_DATE}) from GET /api/settings/public instead.
+  { prefix: '/api/settings', method: 'GET', except: '/api/settings/public' },
   { prefix: '/api/settings', method: 'POST' },
   { prefix: '/api/settings', method: 'PUT' },
   { prefix: '/api/settings', method: 'PATCH' },
@@ -111,7 +114,12 @@ export function normalizePath(url: string): string {
 export function requiresAdmin(method: string, url: string): boolean {
   const path = normalizePath(url);
   const m = method.toUpperCase();
-  return ADMIN_RULES.some((r) => path.startsWith(r.prefix) && (!r.method || r.method === m));
+  return ADMIN_RULES.some(
+    (r) =>
+      path.startsWith(r.prefix) &&
+      (!r.method || r.method === m) &&
+      (!r.except || path !== r.except),
+  );
 }
 
 /** Simple in-memory login rate limiter: N failures per window per key (ip+email). */

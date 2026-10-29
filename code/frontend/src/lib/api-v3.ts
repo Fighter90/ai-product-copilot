@@ -292,6 +292,9 @@ export const v3 = {
     http<Array<{ id: string; name: string; model: string }>>('/ai/available'),
 
   settings: () => http<Record<string, SettingView>>('/settings'),
+  /** REG-12: public (any logged-in role) slice — KPI target + event date for the KPI bar/goals. */
+  settingsPublic: () =>
+    http<{ KPI_TARGET: { value: string }; EVENT_DATE: { value: string } }>('/settings/public'),
   saveSettings: (patch: Record<string, string | number>) =>
     http<{ ok: true; changed: string[] }>('/settings', { method: 'POST', ...json(patch) }),
   rotateDatalensToken: () =>

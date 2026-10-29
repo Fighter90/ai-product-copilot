@@ -23,6 +23,12 @@ vi.mock('../lib/api', () => ({
     paymentsSummary: vi.fn(),
   },
 }));
+// REG-12: Overview reads the public settings slice (EVENT_DATE), not GET /api/settings.
+vi.mock('../lib/api-v3', () => ({
+  v3: {
+    settingsPublic: vi.fn(async () => ({ KPI_TARGET: { value: '' }, EVENT_DATE: { value: '' } })),
+  },
+}));
 import { api } from '../lib/api';
 import { OverviewView, Overview } from './overview';
 

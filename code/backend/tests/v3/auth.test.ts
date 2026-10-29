@@ -108,11 +108,13 @@ describe('requiresAdmin', () => {
     expect(requiresAdmin('PATCH', '/api/users/5?x=1')).toBe(true);
   });
 
-  it('guards mutating settings/provider routes but leaves reads public', () => {
-    expect(requiresAdmin('GET', '/api/settings')).toBe(false);
+  it('guards mutating settings/provider routes; GET /settings is admin-only too (REG-12)', () => {
+    expect(requiresAdmin('GET', '/api/settings')).toBe(true);
     expect(requiresAdmin('POST', '/api/settings')).toBe(true);
     expect(requiresAdmin('PUT', '/api/settings')).toBe(true);
     expect(requiresAdmin('DELETE', '/api/settings')).toBe(true);
+    // The public slice stays readable by any logged-in role (analyst KPI bar / deadlines).
+    expect(requiresAdmin('GET', '/api/settings/public')).toBe(false);
     expect(requiresAdmin('GET', '/api/ai/available')).toBe(false);
     expect(requiresAdmin('PUT', '/api/ai/providers/anthropic')).toBe(true);
     expect(requiresAdmin('POST', '/api/ai/providers/anthropic/test')).toBe(true);

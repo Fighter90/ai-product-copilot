@@ -135,6 +135,11 @@ describe('v3 client: settings', () => {
       body: { confirm: 'УДАЛИТЬ' },
     });
   });
+
+  it('settingsPublic hits /api/settings/public (REG-12 public slice)', async () => {
+    await v3.settingsPublic();
+    expect(lastCall()).toEqual({ url: '/api/settings/public', method: 'GET', body: undefined });
+  });
 });
 
 describe('v3 client: live mode (query-string encoding)', () => {

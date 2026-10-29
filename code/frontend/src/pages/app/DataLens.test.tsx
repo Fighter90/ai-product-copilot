@@ -44,8 +44,16 @@ describe('DataLens page', () => {
     setTestLocale('en');
     const { container } = renderWithProviders(<DataLens />);
     expect(await screen.findByText('Traffic by day')).toBeInTheDocument();
-    expect(await screen.findByText('https://datalens.yandex/abc')).toBeInTheDocument();
     expect(screen.getByText('Raw Metrika data directly')).toBeInTheDocument();
     expectNoCyrillic(container);
+  });
+
+  // REG-12: GET /api/settings is admin-only — the analyst query is skipped (no 403) and the
+  // DataLens dashboards section (DATALENS_LINKS) stays hidden.
+  it('analyst does not read /api/settings and sees no dashboards links', async () => {
+    renderWithProviders(<DataLens />);
+    expect(await screen.findByText('Трафик по дням')).toBeInTheDocument();
+    expect(v3.settings).not.toHaveBeenCalled();
+    expect(screen.queryByText('https://datalens.yandex/abc')).not.toBeInTheDocument();
   });
 });

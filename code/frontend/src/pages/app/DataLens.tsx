@@ -13,7 +13,8 @@ export function DataLens(): JSX.Element {
   const { from, to } = useFilters();
   const { isAdmin } = useAuth();
   const ds = useQuery({ queryKey: ['datasets'], queryFn: v3.datasets });
-  const settings = useQuery({ queryKey: ['settings'], queryFn: v3.settings });
+  // REG-12: GET /api/settings is admin-only; analysts don't need DATALENS_LINKS → no 403 query.
+  const settings = useQuery({ queryKey: ['settings'], queryFn: v3.settings, enabled: isAdmin });
   const [note, setNote] = useState('');
   const req = useMutation({ mutationFn: () => v3.requestDatalens(note) });
   const links = (settings.data?.DATALENS_LINKS?.value ?? '')

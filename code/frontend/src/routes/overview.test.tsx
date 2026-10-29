@@ -16,7 +16,12 @@ vi.mock('../lib/api', () => ({
     paymentsSummary: vi.fn(),
   },
 }));
+// REG-12: Overview reads the public settings slice (EVENT_DATE), not GET /api/settings.
+vi.mock('../lib/api-v3', () => ({
+  v3: { settingsPublic: vi.fn() },
+}));
 import { api } from '../lib/api';
+import { v3 } from '../lib/api-v3';
 import { OverviewView, Overview } from './overview';
 
 const sample: ChannelStat = {
@@ -280,6 +285,10 @@ describe('Overview (data wrapper)', () => {
     vi.mocked(api.pages).mockResolvedValue([]);
     vi.mocked(api.exitPages).mockResolvedValue([]);
     vi.mocked(api.paymentsSummary).mockResolvedValue({ b2cPaid: 0, b2bPaid: 0, paid: 0, days: 0 });
+    vi.mocked(v3.settingsPublic).mockResolvedValue({
+      KPI_TARGET: { value: '' },
+      EVENT_DATE: { value: '' },
+    });
   });
 
   it('shows the auto-detected goal badge when /primary-goal resolves', async () => {

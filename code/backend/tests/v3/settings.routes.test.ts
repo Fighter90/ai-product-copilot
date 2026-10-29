@@ -48,18 +48,55 @@ afterEach(async () => {
 });
 
 describe('GET /api/settings', () => {
+  // REG-12: роль для GET проверяет глобальный guard (registerAuth, analyst → 403 ADMIN_ONLY);
+  // здесь изолированное приложение без guard — проверяем сам ответ (маскирование) для админа.
   it('returns the masked view (secret never in plaintext)', async () => {
     settings.set('YANDEX_OAUTH_TOKEN', 'plain-oauth-token', 'a@x.ru');
     const res = await app.inject({
       method: 'GET',
       url: '/api/settings',
-      headers: { cookie: analystCookie },
+      headers: { cookie: adminCookie },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.YANDEX_OAUTH_TOKEN).toEqual({ value: '••••oken', isSecret: true, source: 'db' });
     expect(res.body).not.toContain('plain-oauth-token');
     expect(body.COUNTER_ID).toEqual({ value: '100', isSecret: false, source: 'env' });
+  });
+});
+
+describe('GET /api/settings/public (REG-12)', () => {
+  it('exposes only KPI_TARGET and EVENT_DATE — same { value } shape as the admin view', async () => {
+    settings.set('KPI_TARGET', '300', 'a@x.ru');
+    settings.set('EVENT_DATE', '2025-11-20', 'a@x.ru');
+    settings.set('DATALENS_LINKS', 'https://datalens.example/secret-dashboard', 'a@x.ru');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/settings/public',
+      headers: { cookie: adminCookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      KPI_TARGET: { value: '300' },
+      EVENT_DATE: { value: '2025-11-20' },
+    });
+    expect(res.body).not.toContain('secret-dashboard');
+  });
+
+  it('is readable by an analyst (the route carries no role check; the guard only shields /settings)', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/settings/public',
+      headers: { cookie: analystCookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys(res.json()).sort()).toEqual(['EVENT_DATE', 'KPI_TARGET']);
+  });
+
+  it('unset values come back as empty strings', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/settings/public' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ KPI_TARGET: { value: '' }, EVENT_DATE: { value: '' } });
   });
 });
 
