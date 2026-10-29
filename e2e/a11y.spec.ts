@@ -115,9 +115,9 @@ test('coverage prompt: «Догрузить N дней» renders and is axe-clea
   await expect(page.locator('#filter-controls')).toBeVisible();
   await prepareForScan(page);
 
-  const prompt = page.getByRole('status').filter({ hasText: 'Метрика загружена только с' });
+  // REG-04 (ANA-93): the banner is for every role; the backfill action stays admin-only.
+  const prompt = page.getByRole('status').filter({ hasText: 'Данные есть с' });
   await expect(prompt).toBeVisible();
-  // Admin sees an enabled backfill action; non-admins get a disabled one (covered below).
   await expect(prompt.getByRole('button', { name: /Догрузить/ })).toBeEnabled();
   await scanPanel(page);
 });
@@ -133,11 +133,10 @@ test('coverage prompt: backfill is disabled for non-admins with an explanation (
   await expect(page.locator('#filter-controls')).toBeVisible();
   await prepareForScan(page);
 
-  const prompt = page.getByRole('status').filter({ hasText: 'Метрика загружена только с' });
+  // REG-04: analysts see the same warning WITHOUT the backfill action.
+  const prompt = page.getByRole('status').filter({ hasText: 'Данные есть с' });
   await expect(prompt).toBeVisible();
-  const action = prompt.getByRole('button', { name: /Догрузить/ });
-  await expect(action).toBeDisabled();
-  await expect(action).toHaveAttribute('title', 'Догрузка доступна только администратору');
+  await expect(prompt.getByRole('button', { name: /Догрузить/ })).toHaveCount(0);
 });
 
 test('coverage fully covering the period hides the backfill prompt', async ({ page }) => {
