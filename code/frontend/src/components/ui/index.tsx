@@ -272,7 +272,12 @@ export function ThemeToggle({ className = '' }: { className?: string }): JSX.Ele
   return (
     <button
       type="button"
-      onClick={toggleTheme}
+      onClick={() => {
+        // Тема красит и canvas-графики (ECharts) — надёжнее перезагрузить страницу,
+        // чтобы все диаграммы/стили пересобрались чисто под новую тему.
+        toggleTheme();
+        window.location.reload();
+      }}
       title={label}
       aria-label={label}
       className={`inline-flex h-9 w-9 items-center justify-center rounded-md border border-line text-ink transition-colors hover:border-accent hover:text-accent ${className}`}
@@ -303,8 +308,10 @@ export function LangToggle({
           type="button"
           aria-pressed={locale === l}
           onClick={() => {
+            // Язык меняет все тексты и даты — надёжнее перезагрузить страницу целиком.
             setLocale(l);
             onChange?.(l);
+            window.location.reload();
           }}
           className={`px-2.5 uppercase transition-colors ${locale === l ? 'bg-accent text-onaccent' : 'text-muted hover:text-ink'}`}
         >
