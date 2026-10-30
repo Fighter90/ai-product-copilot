@@ -18,7 +18,10 @@ const YC = process.env.HOME + '/yandex-cloud/bin/yc';
 
 const token = execSync(`${YC} iam create-token`, { encoding: 'utf8' }).trim();
 if (token.length < 100) throw new Error('yc returned a short/failed token');
-execSync(`ssh -i ${SSH_KEY} -o BatchMode=yes ${SSH_HOST} "sed -i 's|^DATALENS_IAM_TOKEN=.*|DATALENS_IAM_TOKEN=${token}|' /opt/pca/.env"`, { stdio: 'pipe' });
+execSync(
+  `ssh -i ${SSH_KEY} -o BatchMode=yes ${SSH_HOST} "sed -i 's|^DATALENS_IAM_TOKEN=.*|DATALENS_IAM_TOKEN=${token}|' /opt/pca/.env"`,
+  { stdio: 'pipe' },
+);
 
 const login = await fetch(`${BASE}/api/auth/login`, {
   method: 'POST',
@@ -38,5 +41,9 @@ const check = await fetch(`${BASE}/api/admin/integrations/datalens/check`, {
   headers: { cookie },
 });
 const verdict = await check.json();
-console.log(`[${new Date().toISOString()}] token refreshed (${token.length} chars); check:`, verdict.ok, verdict.message ?? '');
+console.log(
+  `[${new Date().toISOString()}] token refreshed (${token.length} chars); check:`,
+  verdict.ok,
+  verdict.message ?? '',
+);
 process.exit(verdict.ok ? 0 : 1);
