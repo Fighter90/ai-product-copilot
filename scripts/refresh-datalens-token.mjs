@@ -5,7 +5,6 @@
 //   3) POST /api/settings (админ) — обновить копию в БД; 4) datalens:check.
 // Cron (macOS, владелец машины): 15 */11 * * * cd <repo> && node scripts/refresh-datalens-token.mjs
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 
 const BASE = 'https://dashboardcamp.ru';
 const ADMIN = {
