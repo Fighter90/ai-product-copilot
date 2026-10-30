@@ -148,6 +148,28 @@ export async function runIntegrationChecks({ base, email, password, analystPassw
       else fail('settings:masked', `unmasked values: ${bad.join(',')}`);
     }
   }
+  // REG-12 (ANA-100): /api/settings/public — узкий срез (KPI_TARGET, EVENT_DATE), читаемый
+  // любым авторизованным пользователем (не только админом).
+  {
+    const r = await get('/api/settings/public');
+    const keys = r.json && typeof r.json === 'object' ? Object.keys(r.json) : [];
+    if (r.status === 200 && keys.includes('KPI_TARGET') && keys.includes('EVENT_DATE'))
+      ok('settings:public', 0, 'KPI_TARGET+EVENT_DATE');
+    else fail('settings:public', brief(r), 'expected 200 {KPI_TARGET,EVENT_DATE}');
+  }
+
+  // --- Sync status (ANA-15): GET /api/sync/status — последний прогон синка, админ-only ------
+  {
+    const r = await get('/api/sync/status');
+    if (notDeployed(r)) skip('sync:status', 'not deployed');
+    else if (r.status === 200 && r.json && 'run' in r.json)
+      ok(
+        'sync:status',
+        0,
+        `run=${r.json.run ? String(r.json.run.outcome ?? r.json.run.status ?? '?') : 'null (ещё не запускался)'}`,
+      );
+    else fail('sync:status', brief(r), 'expected 200 {run}');
+  }
 
   // --- Metrika -------------------------------------------------------------------------------
   {
@@ -156,10 +178,18 @@ export async function runIntegrationChecks({ base, email, password, analystPassw
       ok('metrika:goals', r.json.length);
     else fail('metrika:goals', brief(r), Array.isArray(r.json) ? 'empty' : '');
   }
+  // Исчерпание суточной квоты Метрики (backfill/синк) — среда, не регресс кода: WARN, не FAIL.
+  const quotaExhausted = (r) =>
+    r.status === 429 && String(r.buf ?? '').includes('quota_requests_by_uid');
   {
     const r = await get('/api/live/summary', { timeoutMs: 90_000 });
     const t = r.json?.totals;
-    if (r.status === 200 && t && typeof t.visits === 'number') {
+    if (quotaExhausted(r))
+      warn(
+        'metrika:live-summary',
+        'Metrika 429 quota_requests_by_uid (backfill съел квоту) — ретрай позже',
+      );
+    else if (r.status === 200 && t && typeof t.visits === 'number') {
       // Прода восстанавливают из бэкапа — пустой live-счётчик не считаем багом.
       if (t.visits > 0) ok('metrika:live-summary', 0, `visits=${t.visits} users=${t.users}`);
       else warn('metrika:live-summary', `visits=0 (resync in progress), users=${t.users}`);
@@ -168,7 +198,9 @@ export async function runIntegrationChecks({ base, email, password, analystPassw
   {
     const r = await get('/api/live/funnel', { timeoutMs: 90_000 });
     const st = r.json?.stages;
-    if (r.status === 200 && Array.isArray(st) && st.length > 1)
+    if (quotaExhausted(r))
+      warn('metrika:live-funnel', 'Metrika 429 quota_requests_by_uid — ретрай позже');
+    else if (r.status === 200 && Array.isArray(st) && st.length > 1)
       ok('metrika:live-funnel', st.length, `stages=${st.map((s) => s.key).join('>')}`);
     else fail('metrika:live-funnel', brief(r));
   }
@@ -379,6 +411,7 @@ export async function runIntegrationChecks({ base, email, password, analystPassw
       // Тела заведомо невалидны: даже при дыре в RBAC запрос упадёт в 400, а не изменит данные.
       const probes = [
         ['POST', '/api/sync', {}],
+        ['GET', '/api/sync/status'],
         ['GET', '/api/admin/ai/providers'],
         ['POST', '/api/settings', { __e2e_probe__: 'x' }],
         ['PATCH', '/api/settings', { __e2e_probe__: 'x' }],
@@ -393,6 +426,10 @@ export async function runIntegrationChecks({ base, email, password, analystPassw
         if (r.status === 403) ok(name);
         else fail(name, `expected 403, got ${brief(r)}`);
       }
+      // Исключение из RBAC: /api/settings/public доступен аналитику (REG-12/ANA-100).
+      const pub = await request(base, 'GET', '/api/settings/public', { cookie: an.cookie });
+      if (pub.status === 200) ok('rbac:GET /api/settings/public (allowed)');
+      else fail('rbac:GET /api/settings/public (allowed)', `expected 200, got ${brief(pub)}`);
     }
   }
 

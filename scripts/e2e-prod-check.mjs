@@ -6,6 +6,8 @@
 // Вердикт: PASS / FAIL (exit 0/1); SKIP/WARN вердикт не валят. Playwright берётся из pnpm-стора проекта.
 import { chromium } from '/Users/sergejemelanov/Projects/ai-product-copilot/node_modules/.pnpm/playwright@1.64.1/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runIntegrationChecks, printVerdict } from './e2e-prod-integrations.mjs';
 
 const ARGS = process.argv.slice(2);
@@ -18,7 +20,8 @@ if (!PASS) {
   console.error('PCA_PASSWORD required');
   process.exit(1);
 }
-mkdirSync('/tmp/pca-e2e-check', { recursive: true });
+const SHOT_DIR = process.env.E2E_SHOT_DIR || join(tmpdir(), 'pca-e2e-check');
+mkdirSync(SHOT_DIR, { recursive: true });
 
 const PAGES = [
   ['landing', '/'],
@@ -39,6 +42,9 @@ const PAGES = [
   ['report', '/app/report'],
   ['history', '/app/history'],
   ['b2b', '/app/b2b'],
+  ['marketing', '/app/marketing'],
+  ['hypotheses', '/app/hypotheses'],
+  ['decisions', '/app/decisions'],
   ['datalens', '/app/datalens'],
   ['admin-users', '/app/admin/users'],
   ['admin-ai', '/app/admin/ai'],
@@ -62,6 +68,7 @@ if (!API_ONLY) {
   const browser = await chromium.launch(browserType);
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const consoleErrors = new Map(); // page → string[]
+  const quota429 = new Map(); // page → количество консольных 429 (квота Метрики — шум среды)
   let current = 'init';
   page.on('pageerror', (e) => {
     const arr = consoleErrors.get(current) ?? [];
@@ -79,6 +86,12 @@ if (!API_ONLY) {
       consoleErrors.set(current, arr);
       return;
     }
+    // Консольный 429 во время исчерпания суточной квоты Метрики (окно backfill/синка) — шум
+    // среды, страницы рендерятся. Собираем отдельно: попадёт в WARN-итог, не валит вердикт.
+    if (text.includes('status of 429')) {
+      quota429.set(current, (quota429.get(current) ?? 0) + 1);
+      return;
+    }
     const arr = consoleErrors.get(current) ?? [];
     arr.push(text.slice(0, 160));
     consoleErrors.set(current, arr);
@@ -87,7 +100,7 @@ if (!API_ONLY) {
   // Минимальный «осмысленный» размер HTML: /login и /help — компактные каркасы SPA.
   const MIN_LEN = (name) => (name === 'login' || name.startsWith('help') ? 8000 : 20000);
 
-  const shot = async (name) => page.screenshot({ path: `/tmp/pca-e2e-check/${name}.png` });
+  const shot = async (name) => page.screenshot({ path: join(SHOT_DIR, `${name}.png`) });
 
   // 1. Публичные
   for (const [name, path] of PAGES.slice(0, 4)) {
@@ -212,6 +225,17 @@ if (!API_ONLY) {
   } catch (e) {
     results.push(['i18n-theme', 'FAIL', 0, [String(e).slice(0, 120)]]);
   }
+
+  // Консольные 429 (квота Метрики) — мягкий WARN-итог по браузерной части.
+  const total429 = [...quota429.values()].reduce((a, b) => a + b, 0);
+  if (total429 > 0)
+    results.push([
+      'console-429-quota',
+      'WARN',
+      total429,
+      [],
+      `Metrika quota (429) в консоли на: ${[...quota429.keys()].join(', ')}`,
+    ]);
 
   await browser.close();
 }

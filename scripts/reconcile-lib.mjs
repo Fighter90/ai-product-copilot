@@ -38,6 +38,9 @@ export function makeDb({
 export function makeMetrika(token) {
   addSecret(token);
   let calls = 0;
+  // The per-user quota (quota_requests_by_uid) is shared with the prod sync/backfill — when it
+  // trips, wait and retry a bounded number of times instead of failing the whole run at once.
+  const quotaWaits = Number(process.env.MK_QUOTA_WAITS ?? 8);
   async function get(path, params = {}) {
     const u = new URL(`https://api-metrika.yandex.net${path}`);
     for (const [k, v] of Object.entries(params))
@@ -47,10 +50,16 @@ export function makeMetrika(token) {
       calls++;
       const r = await fetch(u, { headers: { Authorization: `OAuth ${token}` } });
       const j = await r.json().catch(() => ({}));
-      // Per-user quota (quota_requests_by_uid) is shared with the prod sync — never hammer it.
       if (r.status === 429 && JSON.stringify(j).includes('quota_requests_by_uid')) {
+        if (attempt < quotaWaits) {
+          console.error(
+            `[reconcile] Metrika quota exhausted (shared with prod sync) — waiting 60s (attempt ${attempt + 1}/${quotaWaits})`,
+          );
+          await sleep(60_000);
+          continue;
+        }
         throw new Error(
-          `Metrika per-user quota exhausted (shared with the prod sync) after ${calls} calls — stop and retry later`,
+          `Metrika per-user quota exhausted (shared with the prod sync) after ${calls} calls and ${quotaWaits} waits — stop and retry later`,
         );
       }
       if (r.status === 429 && attempt < 4) {
@@ -82,10 +91,19 @@ export async function makeApi({ base = 'https://dashboardcamp.ru', email, passwo
     .join('; ');
   cookie.split('; ').forEach((c) => addSecret(c.split('=')[1]));
   async function raw(p) {
-    const r = await fetch(`${base}/api${p}`, { headers: { cookie, origin } });
-    const text = await r.text();
-    if (!r.ok) throw new Error(mask(`API ${r.status} ${p}: ${text.slice(0, 300)}`));
-    return text;
+    // Some prod endpoints (/live/*, /metrics/*) proxy Metrika under the same OAuth user — its
+    // 429 quota errors surface here; wait and retry a bounded number of times.
+    for (let i = 0; ; i++) {
+      const r = await fetch(`${base}/api${p}`, { headers: { cookie, origin } });
+      const text = await r.text();
+      if (r.status === 429 && /metrika|quota/i.test(text) && i < 5) {
+        console.error(`[reconcile] prod API proxies Metrika 429 (${p}) — waiting 60s (${i + 1}/5)`);
+        await new Promise((res) => setTimeout(res, 60_000));
+        continue;
+      }
+      if (!r.ok) throw new Error(mask(`API ${r.status} ${p}: ${text.slice(0, 300)}`));
+      return text;
+    }
   }
   return { raw, json: async (p) => JSON.parse(await raw(p)) };
 }
@@ -96,7 +114,11 @@ export async function makeApi({ base = 'https://dashboardcamp.ru', email, passwo
 export const NONE = '(none)'; // @pca/shared DIMENSION_NONE / UTM_NONE
 export const ROBOT_FILTER = "ym:s:isRobot!='yes'";
 export const TEST_URL_FILTER = "ym:s:startURL!~'^file:'";
-export const SYNC_FILTERS = `${ROBOT_FILTER} AND ${TEST_URL_FILTER}`; // traffic-filter.ts EXCLUDE_TEST_TRAFFIC
+// EXCLUDE_TEST_TRAFFIC (metrika/traffic-filter.ts): test sessions only. Robots are NOT in the
+// filter — they are excluded server-side by the counter-level «Фильтрация роботов» setting
+// (filter_robots). Sending isRobot together with a breakdown used to trip Metrika's
+// contains_sensitive_data k-anonymity row-hiding (ANA-65 finding), hence this narrower filter.
+export const SYNC_FILTERS = TEST_URL_FILTER;
 export const LIVE_FILTERS = TEST_URL_FILTER; // live.ts TEST_FILTER
 
 export function normalizePageUrl(url) {
@@ -115,7 +137,9 @@ const goalMetrics = (g) => (g ? [`ym:s:goal${g}reaches`, `ym:s:goal${g}conversio
 /** The 5 per-chunk sync queries, with the exact params the product sends (no accuracy, no limit). */
 export const SYNC_QUERIES = {
   channels: (g) => ({
-    dimensions: 'ym:s:lastTrafficSource',
+    // last-SIGNIFICANT source (traffic-by-source.ts, ANA-65 finding 2): the plain `last`
+    // dimension is last-CLICK and ignores attribution=lastsign.
+    dimensions: 'ym:s:lastsignTrafficSource',
     metrics: [
       'ym:s:visits',
       'ym:s:users',
@@ -127,7 +151,8 @@ export const SYNC_QUERIES = {
     key: (r) => r.dimensions[0]?.name ?? 'unknown',
   }),
   utm: (g) => ({
-    dimensions: 'ym:s:UTMSource,ym:s:UTMMedium,ym:s:UTMCampaign',
+    // last-significant UTM dims (utm-breakdown.ts) — same attribution reasoning as channels.
+    dimensions: 'ym:s:lastsignUTMSource,ym:s:lastsignUTMMedium,ym:s:lastsignUTMCampaign',
     metrics: ['ym:s:visits', 'ym:s:users', ...goalMetrics(g)].join(','),
     reachIdx: 2,
     key: (r) => [0, 1, 2].map((i) => r.dimensions[i]?.name ?? NONE).join(' | '),
@@ -162,6 +187,27 @@ export function shapeRows(resp, q, goalId) {
     cur.users += r.metrics[1] ?? 0;
     cur.reaches += goalId ? (r.metrics[q.reachIdx] ?? 0) : 0;
     out.set(k, cur);
+  }
+  return out;
+}
+
+/**
+ * Map a whole-window Metrika response (`ym:s:date` PREPENDED to q.dimensions) to
+ * {date → {key → {visits, users, reaches}}} — per-day cells identical to the sync's per-day
+ * chunks, enabling day/month/window verification from a single pull per kind.
+ */
+export function shapeRowsByDay(resp, q, goalId) {
+  const out = new Map();
+  for (const r of resp.data) {
+    const d = String(r.dimensions[0]?.name ?? '').slice(0, 10);
+    const k = q.key({ ...r, dimensions: r.dimensions.slice(1) });
+    const day = out.get(d) ?? new Map();
+    const cur = day.get(k) ?? { visits: 0, users: 0, reaches: 0 };
+    cur.visits += r.metrics[0] ?? 0;
+    cur.users += r.metrics[1] ?? 0;
+    cur.reaches += goalId ? (r.metrics[q.reachIdx] ?? 0) : 0;
+    day.set(k, cur);
+    out.set(d, day);
   }
   return out;
 }

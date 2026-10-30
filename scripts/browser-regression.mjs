@@ -9,8 +9,14 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const BASE = process.env.PROD_URL ?? 'https://dashboardcamp.ru';
-const ADMIN = { email: 'admin@dashboardcamp.ru', password: 'DemoAdmin-c8ea7234!' };
-const ANALYST = { email: 'analyst@dashboardcamp.ru', password: 'DemoAnalyst-bf449de4!' };
+const ADMIN = {
+  email: process.env.PCA_ADMIN_EMAIL ?? 'admin@dashboardcamp.ru',
+  password: process.env.PCA_ADMIN_PASSWORD ?? 'DemoAdmin-c8ea7234!',
+};
+const ANALYST = {
+  email: process.env.PCA_ANALYST_EMAIL ?? 'analyst@dashboardcamp.ru',
+  password: process.env.PCA_ANALYST_PASSWORD ?? 'DemoAnalyst-bf449de4!',
+};
 
 const args = process.argv.slice(2);
 const argValue = (name) => {
@@ -24,25 +30,29 @@ const OUT =
 mkdirSync(OUT, { recursive: true });
 
 const CABINET_PAGES = [
-  ['/app/overview', 'первый экран'],
+  ['/app', 'первый экран'],
   ['/app/live', 'живые цели'],
   ['/app/goals', 'цели'],
+  ['/app/kpi', 'kpi-плитки'],
   ['/app/traffic', 'трафик'],
   ['/app/behavior', 'поведение'],
   ['/app/funnel', 'воронка'],
+  ['/app/funnel-live', 'воронка live'],
   ['/app/explore', 'разрезы'],
   ['/app/report', 'отчёт'],
   ['/app/history', 'история'],
   ['/app/b2b', 'b2b'],
-  ['/app/prefs', 'настройки'],
+  ['/app/marketing', 'маркетинг'],
+  ['/app/hypotheses', 'гипотезы'],
+  ['/app/decisions', 'решения'],
+  ['/app/datalens', 'datalens'],
 ];
 const ADMIN_PAGES = [
-  ['/app/admin', 'панель админа'],
   ['/app/admin/users', 'пользователи'],
   ['/app/admin/metrika', 'метрика'],
   ['/app/admin/ai', 'ai-провайдеры'],
   ['/app/admin/integrations', 'интеграции'],
-  ['/app/admin/logs', 'журнал'],
+  ['/app/admin/audit', 'журнал'],
 ];
 
 const results = [];
@@ -65,7 +75,8 @@ async function newSession(browser, { locale, email, password }) {
   await page.fill('input[type="email"], input[name="email"]', email);
   await page.fill('input[type="password"], input[name="password"]', password);
   await page.click('button[type="submit"]');
-  await page.waitForURL('**/app/**', { timeout: 20000 });
+  // Логин ведёт на `/app` (или /app/...), glob '**/app/**' голый /app не матчит.
+  await page.waitForURL(/\/app(\/|$)/, { timeout: 20000 });
   return { ctx, page, consoleErrors };
 }
 
@@ -121,15 +132,14 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
   for (const [path, label] of CABINET_PAGES) {
     await checkPage(page, path, label, join(OUT, `analyst${path.replaceAll('/', '_')}.png`));
   }
-  // RBAC: админ-страницы аналитику → 403-панель или редирект
-  await page.goto(`${BASE}/app/admin`, { waitUntil: 'domcontentloaded' });
+  // RBAC: админ-роут аналитику → страница «Нет доступа» (RequireAdmin, без редиректа)
+  await page.goto(`${BASE}/app/admin/users`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1200);
   const url = page.url();
   const denied =
     url.includes('/login') ||
-    url.includes('/app/overview') ||
-    (await page.locator('text=/403|нет доступа|forbidden/i').count()) > 0;
-  note('/app/admin (analyst)', denied ? 'PASS' : 'WARN', `итог: ${url.replace(BASE, '')}`);
+    (await page.locator('text=/403|нет доступа|access denied|forbidden/i').count()) > 0;
+  note('/app/admin/users (analyst)', denied ? 'PASS' : 'WARN', `итог: ${url.replace(BASE, '')}`);
   note(
     'analyst console',
     consoleErrors.length ? 'WARN' : 'PASS',
