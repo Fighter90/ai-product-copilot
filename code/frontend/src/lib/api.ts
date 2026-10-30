@@ -98,6 +98,15 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     if (res.status === 401 && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('pca:unauthorized'));
     }
+    // Metrika per-user quota exhausted (ANA-112): tell the UI to show the "stale data" banner.
+    // Throttled — several live widgets can 429 within one render pass.
+    if (res.status === 429 && typeof window !== 'undefined') {
+      const last = (window as { __pcaQuotaAt?: number }).__pcaQuotaAt ?? 0;
+      if (Date.now() - last > 30_000) {
+        (window as { __pcaQuotaAt?: number }).__pcaQuotaAt = Date.now();
+        window.dispatchEvent(new CustomEvent('pca:metrika-quota'));
+      }
+    }
     throw new ApiError(res.status, readableError(res.status, await res.text()));
   }
   if (res.status === 204) return undefined as T;

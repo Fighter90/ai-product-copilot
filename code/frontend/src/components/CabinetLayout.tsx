@@ -42,6 +42,7 @@ import { v3 } from '../lib/api-v3';
 import { api } from '../lib/api';
 import { InfoHint } from './InfoHint';
 import { PageHelpLink } from './PageHelpLink';
+import { QuotaBanner } from './QuotaBanner';
 import { BuildMismatchBadge, BuildMismatchBanner } from './BuildMismatchBadge';
 import { CabinetTour } from './onboarding/OnboardingTour';
 import { termHint } from '@pca/shared';
@@ -565,6 +566,7 @@ export function CabinetLayout(): JSX.Element {
 
       {/* ANA-47: role-specific onboarding tour, mounted once for the whole cabinet. */}
       <CabinetTour />
+      <QuotaBanner />
     </div>
   );
 }

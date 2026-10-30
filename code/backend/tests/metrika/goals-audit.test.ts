@@ -181,3 +181,19 @@ describe('assertWritePermission', () => {
     await expect(assertWritePermission(clientWith(undefined), 1)).resolves.toBeUndefined();
   });
 });
+
+describe('aliasEvents (ANA-111: ticket_halloween buy goal)', () => {
+  it('G-17 is present via the alias exact condition ticket_halloween (counter names it without the step segment)', () => {
+    const g17 = (id: number, url: string): CounterGoal =>
+      g(id, 'Покупка билета Хэллоуин', 'action', [{ type: 'exact', url }]);
+    const rows = compareWithReference([
+      g17(676226258, 'ticket_halloween'), // alias — как на живом счётчике
+    ]);
+    const row = rows.find((r) => r.ref.code === 'G-17')!;
+    expect(row.status).toBe('present');
+    expect(row.goalId).toBe(676226258);
+    // exact on the canonical event still wins when present
+    const canonical = compareWithReference([g17(99, 'ticket_buy_halloween')]);
+    expect(canonical.find((r) => r.ref.code === 'G-17')!.goalId).toBe(99);
+  });
+});

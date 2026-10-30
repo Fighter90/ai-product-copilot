@@ -17,6 +17,13 @@ export interface PcGoalRef {
   readonly code: string;
   /** JS event name sent by pc-goals (also the condition value). */
   readonly event: string;
+  /**
+   * Alternative counter conditions that satisfy this reference (ANA-111/REG-G17): the counter
+   * names some goals differently than pc-goals sends them — e.g. the halloween purchase goal
+   * is «ticket_halloween» while pc-goals emits «ticket_buy_halloween». An exact condition on
+   * any alias makes the reference "present" (the read side aliases the same way, live.ts).
+   */
+  readonly aliasEvents?: readonly string[];
   readonly ru: string;
   readonly en: string;
   readonly group: 'funnel' | 'ticket' | 'role';
@@ -40,6 +47,8 @@ const raw: Array<Omit<PcGoalRef, 'code' | 'type' | 'condition'>> = [
   ...TICKET_TYPES.flatMap((t) =>
     TICKET_STEPS.map((s) => ({
       event: `ticket_${s.step}_${t}`,
+      // The counter's halloween purchase goal is named «ticket_halloween» (no step segment).
+      ...(t === 'halloween' && s.step === 'buy' ? { aliasEvents: ['ticket_halloween'] } : {}),
       ru: `${s.ru} ${t}`,
       en: `${s.en} ${t}`,
       group: 'ticket' as const,

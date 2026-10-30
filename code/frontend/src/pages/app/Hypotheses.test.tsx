@@ -91,7 +91,7 @@ describe('Hypotheses page', () => {
   beforeEach(() => mockData());
   afterEach(() => setTestLocale('ru'));
 
-  it.skip('renders the kanban columns with ICE, the AI badge and the unverified-numbers warning', async () => {
+  it('renders the kanban columns with ICE, the AI badge and the unverified-numbers warning', async () => {
     const { container } = renderWithProviders(<Hypotheses />, '/app/hypotheses');
     expect(await screen.findByTestId('hyp-kanban')).toBeInTheDocument();
     for (const col of [
@@ -133,12 +133,15 @@ describe('Hypotheses page', () => {
     expect(editor).toHaveTextContent('CR 0,7%');
   });
 
-  it.skip('refuses to save an incomplete draft (per-field errors) and creates a valid one — FLAKY: editor opens intermittently; доводится в ANA-37', async () => {
+  it('refuses to save an incomplete draft (per-field errors) and creates a valid one', async () => {
     vi.mocked(hypothesesApi.create).mockResolvedValue(SEEDED[0]!);
     renderWithProviders(<Hypotheses />, '/app/hypotheses');
     fireEvent.click(await screen.findByTestId('hyp-new'));
-
-    await waitFor(() => expect(screen.getByTestId('hyp-save')).toBeDisabled());
+    const save = await screen.findByTestId('hyp-save');
+    // БАГ-14: until the user touches the form the per-field errors are hidden — the button
+    // already reflects them though.
+    expect(save).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: ' ' } }); // touch → dirty
     expect(screen.getAllByText('Заполните поле').length).toBeGreaterThan(0);
     expect(screen.getByText('Нужно минимум 3 допущения')).toBeInTheDocument();
     expect(screen.getByText('Нужно минимум 2 метода проверки')).toBeInTheDocument();
@@ -157,9 +160,12 @@ describe('Hypotheses page', () => {
     fireEvent.change(cats[2]!, { target: { value: 'tech' } });
     const texts = screen.getAllByLabelText('Текст допущения');
     texts.forEach((el, i) => fireEvent.change(el, { target: { value: `допущение ${i}` } }));
-    // 2 methods of distinct types.
+    // 2 methods of distinct types (the editor requires ≥2 with different VALIDATION_METHOD_TYPES).
     fireEvent.click(screen.getAllByRole('button', { name: 'Добавить' })[1]!);
     fireEvent.click(screen.getAllByRole('button', { name: 'Добавить' })[1]!);
+    const typeSelects = screen.getAllByLabelText('Тип метода');
+    fireEvent.change(typeSelects[0]!, { target: { value: 'quantitative' } });
+    fireEvent.change(typeSelects[1]!, { target: { value: 'live' } });
     const plans = screen.getAllByLabelText('План проверки');
     fireEvent.change(plans[0]!, { target: { value: 'A/B-тест' } });
     fireEvent.change(plans[1]!, { target: { value: 'интервью' } });

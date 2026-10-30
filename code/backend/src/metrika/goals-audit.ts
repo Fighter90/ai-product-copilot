@@ -71,6 +71,10 @@ export function normalizeGoalName(name: string): string {
 const hasExactEvent = (g: CounterGoal, event: string): boolean =>
   g.type === 'action' && (g.conditions ?? []).some((c) => c.type === 'exact' && c.url === event);
 
+/** Exact match on the reference event OR any accepted alias (ANA-111: ticket_halloween). */
+const matchesRefEvents = (g: CounterGoal, ref: PcGoalRef): boolean =>
+  hasExactEvent(g, ref.event) || (ref.aliasEvents ?? []).some((a) => hasExactEvent(g, a));
+
 const mentionsEvent = (g: CounterGoal, event: string): boolean =>
   (g.conditions ?? []).some((c) => c.url === event);
 
@@ -101,7 +105,7 @@ function mismatchIssues(g: CounterGoal, ref: PcGoalRef): string[] {
 function referenceIndex(goals: readonly CounterGoal[]): Map<number, string> {
   const out = new Map<number, string>();
   for (const ref of PC_GOALS_REFERENCE) {
-    const g = goals.find((x) => !isArchivedGoal(x) && hasExactEvent(x, ref.event));
+    const g = goals.find((x) => !isArchivedGoal(x) && matchesRefEvents(x, ref));
     if (g && !out.has(g.id)) out.set(g.id, ref.code);
   }
   return out;
@@ -112,7 +116,7 @@ export function compareWithReference(goals: readonly CounterGoal[]): ExpectedRow
   const archived = goals.filter(isArchivedGoal);
   return PC_GOALS_REFERENCE.map((ref): ExpectedRow => {
     const base = { ref: { ...ref, name: refGoalName(ref) }, spec: refGoalSpec(ref) };
-    const exact = active.find((g) => hasExactEvent(g, ref.event));
+    const exact = active.find((g) => matchesRefEvents(g, ref));
     if (exact) return { ...base, status: 'present', goalId: exact.id, goalName: exact.name };
     const near = active.find((g) => mentionsEvent(g, ref.event) || nameMatchesRef(g, ref));
     if (near) {
@@ -124,7 +128,7 @@ export function compareWithReference(goals: readonly CounterGoal[]): ExpectedRow
         issues: mismatchIssues(near, ref),
       };
     }
-    const restorable = archived.find((g) => hasExactEvent(g, ref.event));
+    const restorable = archived.find((g) => matchesRefEvents(g, ref));
     return restorable
       ? { ...base, status: 'missing', archivedGoalId: restorable.id }
       : { ...base, status: 'missing' };

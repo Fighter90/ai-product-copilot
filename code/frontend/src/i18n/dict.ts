@@ -732,6 +732,9 @@ export const ru = {
   'an.live.min': 'мин',
   'an.live.refresh': 'Обновить',
   'an.goals.archived': 'Архивная',
+  'quota.banner':
+    'Данные Метрики временно недоступны: исчерпана квота API. Показаны последние сохранённые данные.',
+  'quota.dismiss': 'Скрыть',
   'an.goals.archivedHidden': 'Скрыто архивных целей: {n} — включите «Архивные цели» в фильтре.',
   'an.goals.dupHint': 'Цели с одинаковым типом и условиями — считают одно и то же.',
   'an.goals.statusHint':
@@ -2034,6 +2037,9 @@ export const en: Record<DictKey, string> = {
   'an.live.min': 'min',
   'an.live.refresh': 'Refresh',
   'an.goals.archived': 'Archived',
+  'quota.banner':
+    'Metrika data is temporarily unavailable: the API quota is exhausted. Showing the last saved snapshot.',
+  'quota.dismiss': 'Hide',
   'an.goals.archivedHidden': 'Archived goals hidden: {n} — turn on "Archived goals" in the filter.',
   'an.goals.dupHint': 'Goals with identical type and conditions — they count the same thing.',
   'an.goals.statusHint':

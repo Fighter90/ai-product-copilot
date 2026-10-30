@@ -516,7 +516,9 @@ export async function dataLensRoutes(app: FastifyInstance, deps: DataLensDeps): 
 
   /** Admin-only (guarded by the /api/admin ADMIN_RULES): verify the DataLens API connection. */
   app.post('/admin/integrations/datalens/check', async (req, reply) => {
-    const iamToken = deps.settings.get('DATALENS_IAM_TOKEN');
+    // The IAM token lives ≤12h; the durable source is /opt/pca/.env (rotated by cron) — the
+    // DB setting may hold a stale copy, so the env value wins when present (ANA-110).
+    const iamToken = process.env.DATALENS_IAM_TOKEN || deps.settings.get('DATALENS_IAM_TOKEN');
     const orgId = deps.settings.get('DATALENS_ORG_ID');
     const workbookId = deps.settings.get('DATALENS_WORKBOOK_ID');
     const missing = [
