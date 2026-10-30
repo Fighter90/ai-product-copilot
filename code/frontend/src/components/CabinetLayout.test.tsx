@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { screen, fireEvent, within } from '@testing-library/react';
+import { screen, fireEvent, within, act } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { CabinetLayout } from './CabinetLayout';
 import { renderWithProviders } from '../test/utils';
@@ -80,6 +80,18 @@ describe('CabinetLayout', () => {
     expect(screen.getByRole('link', { name: /Analytics Copilot/i })).toHaveAttribute('href', '/');
     // Роут-аутлет отрендерился.
     expect(screen.getByText('OVERVIEW PAGE')).toBeInTheDocument();
+  });
+
+  it('shows QuotaBanner (ANA-112) above <main>, not at the bottom of the document', () => {
+    // Prod-регрессия: баннер висел последним ребёнком корневого div — ниже <main> и
+    // футера (y≈1231px из 1268px), пользователь его не видел без прокрутки.
+    const { container } = renderCabinet();
+    act(() => window.dispatchEvent(new CustomEvent('pca:metrika-quota')));
+    const banner = screen.getByTestId('quota-banner');
+    const main = container.querySelector('main');
+    expect(main).not.toBeNull();
+    // Порядок в DOM: баннер раньше <main> (и раньше футера) — т.е. над контентом.
+    expect(banner.compareDocumentPosition(main!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('toggles aria-expanded on the hamburger and slides the drawer panel', () => {

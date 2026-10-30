@@ -516,6 +516,11 @@ export function CabinetLayout(): JSX.Element {
         {/* REG-15: a stale tab learns about a post-deploy version change within 5 minutes. */}
         <BuildMismatchBanner />
 
+        {/* ANA-112: «квота Метрики исчерпана» — над контентом, под sticky-хедером: живые
+            страницы высокие, и баннер в конце документа пользователь бы не увидел
+            (на проде он рендерился в самом низу, y≈1231px из 1268px). */}
+        <QuotaBanner />
+
         <main
           key={location.pathname}
           className="mx-auto max-w-7xl px-4 pb-28 pt-6 animate-fade-in sm:px-6 lg:pb-12"
@@ -566,7 +571,6 @@ export function CabinetLayout(): JSX.Element {
 
       {/* ANA-47: role-specific onboarding tour, mounted once for the whole cabinet. */}
       <CabinetTour />
-      <QuotaBanner />
     </div>
   );
 }
