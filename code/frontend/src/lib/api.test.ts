@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { api, ApiError } from './api';
+import { v3 } from './api-v3';
 
 function mockFetch(impl: (url: string, init?: RequestInit) => unknown) {
   vi.stubGlobal(
@@ -108,6 +109,47 @@ describe('api client', () => {
 
     mockFetch(() => ({ ok: false, status: 422, json: async () => ({}), text: async () => 'bad' }));
     await expect(api.hypotheses()).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('ANA-112: 429 on Metrika-backed paths dispatches pca:metrika-quota, throttled to one per 30 s', async () => {
+    const w = window as unknown as { __pcaQuotaAt?: number };
+    delete w.__pcaQuotaAt;
+    const events = vi.fn();
+    window.addEventListener('pca:metrika-quota', events);
+    try {
+      const r429 = { ok: false, status: 429, json: async () => ({}), text: async () => 'x' };
+      mockFetch(() => r429);
+      // All Metrika-backed surfaces: live reads, metrics reads, sync, admin goal management.
+      await expect(v3.liveSummary({})).rejects.toBeInstanceOf(ApiError);
+      await expect(api.channels()).rejects.toBeInstanceOf(ApiError);
+      await expect(api.syncStatus()).rejects.toBeInstanceOf(ApiError);
+      await expect(api.hypotheses()).rejects.toBeInstanceOf(ApiError); // non-Metrika path
+      expect(events).toHaveBeenCalledTimes(1); // 3 in-scope hits collapsed by the 30 s throttle
+
+      w.__pcaQuotaAt = Date.now() - 31_000; // throttle window elapsed → the next 429 fires again
+      await expect(api.channels()).rejects.toBeInstanceOf(ApiError);
+      expect(events).toHaveBeenCalledTimes(2);
+    } finally {
+      window.removeEventListener('pca:metrika-quota', events);
+      delete w.__pcaQuotaAt;
+    }
+  });
+
+  it('ANA-112: 429 on non-Metrika endpoints (auth/help) does NOT dispatch the banner event', async () => {
+    const w = window as unknown as { __pcaQuotaAt?: number };
+    delete w.__pcaQuotaAt;
+    const events = vi.fn();
+    window.addEventListener('pca:metrika-quota', events);
+    try {
+      const r429 = { ok: false, status: 429, json: async () => ({}), text: async () => 'x' };
+      mockFetch(() => r429);
+      await expect(v3.login('a@b.c', 'pw')).rejects.toBeInstanceOf(ApiError);
+      await expect(v3.helpArticles('ru')).rejects.toBeInstanceOf(ApiError);
+      expect(events).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('pca:metrika-quota', events);
+      delete w.__pcaQuotaAt;
+    }
   });
 });
 

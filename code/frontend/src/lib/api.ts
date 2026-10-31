@@ -99,8 +99,14 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
       window.dispatchEvent(new CustomEvent('pca:unauthorized'));
     }
     // Metrika per-user quota exhausted (ANA-112): tell the UI to show the "stale data" banner.
-    // Throttled — several live widgets can 429 within one render pass.
-    if (res.status === 429 && typeof window !== 'undefined') {
+    // Throttled — several live widgets can 429 within one render pass. Scoped to Metrika-backed
+    // endpoints: auth login, help questions and DataLens have their own 429 rate limits and must
+    // not trigger a banner that claims Metrika data is stale.
+    if (
+      res.status === 429 &&
+      /^\/(live|metrics|sync|admin\/metrika)\b/.test(path) &&
+      typeof window !== 'undefined'
+    ) {
       const last = (window as { __pcaQuotaAt?: number }).__pcaQuotaAt ?? 0;
       if (Date.now() - last > 30_000) {
         (window as { __pcaQuotaAt?: number }).__pcaQuotaAt = Date.now();
