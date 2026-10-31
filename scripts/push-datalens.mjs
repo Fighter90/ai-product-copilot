@@ -229,9 +229,12 @@ async function ensureDataset(workbookId, connectionId, entries) {
   return datasetId;
 }
 
-function chartSpecs(ds) {
+function chartSpecs(ds, hasGoalOrders) {
   const f = (guid) => ({ guid, datasetId: ds });
   const sources = { datasetsIds: [ds] };
+  // goal_orders может отсутствовать в коннекторе (ANA-110) — чарты без него не роняют рендер.
+  const orders = hasGoalOrders ? [f('goal_orders')] : [];
+  const ordersCol = hasGoalOrders ? [f('goal_orders')] : [];
   return [
     {
       name: 'Визиты и посетители по дням',
@@ -253,7 +256,7 @@ function chartSpecs(ds) {
         visualization: {
           type: 'line',
           x: { items: [f('date')] },
-          y: { items: [f('goal_orders'), f('goal_reaches')] },
+          y: { items: [...orders, f('goal_reaches')] },
           sort: { items: [{ ...f('date'), direction: 'ASC' }] },
         },
       },
@@ -288,13 +291,7 @@ function chartSpecs(ds) {
         visualization: {
           type: 'flatTable',
           columns: {
-            items: [
-              f('traffic_source'),
-              f('visits'),
-              f('users'),
-              f('goal_orders'),
-              f('goal_reaches'),
-            ],
+            items: [f('traffic_source'), f('visits'), f('users'), ...ordersCol, f('goal_reaches')],
           },
           sort: { items: [{ ...f('visits'), direction: 'DESC' }] },
         },
@@ -305,7 +302,8 @@ function chartSpecs(ds) {
 
 async function ensureCharts(workbookId, datasetId, entries) {
   const charts = [];
-  for (const spec of chartSpecs(datasetId)) {
+  const hasGoalOrders = Object.values(FIELDS).includes('goal_orders');
+  for (const spec of chartSpecs(datasetId, hasGoalOrders)) {
     const found = entries.find((e) => e.scope === 'widget' && e.name === spec.name);
     if (found) {
       await rpc('updateWizardChart', { chartId: found.entryId, mode: 'publish', data: spec.data });
