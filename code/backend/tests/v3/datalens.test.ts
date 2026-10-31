@@ -473,6 +473,26 @@ describe('POST /api/admin/integrations/datalens/check', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  // Security pass v3.3.x: each check is an outbound HTTPS call (15s timeout) — rapid-fire
+  // retries are throttled per admin (5/min), and a 429 never reaches the DataLens API.
+  it('rate-limits rapid checks: 5/min per admin → 429 RATE_LIMITED, no extra HTTP calls', async () => {
+    configure();
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ title: 'wb' }),
+    });
+    for (let i = 0; i < 5; i++) {
+      const res = await app.inject({ method: 'POST', url, headers: { cookie: adminCookie } });
+      expect(res.statusCode).toBe(200);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    const limited = await app.inject({ method: 'POST', url, headers: { cookie: adminCookie } });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toEqual({ error: 'too many requests', code: 'RATE_LIMITED' });
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
   it('analyst → 403, anonymous → 401 (check and webhook-token GET are admin-only)', async () => {
     configure();
     const a = await app.inject({ method: 'POST', url, headers: { cookie: analystCookie } });

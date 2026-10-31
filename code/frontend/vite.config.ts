@@ -49,6 +49,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
+          // ANA-41: echarts (~1.1MB / gzip ~385KB) должен оставаться ленивым — он достижим
+          // только через динамический import() в components/charts (React.lazy EChartInner),
+          // поэтому chunk грузится лишь когда реально рендерится график. Не импортировать
+          // echarts / echarts-for-react из статики (App, layouts, shared-компоненты)!
           echarts: ['echarts', 'echarts-for-react'],
           react: ['react', 'react-dom', 'react-router-dom'],
         },

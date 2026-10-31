@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import type { ChannelStat, B2bDeal, PageStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
@@ -60,13 +60,17 @@ describe('FunnelView', () => {
     expect(screen.getByText(/Нет данных за выбранный период/)).toBeInTheDocument();
   });
 
-  it('renders the funnel stages + chart on success', () => {
+  it('renders the funnel stages + chart on success', async () => {
     render(<FunnelView status="success" stats={stats} deals={deals} geoDevice={[]} pages={[]} />);
     expect(screen.getByText('Визитов')).toBeInTheDocument();
     // The label appears on the KPI card and in the funnel stage list below the chart.
     expect(screen.getAllByText('Оплачено B2B').length).toBeGreaterThanOrEqual(1);
-    // Multiple charts now: funnel, channel CR, geo
-    expect(screen.getAllByTestId('echart').length).toBeGreaterThanOrEqual(2);
+    // Multiple charts now: funnel, channel CR, geo. EChart грузит EChartInner за React.lazy
+    // (ANA-41) — ждём появления минимум двух графиков.
+    await waitFor(
+      () => expect(screen.getAllByTestId('echart').length).toBeGreaterThanOrEqual(2),
+      { timeout: 15000 },
+    );
   });
 });
 

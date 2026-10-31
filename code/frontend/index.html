@@ -28,10 +28,25 @@
     <meta name="twitter:image" content="https://dashboardcamp.ru/screenshots/03-overview.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- ANA-41: Google Fonts не в критическом пути — preload + неблокирующая подмена media,
+         иначе рендер ждёт ~1s цепочку css2 → woff2. Fallback в noscript для без-JS клиентов. -->
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
     <title>ProductCamp Analytics Copilot</title>
     <script>
       // Apply theme + language before first paint (no flash). Values: localStorage → system.

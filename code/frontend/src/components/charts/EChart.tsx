@@ -1,5 +1,4 @@
-import ReactECharts from 'echarts-for-react';
-import '../../lib/echarts-theme'; // registers the «pca» / «pca-dark» themes (side-effect import)
+import { lazy, Suspense } from 'react';
 import { usePrefs } from '../../store/prefs';
 
 /**
@@ -61,19 +60,31 @@ function applyLabelStyle(node: unknown, dark: boolean): void {
   }
 }
 
+/**
+ * ECharts грузится по требованию (ANA-41): сама библиотека (~1.1MB, gzip ~385KB) живёт за
+ * динамическим import() в EChartInner, поэтому routes без графиков её не тянут вовсе, а
+ * страницы с графиками сначала рисуют каркас-скелетон нужной высоты (без скачка layout).
+ * Экспорт и сигнатура прежние — ни один route менять не нужно.
+ */
+const EChartInner = lazy(() => import('./EChartInner'));
+
 /** Thin ECharts wrapper so option-building stays in pure, testable functions. Follows day/night theme. */
 export function EChart({ option, height = 300 }: { option: object; height?: number }): JSX.Element {
   const theme = usePrefs((s) => s.theme);
   const dark = theme === 'dark';
   applyLabelStyle(option, dark);
   return (
-    <ReactECharts
-      key={theme}
-      option={option}
-      style={{ height }}
-      theme={theme === 'dark' ? 'pca-dark' : 'pca'}
-      notMerge
-      lazyUpdate
-    />
+    <Suspense
+      fallback={
+        <div
+          style={{ height }}
+          aria-hidden="true"
+          className="animate-pulse rounded-lg bg-black/5 dark:bg-white/10"
+        />
+      }
+    >
+      {/* key пересоздаёт график при смене темы — как раньше (notMerge через remount) */}
+      <EChartInner key={theme} option={option} height={height} theme={dark ? 'pca-dark' : 'pca'} />
+    </Suspense>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import type { PageStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
@@ -40,7 +40,7 @@ describe('BehaviorView', () => {
     expect(screen.getByText(/Нет данных за выбранный период/)).toBeInTheDocument();
   });
 
-  it('renders the entry + exit page tables on success', () => {
+  it('renders the entry + exit page tables on success', async () => {
     render(
       <BehaviorView
         status="success"
@@ -52,8 +52,9 @@ describe('BehaviorView', () => {
     expect(screen.getByRole('heading', { name: 'Страницы выхода' })).toBeInTheDocument();
     expect(screen.getByText('/lp')).toBeInTheDocument();
     expect(screen.getByText('/checkout')).toBeInTheDocument();
-    // 3 charts: CR bar, bounce bar, exit bounce bar
-    expect(screen.getAllByTestId('echart')).toHaveLength(3);
+    // 3 charts: CR bar, bounce bar, exit bounce bar.
+    // EChart грузит EChartInner за React.lazy (ANA-41) — ждём появления всех трёх.
+    await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(3), { timeout: 15000 });
   });
 
   it('БАГ-08: «Средние» and the exit summary bounce are visit-weighted, not a plain row mean', () => {

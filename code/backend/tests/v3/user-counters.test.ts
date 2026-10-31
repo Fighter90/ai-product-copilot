@@ -395,6 +395,9 @@ describe('full cabinet app: real data endpoints enforce counter access', () => {
     '/api/live/summary',
     '/api/report/snapshots',
     '/api/integrations/datalens/datasets',
+    // v3.3.x additions sit under /api/metrics → protected by default, like the older reads.
+    '/api/metrics/goal-roles',
+    '/api/metrics/coverage',
   ];
 
   it.each(REAL)('analyst without access → 403 on %s; admin → not 403', async (url) => {

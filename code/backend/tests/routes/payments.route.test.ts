@@ -4,6 +4,7 @@ import type { DB } from '../../src/db/connection';
 import { freshDb } from '../db/helpers';
 import { B2cPaymentsRepo } from '../../src/db/repositories/b2c-payments-repo';
 import { B2bRepo } from '../../src/db/repositories/b2b-repo';
+import type { User } from '../../src/auth/users-repo';
 import { paymentsRoutes, parsePaymentsCsv } from '../../src/routes/payments';
 
 /**
@@ -63,6 +64,47 @@ describe('payments routes (ANA-19)', () => {
     expect(res.json().error).toBe('invalid body');
   });
 
+  // Security pass v3.3.x: unbounded numbers would silently poison the «Оплачено» KPI and every
+  // report snapshot (1e21 IS an integer in JS — min(0) alone does not save the totals).
+  it('rejects absurd magnitudes with 400 (tickets/amountRub upper bounds)', async () => {
+    build();
+    for (const payload of [
+      { date: '2026-10-20', tickets: 1e21 }, // integer per Number.isInteger, still absurd
+      { date: '2026-10-20', tickets: 3, amountRub: -1 },
+      { date: '2026-10-20', tickets: 3, amountRub: 1e12 },
+      { date: '2026-10-20', tickets: 2.5 },
+      { date: '2026-10-20', tickets: '5' }, // strings are not numbers
+    ]) {
+      const res = await app.inject({ method: 'PUT', url: '/api/payments/b2c', payload });
+      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+    }
+    const list = await app.inject({ method: 'GET', url: '/api/payments/b2c' });
+    expect(list.json()).toHaveLength(0); // nothing leaked in
+  });
+
+  it('records updatedBy for manual entry and CSV import (row-level attribution)', async () => {
+    build();
+    // Same decoration registerAuth performs; the getter yields a fresh object per request.
+    app.decorateRequest('user', {
+      getter: () => ({ id: 2, email: 'analyst@x.ru', role: 'analyst' }) as unknown as User,
+    });
+    await app.inject({
+      method: 'PUT',
+      url: '/api/payments/b2c',
+      payload: { date: '2026-10-20', tickets: 7 },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/api/payments/b2c/import',
+      payload: { csv: '2026-10-21,4\n' },
+    });
+    const list = await app.inject({ method: 'GET', url: '/api/payments/b2c' });
+    expect(list.json()).toEqual([
+      expect.objectContaining({ date: '2026-10-20', updatedBy: 'analyst@x.ru' }),
+      expect.objectContaining({ date: '2026-10-21', updatedBy: 'analyst@x.ru' }),
+    ]);
+  });
+
   it('DELETE /payments/b2c/:date removes the day (204) or 404', async () => {
     build();
     await app.inject({
@@ -90,6 +132,28 @@ describe('payments routes (ANA-19)', () => {
     const list = await app.inject({ method: 'GET', url: '/api/payments/b2c' });
     expect(list.json()).toHaveLength(2);
     expect(list.json()[0]).toMatchObject({ source: 'csv', note: 'CSV import' });
+  });
+
+  // Security pass v3.3.x: hostile/malformed CSV lines are skipped, never partially imported.
+  it('import rejects unbounded tickets, negative amounts and formula-looking cells', async () => {
+    build();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/payments/b2c/import',
+      payload: {
+        csv: [
+          'date,tickets,amount',
+          '2026-10-19,1000000000000000000000000', // 1e24 — "integer", still absurd
+          '2026-10-19,3,-5', // negative amount (manual entry rejects it too)
+          '2026-10-19,=1+1', // spreadsheet formula, not a number
+          '2026-10-19,', // empty tickets would coerce to 0
+          '2026-10-19,2,1000000000000', // amount above the bound
+        ].join('\n'),
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ imported: 0, skipped: 5, errors: expect.any(Array) });
+    expect((await app.inject({ method: 'GET', url: '/api/payments/b2c' })).json()).toHaveLength(0);
   });
 
   it('GET /payments/summary returns «Оплачено» = B2C paid + B2B paid, honouring the range', async () => {
@@ -139,6 +203,19 @@ describe('parsePaymentsCsv (ANA-19)', () => {
     expect(errors).toEqual([
       { line: 1, message: 'bad date "2026-13-99" (YYYY-MM-DD expected)' },
       { line: 2, message: 'bad tickets "-2"' },
+    ]);
+  });
+
+  // Security pass v3.3.x: the parser enforces the same bounds as the manual-entry zod schema.
+  it('rejects unbounded tickets and negative amounts (same bounds as manual entry)', () => {
+    const { rows, errors } = parsePaymentsCsv(
+      '2026-10-21,1000000000000000000000\n2026-10-21,3,-5\n2026-10-21,3,1000000000000\n',
+    );
+    expect(rows).toEqual([]);
+    expect(errors.map((e) => e.message)).toEqual([
+      'bad tickets "1000000000000000000000"',
+      'bad amount "-5"',
+      'bad amount "1000000000000"',
     ]);
   });
 });

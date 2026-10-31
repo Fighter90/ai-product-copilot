@@ -422,6 +422,19 @@ export function extractCode(payload: unknown): string | null {
 export async function dataLensRoutes(app: FastifyInstance, deps: DataLensDeps): Promise<void> {
   const now = deps.now ?? (() => new Date());
 
+  // Per-user rate-limit for the admin «проверить подключение» button: each call is an outbound
+  // HTTPS request to the DataLens API (15s timeout), so rapid-fire clicks must be throttled.
+  // 5 checks/minute is far above any manual usage. Closure-scoped → fresh state per app.
+  const dlChecks = new Map<number, number[]>();
+  const checkLimited = (uid: number): boolean => {
+    const t = now().getTime();
+    const recent = (dlChecks.get(uid) ?? []).filter((x) => t - x < 60_000);
+    if (recent.length >= 5) return true;
+    recent.push(t);
+    dlChecks.set(uid, recent);
+    return false;
+  };
+
   app.get('/integrations/datalens/datasets', async () =>
     DATASETS.map((d) => ({ id: d.id, ru: d.ru, en: d.en, ranged: d.ranged, columns: d.columns })),
   );
@@ -516,9 +529,15 @@ export async function dataLensRoutes(app: FastifyInstance, deps: DataLensDeps): 
 
   /** Admin-only (guarded by the /api/admin ADMIN_RULES): verify the DataLens API connection. */
   app.post('/admin/integrations/datalens/check', async (req, reply) => {
-    // The IAM token lives ≤12h; the durable source is /opt/pca/.env (rotated by cron) — the
-    // DB setting may hold a stale copy, so the env value wins when present (ANA-110).
-    const iamToken = process.env.DATALENS_IAM_TOKEN || deps.settings.get('DATALENS_IAM_TOKEN');
+    // Rate-limit first: it also throttles config-probing retries, not just the outbound call.
+    if (checkLimited(req.user!.id)) {
+      return reply.code(429).send({ error: 'too many requests', code: 'RATE_LIMITED' });
+    }
+    // IAM token lives ≤12h and is single-active: the ONLY generator is
+    // scripts/refresh-datalens-token.mjs (updates /opt/pca/.env for the timer AND the DB
+    // setting for the admin UI/check — one fresh token in both places). Do not read
+    // process.env here: pca-api loads .env at boot, so a stale copy would shadow the fresh one.
+    const iamToken = deps.settings.get('DATALENS_IAM_TOKEN');
     const orgId = deps.settings.get('DATALENS_ORG_ID');
     const workbookId = deps.settings.get('DATALENS_WORKBOOK_ID');
     const missing = [

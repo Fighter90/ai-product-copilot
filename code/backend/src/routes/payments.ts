@@ -23,10 +23,18 @@ const isoDate = z
     return !Number.isNaN(t.getTime()) && t.toISOString().slice(0, 10) === d;
   }, 'date must be a real calendar day');
 
+/**
+ * Sane upper bounds (security pass v3.3.x): a paid-tickets day above these is a typo or an
+ * attack, not data — unbounded values would silently poison the «Оплачено» KPI, the coverage
+ * report and every report snapshot built afterwards.
+ */
+export const MAX_TICKETS_PER_DAY = 100_000;
+export const MAX_AMOUNT_RUB = 1_000_000_000;
+
 const PaymentBody = z.object({
   date: isoDate,
-  tickets: z.number().int().min(0),
-  amountRub: z.number().min(0).optional(),
+  tickets: z.number().int().min(0).max(MAX_TICKETS_PER_DAY),
+  amountRub: z.number().min(0).max(MAX_AMOUNT_RUB).optional(),
   note: z.string().max(500).optional(),
 });
 
@@ -56,12 +64,23 @@ export function parsePaymentsCsv(csv: string): {
       continue;
     }
     const tickets = Number(ticketsRaw);
-    if (!Number.isInteger(tickets) || tickets < 0) {
+    // Empty string would coerce to 0; absurd magnitudes (1e21 is an "integer") poison the KPI —
+    // both are rejected exactly like the zod path for manual entry.
+    if (
+      ticketsRaw === '' ||
+      ticketsRaw === undefined ||
+      !Number.isInteger(tickets) ||
+      tickets < 0 ||
+      tickets > MAX_TICKETS_PER_DAY
+    ) {
       errors.push({ line: i + 1, message: `bad tickets "${ticketsRaw ?? ''}"` });
       continue;
     }
     const amountRub = amountRaw !== undefined && amountRaw !== '' ? Number(amountRaw) : undefined;
-    if (amountRub !== undefined && !Number.isFinite(amountRub)) {
+    if (
+      amountRub !== undefined &&
+      (!Number.isFinite(amountRub) || amountRub < 0 || amountRub > MAX_AMOUNT_RUB)
+    ) {
       errors.push({ line: i + 1, message: `bad amount "${amountRaw}"` });
       continue;
     }
@@ -101,6 +120,8 @@ export async function paymentsRoutes(
       }
       const saved = opts.b2c.upsert(parsed.data as NewB2cPayment, {
         source: 'manual',
+        // Row-level attribution (same as the marketing grid): who entered/corrected the figure.
+        updatedBy: req.user?.email,
         now,
       });
       return reply.code(200).send(saved);
@@ -132,7 +153,7 @@ export async function paymentsRoutes(
       const { rows, errors } = parsePaymentsCsv(parsed.data.csv);
       let imported = 0;
       for (const r of rows) {
-        opts.b2c.upsert(r, { source: 'csv', now });
+        opts.b2c.upsert(r, { source: 'csv', updatedBy: req.user?.email, now });
         imported++;
       }
       return reply.code(200).send({ imported, skipped: errors.length, errors });

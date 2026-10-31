@@ -22,7 +22,14 @@ vi.mock('./lib/api-v3', () => ({
 import { App } from './App';
 import { queryClient } from './lib/query';
 
-afterEach(() => queryClient.clear());
+afterEach(() => {
+  queryClient.clear();
+  // Тесты ниже уходят с '/' через window.history.pushState, а jsdom-история
+  // шарится между тестами файла: при ином порядке выполнения (vitest
+  // --sequence.shuffle) первый тест стартует с /app|/b2b и видит /login
+  // вместо лендинга. Возвращаем корень — изоляция URL между тестами.
+  window.history.pushState({}, '', '/');
+});
 
 describe('<App>', () => {
   it('renders the public landing shell with headline and login entry', async () => {

@@ -105,6 +105,9 @@ const ADMIN_ONLY: Array<{ method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; u
   { method: 'POST', url: '/api/users' },
   { method: 'PATCH', url: '/api/users/1' },
   { method: 'POST', url: '/api/users/1/reset-password' },
+  // v3.3.x security pass: pin the newer admin-only endpoints against regressions.
+  { method: 'GET', url: '/api/sync/status' }, // ANA-15: sync runs are admin data
+  { method: 'PUT', url: '/api/users/1/counters' }, // an analyst cannot grant itself counters
 ];
 
 describe('cabinet role guard', () => {
@@ -143,6 +146,61 @@ describe('cabinet role guard', () => {
       const res = await app.inject({ method: 'GET', url, headers: { cookie: analystCookie } });
       expect(res.statusCode, url).toBe(200);
     }
+  });
+
+  // v3.3.x security pass: pin the role model of the newer endpoints. The demo banner and the
+  // B2C payments grid are analyst work (ANA-18/ANA-19) — no counter grant and no admin role
+  // needed; anonymous gets 401 everywhere.
+  it('v3.3.x: demo status + payments read/write stay analyst-accessible', async () => {
+    for (const url of ['/api/demo/status', '/api/payments/b2c']) {
+      const res = await app.inject({ method: 'GET', url, headers: { cookie: analystCookie } });
+      expect(res.statusCode, url).toBe(200);
+    }
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/api/payments/b2c',
+      headers: { cookie: analystCookie },
+      payload: { date: '2026-10-27', tickets: 3 },
+    });
+    expect(put.statusCode).toBe(200);
+    const imported = await app.inject({
+      method: 'POST',
+      url: '/api/payments/b2c/import',
+      headers: { cookie: analystCookie },
+      payload: { csv: '2026-10-26,2\n' },
+    });
+    expect(imported.statusCode).toBe(200);
+    expect(imported.json().imported).toBe(1);
+    const del = await app.inject({
+      method: 'DELETE',
+      url: '/api/payments/b2c/2026-10-27',
+      headers: { cookie: analystCookie },
+    });
+    expect(del.statusCode).toBe(204);
+  });
+
+  it('v3.3.x: anonymous → 401 on the newer reads and payments writes', async () => {
+    for (const url of ['/api/demo/status', '/api/payments/b2c']) {
+      expect((await app.inject({ method: 'GET', url })).statusCode, url).toBe(401);
+    }
+    expect(
+      (
+        await app.inject({
+          method: 'PUT',
+          url: '/api/payments/b2c',
+          payload: { date: '2026-10-27', tickets: 3 },
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/api/payments/b2c/import',
+          payload: { csv: '2026-10-26,2\n' },
+        })
+      ).statusCode,
+    ).toBe(401);
   });
 
   it('analyst reads only KPI_TARGET/EVENT_DATE from /api/settings/public (REG-12)', async () => {

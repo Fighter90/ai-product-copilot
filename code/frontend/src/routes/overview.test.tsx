@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import type { ChannelStat, GeoDeviceStat, PageStat, UtmStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { usePrefs } from '../store/prefs';
@@ -61,12 +61,13 @@ describe('OverviewView', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 
-  it('renders the KPI strip and charts on success (no weak spots for a single channel)', () => {
+  it('renders the KPI strip and charts on success (no weak spots for a single channel)', async () => {
     render(<OverviewView status="success" stats={[sample]} />);
     expect(screen.getByText('Цель (платных билетов)')).toBeInTheDocument();
     expect(screen.getByText(/Заявок/)).toBeInTheDocument();
     expect(screen.getByText('Визиты и заявки по дням')).toBeInTheDocument();
-    expect(screen.getAllByTestId('echart')).toHaveLength(2);
+    // EChart грузит EChartInner за React.lazy (ANA-41) — ждём появления обоих графиков.
+    await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(2), { timeout: 15000 });
     expect(screen.getByText(/Нет слабых мест/)).toBeInTheDocument();
     expect(screen.queryByText(/KPI-цель определена автоматически/)).not.toBeInTheDocument();
   });
@@ -98,12 +99,13 @@ describe('OverviewView', () => {
     expect(screen.getByText(/Нет данных за выбранный период/)).toBeInTheDocument();
   });
 
-  it('renders geo/device charts when geoDevice data is provided', () => {
+  it('renders geo/device charts when geoDevice data is provided', async () => {
     render(<OverviewView status="success" stats={[sample]} geoDevice={[geoSample]} />);
     expect(screen.getByText('Топ стран по визитам')).toBeInTheDocument();
     expect(screen.getByText('Доля устройств (визиты)')).toBeInTheDocument();
-    // 2 base charts (visits+applications, channel mix) + 2 geo/device charts = 4
-    expect(screen.getAllByTestId('echart')).toHaveLength(4);
+    // 2 base charts (visits+applications, channel mix) + 2 geo/device charts = 4.
+    // EChart грузит EChartInner за React.lazy (ANA-41) — ждём все четыре.
+    await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(4), { timeout: 15000 });
   });
 
   it('lists weak spots when a channel converts below the overall rate', () => {
