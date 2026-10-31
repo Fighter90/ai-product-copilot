@@ -54,7 +54,9 @@ describe('BehaviorView', () => {
     expect(screen.getByText('/checkout')).toBeInTheDocument();
     // 3 charts: CR bar, bounce bar, exit bounce bar.
     // EChart грузит EChartInner за React.lazy (ANA-41) — ждём появления всех трёх.
-    await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(3), { timeout: 15000 });
+    await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(3), {
+      timeout: 15000,
+    });
   });
 
   it('БАГ-08: «Средние» and the exit summary bounce are visit-weighted, not a plain row mean', () => {

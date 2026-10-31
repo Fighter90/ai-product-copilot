@@ -10,6 +10,8 @@ describe('EChart', () => {
     render(<EChart option={{ series: [] }} height={200} />);
     // findAllByTestId разрешился бы на первом же чарте — ждём ОБА (второй root может
     // догрузить lazy-модуль чуть позже первого).
-    await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(2), { timeout: 15000 });
+    await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(2), {
+      timeout: 15000,
+    });
   });
 });

@@ -67,7 +67,9 @@ describe('OverviewView', () => {
     expect(screen.getByText(/Заявок/)).toBeInTheDocument();
     expect(screen.getByText('Визиты и заявки по дням')).toBeInTheDocument();
     // EChart грузит EChartInner за React.lazy (ANA-41) — ждём появления обоих графиков.
-    await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(2), { timeout: 15000 });
+    await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(2), {
+      timeout: 15000,
+    });
     expect(screen.getByText(/Нет слабых мест/)).toBeInTheDocument();
     expect(screen.queryByText(/KPI-цель определена автоматически/)).not.toBeInTheDocument();
   });
@@ -105,7 +107,9 @@ describe('OverviewView', () => {
     expect(screen.getByText('Доля устройств (визиты)')).toBeInTheDocument();
     // 2 base charts (visits+applications, channel mix) + 2 geo/device charts = 4.
     // EChart грузит EChartInner за React.lazy (ANA-41) — ждём все четыре.
-    await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(4), { timeout: 15000 });
+    await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(4), {
+      timeout: 15000,
+    });
   });
 
   it('lists weak spots when a channel converts below the overall rate', () => {

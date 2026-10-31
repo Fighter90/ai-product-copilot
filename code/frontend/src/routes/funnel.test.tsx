@@ -67,10 +67,9 @@ describe('FunnelView', () => {
     expect(screen.getAllByText('Оплачено B2B').length).toBeGreaterThanOrEqual(1);
     // Multiple charts now: funnel, channel CR, geo. EChart грузит EChartInner за React.lazy
     // (ANA-41) — ждём появления минимум двух графиков.
-    await waitFor(
-      () => expect(screen.getAllByTestId('echart').length).toBeGreaterThanOrEqual(2),
-      { timeout: 15000 },
-    );
+    await waitFor(() => expect(screen.getAllByTestId('echart').length).toBeGreaterThanOrEqual(2), {
+      timeout: 15000,
+    });
   });
 });
 
