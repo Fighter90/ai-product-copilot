@@ -71,3 +71,27 @@ DataLens (`POST /rpc/getWorkbook`) по IAM-токену и org id; токен S
 
 - **WHEN** аналитик нажимает «Запросить обновление»
 - **THEN** создаётся событие и уведомление администраторам о запросе
+
+### Requirement: Реестр датасетов и поле KPI-заказов
+
+Система SHALL публиковать в DataLens реестр датасетов (channels_daily, goals_daily,
+funnel_daily, utm_daily, pages_daily, geo_device_daily, b2b_deals, hypotheses,
+goals_catalog) и SHALL НЕ считать отсутствие необязательных полей коннектора ошибкой пуша.
+
+#### Scenario: Необязательное поле отсутствует в коннекторе
+
+- **WHEN** поле (например, goal_orders = ym:s:goal328425726reaches) отсутствует в списке
+  полей коннектора Метрики
+- **THEN** скрипт публикует датасет БЕЗ него с WARN (не FAIL), таймер продолжает работать
+- **AND** поле добавляется после «Обновить список полей» коннектора в UI DataLens
+
+### Requirement: Жизненный цикл IAM-токена
+
+IAM-токен SHALL жить ≤ 12 ч; источник истины при ротации — /opt/pca/.env (его читает
+таймер), копия в настройках админки обновляется тем же значением.
+
+#### Scenario: Токен истёк
+
+- **WHEN** check/export возвращает 401 от DataLens
+- **THEN** выполнить `scripts/refresh-datalens-token.mjs` (локальный yc → ssh .env →
+  POST /api/settings → check) — cron 2×/сут на машине оператора

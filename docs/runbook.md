@@ -138,3 +138,17 @@ pnpm build       # сборка (артефакт frontend → code/frontend/dis
   (~1–2 с), in-flight запросы дослуживаются через graceful shutdown (SIGTERM → `app.close()`).
 - **Docker-вариант** (`Dockerfile` + `docker-compose.yml`) — раздел 9
   `deploy/DEPLOY.md` и раздел 11 `docs/deploy.md`; прод при этом работает на systemd.
+
+### Догрузка истории и квота Метрики (ANA-107)
+
+Per-user квота Reporting API — скользящие 24 ч. Догруз окон порциями по 10 дней
+выполняют server-side скрипты (идемпотентные, стартуют с первого пропущенного дня):
+
+- `/opt/pca/backfill-tables-loop.sh` — пер-таблицный луп (utm/geo/pages/exit), patient mode:
+  при 429 ждёт 180–600 с и повторяет. Журнал `/tmp/backfill-tables.log`, финиш — `TABLES_DONE`.
+- Во время догрузки **останавливайте** `pca-sync.timer` (30-минутные прогоны съедают квоту)
+  и возвращайте после `TABLES_DONE`: `systemctl enable --now pca-sync.timer`.
+- Разовые окна: `/opt/pca/backfill-remaining.sh FROM TO`.
+
+Регенерация IAM-токена DataLens (≤12 ч) — `scripts/refresh-datalens-token.mjs` на машине
+оператора (cron 2×/сут): обновляет `/opt/pca/.env` И настройки админки одним токеном.
