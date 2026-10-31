@@ -284,7 +284,7 @@ function WhatIfForecast({
           {/* REG-17 (ANA-105): the forecast note equals the calculation — the recent-pace base and
               the deadline are read from fc (forecastGoal on the same inputs); the static
               «period end + 2× period length» text that contradicted the calculation is gone. */}
-          <p className="mt-2 text-xs text-slate-500" data-testid="deadline-note">
+          <p className="mt-2 text-xs text-slate-600" data-testid="deadline-note">
             {fc.deadlineFromEventDate
               ? t('kpi.whatif.disclaimerEventDateComputed', {
                   base: baseLabel,

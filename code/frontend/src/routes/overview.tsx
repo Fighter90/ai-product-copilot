@@ -508,7 +508,7 @@ export function OverviewView({
           REG-17 (ANA-105): the caveat equals the calculation — the real coverage days and the
           computed deadline (pace.deadline after applyDeadline), not a static «+ 2× period» text. */}
       {showDeadlineCaveat ? (
-        <p data-testid="deadline-caveat" className="text-xs text-slate-500">
+        <p data-testid="deadline-caveat" className="text-xs text-slate-600">
           {t('ov.deadlineCaveatComputed', {
             days: pace.windowDays,
             date: fmtDate(pace.deadline, locale),
