@@ -4,12 +4,28 @@
 //
 //   node scripts/reconcile-data.mjs [--from YYYY-MM-DD --to YYYY-MM-DD] [--skip-live-goals]
 //                                   [--sample N [--seed S]]  (ANA-109: 1.5-year verification)
+//                                   [--tables-only [--sample N]] [--gap-report] [--json]
 //
 // --sample N: instead of pulling Metrika for EVERY day of the window (5 calls × N days — burns the
 // per-user quota shared with the prod sync), verify (a) N random COVERED days per-day, (b) EVERY
 // calendar month's totals (1 call per month × kind), and correct window comparisons by Metrika's
 // own totals for the days the DB does not cover yet (backfill frontier). --seed makes the choice
 // reproducible (default 'ana109').
+//
+// --tables-only (ANA-109 FINAL verification): compare EACH of utm_stats / geo_device_stats /
+// page_stats / exit_page_stats SEPARATELY against Metrika PER DAY, with the exact sync queries
+// (SYNC_QUERIES in reconcile-lib.mjs — mirrors of code/backend/src/metrika/queries/*.ts: same
+// dimensions/metrics/filters/attribution, no accuracy/limit, per-day chunks like the sync).
+// Per-table discrepancy rows + a per-table PASS/FAIL verdict. Days a table does not cover yet
+// count as coverage gaps (FAIL until the per-table backfill loop lands them — see --gap-report).
+// ~4 Metrika calls per window day (1 exact per-day pull × 4 tables); combine with --sample N for
+// a quota-friendly pre-check (N random covered days per table).
+//
+// --gap-report: DB-ONLY coverage audit — NO Metrika/DataLens/API calls. Missing days per stat
+// table + their union + the remaining sync windows / Metrika calls the backfill loop still needs
+// until full coverage.
+//
+// --json: machine-readable report on stdout (progress logs stay on stderr); works in every mode.
 //
 // Default range = the date range present in prod channel_stats. STRICTLY READ-ONLY: sqlite3
 // -readonly over SSH, GET-only prod API (+ login), read-only Metrika/DataLens calls.
@@ -33,6 +49,9 @@ import {
   createClient,
   addSecret,
   mask,
+  NONE,
+  dayCellDiff,
+  tableVerdict,
 } from './reconcile-lib.mjs';
 
 const args = process.argv.slice(2);
@@ -54,6 +73,11 @@ const esc = (s) => String(s).replace(/'/g, "''");
 // calendar month's totals, instead of all days. --seed S → reproducible sampling.
 const SAMPLE = Math.max(0, Math.floor(Number(arg('sample')) || 0));
 const SEED = arg('seed') ?? 'ana109';
+// New modes (ANA-109 final verification tooling). --gap-report and --tables-only exit early
+// below; everything after their blocks is the default full reconciliation.
+const GAP_REPORT = args.includes('--gap-report'); // DB-only coverage audit — NO Metrika calls
+const TABLES_ONLY = args.includes('--tables-only'); // per-table per-day verification vs Metrika
+const JSON_OUT = args.includes('--json'); // machine-readable stdout, human logs on stderr
 const monthOf = (d) => String(d).slice(0, 7);
 const buildMonths = (from, to) => {
   const out = [];
@@ -122,6 +146,392 @@ const sampleDays = (n, pool, seed) => {
   }
   return arr.slice(0, Math.max(0, n)).sort();
 };
+
+// DB/API row → comparison key. MUST stay in sync with SYNC_QUERIES[k].key (which builds the same
+// string from a Metrika response row): per-key diffs in --tables-only only make sense if both
+// sides name their keys identically. (channel `unknown` / utm-geo-pages ` (none)` defaults mirror
+// the sync's mapper defaults; utm_stats/geo/page columns are never NULL — the loader writes the
+// same sentinels.)
+const keyFns = {
+  channels: (r) => r.channel,
+  utm: (r) =>
+    [
+      r.utm_source ?? r.utmSource,
+      r.utm_medium ?? r.utmMedium,
+      r.utm_campaign ?? r.utmCampaign,
+    ].join(' | '),
+  geo: (r) => `${r.country} | ${r.device}`,
+  pages: (r) => r.page,
+  exit: (r) => r.page,
+};
+const byDay = (rows, d) => rows.filter((r) => r.date === d);
+const padEnd = (s, n) => String(s).padEnd(n);
+
+// ---------------------------------------------------------------------------------------------
+// MODE --gap-report: DB-only coverage audit (read-only sqlite over SSH; NO Metrika/DataLens/API
+// calls). Missing days per stat table + their union + the remaining /api/sync windows and
+// Metrika /stat/v1/data calls the backfill loop (scripts/backfill-remaining.mjs) still needs
+// until full coverage. Run it while the per-table loop is running; when UNION = 0, run
+// --tables-only for the final verification.
+if (GAP_REPORT) {
+  const spanG = q1('SELECT MIN(date) mn, MAX(date) mx FROM channel_stats');
+  const GF = arg('from') ?? spanG.mn;
+  const GT = arg('to') ?? spanG.mx;
+  if (!GF || !GT) {
+    console.error('channel_stats is EMPTY on prod and no --from/--to given — no window to report.');
+    process.exit(2);
+  }
+  const GD = daysBetween(GF, GT);
+  const GW = `date >= '${esc(GF)}' AND date <= '${esc(GT)}'`;
+  const GTABLES = {
+    channels: 'channel_stats',
+    utm: 'utm_stats',
+    geo: 'geo_device_stats',
+    pages: 'page_stats',
+    exit: 'exit_page_stats',
+  };
+  // backfill-remaining.mjs mechanics: POST /api/sync windows of 10 days, 45 s pause, self-stop on
+  // 429 (quota_requests_by_uid). syncAll makes ONE /stat/v1/data call per day per kind:
+  // channels, utm, geo, pages, exit, goal-reaches-byday, browser-os, new-returning = 8/day,
+  // plus the goals catalog once per POST window.
+  const LOOP_CHUNK = 10;
+  const LOOP_PAUSE_S = 45;
+  const STAT_CALLS_PER_DAY = 8;
+  const perTable = {};
+  const setsT = {};
+  for (const [k, t] of Object.entries(GTABLES)) {
+    const present = new Set(
+      db(`SELECT DISTINCT date d FROM ${t} WHERE ${GW}`).map((r) => r.d),
+    );
+    const missing = GD.filter((d) => !present.has(d));
+    setsT[k] = new Set(missing);
+    perTable[k] = {
+      table: t,
+      windowDays: GD.length,
+      presentDays: present.size,
+      missingDays: missing.length,
+      coveragePct: GD.length ? Math.round((present.size / GD.length) * 1000) / 10 : 0,
+      missingRanges: contigRanges(missing),
+      missingDates: missing,
+    };
+  }
+  const unionSet = new Set(Object.values(perTable).flatMap((p) => p.missingDates));
+  const unionMissing = GD.filter((d) => unionSet.has(d));
+  const missingInAll = GD.filter((d) => Object.values(setsT).every((s) => s.has(d)));
+  const unionRanges = contigRanges(unionMissing);
+  const windows = unionRanges.reduce((a, r) => a + Math.ceil(r.days / LOOP_CHUNK), 0);
+  const metrikaCalls = unionMissing.length * STAT_CALLS_PER_DAY + windows; // + goals catalog / window
+  const wallMin = Math.round((windows * LOOP_PAUSE_S + metrikaCalls * 0.5) / 60);
+  const lastAct = q1('SELECT MAX(fetched_at) fa FROM raw_responses').fa;
+  const complete = unionMissing.length === 0;
+  if (!JSON_OUT) {
+    console.log(`\n=== GAP REPORT (DB-only, no Metrika calls) — window ${GF}..${GT} (${GD.length} days) ===`);
+    for (const p of Object.values(perTable)) {
+      console.log(
+        `${padEnd(p.table, 18)} ${String(p.presentDays).padStart(4)}/${p.windowDays} present (${p.coveragePct}%), missing ${p.missingDays} day(s) in ${p.missingRanges.length} range(s)`,
+      );
+      for (const r of p.missingRanges.slice(0, 40))
+        console.log(`    missing: ${r.from}..${r.to} (${r.days} d)`);
+      if (p.missingRanges.length > 40)
+        console.log(`    … ${p.missingRanges.length - 40} more range(s)`);
+    }
+    console.log(
+      `\nUNION missing (in ≥1 table): ${unionMissing.length} day(s) in ${unionRanges.length} range(s)`,
+    );
+    for (const r of unionRanges.slice(0, 60))
+      console.log(`    ${r.from}..${r.to} (${r.days} d)`);
+    if (unionRanges.length > 60)
+      console.log(`    … ${unionRanges.length - 60} more range(s)`);
+    console.log(`missing in ALL tables (fully absent days): ${missingInAll.length}`);
+    console.log(
+      `\nESTIMATE to full coverage (loop: ${LOOP_CHUNK}-day POST /api/sync windows, ${LOOP_PAUSE_S}s pause):`,
+    );
+    console.log(`  remaining POST /api/sync windows: ${windows}`);
+    console.log(
+      `  remaining Metrika /stat/v1/data calls: ≈${metrikaCalls} (${unionMissing.length} d × ${STAT_CALLS_PER_DAY} kinds + ${windows} goals catalog)`,
+    );
+    console.log(
+      `  wall time: ≈${wallMin} min (${windows} × ${LOOP_PAUSE_S}s pause + ~0.5 s/call; retries and quota self-stops excluded)`,
+    );
+    console.log('  quota: the loop exits on 429 (quota_requests_by_uid) — re-run it until windows = 0');
+    console.log(`last Metrika fetch stored in DB (max raw_responses.fetched_at): ${lastAct ?? '—'}`);
+    console.log(
+      complete
+        ? '\nCOVERAGE COMPLETE — run --tables-only for the final per-table verification.'
+        : '\nNOT READY for final verification — keep the per-table loop running, re-run --gap-report until UNION = 0.',
+    );
+  } else {
+    console.log(
+      JSON.stringify(
+        {
+          mode: 'gap-report',
+          window: { from: GF, to: GT, days: GD.length },
+          tables: perTable,
+          union: { missingDays: unionMissing.length, ranges: unionRanges, dates: unionMissing },
+          missingInAll: { days: missingInAll.length, dates: missingInAll },
+          estimate: {
+            loopChunkDays: LOOP_CHUNK,
+            loopPauseSec: LOOP_PAUSE_S,
+            statCallsPerDay: STAT_CALLS_PER_DAY,
+            remainingSyncWindows: windows,
+            remainingMetrikaCalls: metrikaCalls,
+            wallClockMinutes: wallMin,
+          },
+          lastMetrikaFetch: lastAct ?? null,
+          coverageComplete: complete,
+        },
+        null,
+        2,
+      ),
+    );
+  }
+  process.exit(0);
+}
+
+// ---------------------------------------------------------------------------------------------
+// MODE --tables-only (ANA-109 FINAL verification): compare EACH of utm_stats / geo_device_stats /
+// page_stats / exit_page_stats SEPARATELY against Metrika PER DAY with the EXACT sync queries
+// (SYNC_QUERIES — same dimensions/metrics/filters/attribution, no accuracy/limit, per-day chunks
+// like the sync). Per-table discrepancy rows + per-table PASS/FAIL verdict. Days a table does not
+// cover yet are coverage gaps (FAIL until the backfill loop lands them — see --gap-report).
+// Known differences that stay EXPLAINED (not FAIL): the all-(none) UTM bucket (not stored in
+// utm_stats), days synced <6 h after their MSK midnight (late-finalised sessions), and Metrika
+// responses truncated at the default limit=100 (the sync stores the same limit-less pull).
+if (TABLES_ONLY) {
+  const spanT = q1('SELECT MIN(date) mn, MAX(date) mx FROM channel_stats');
+  const TF = arg('from') ?? spanT.mn;
+  const TT = arg('to') ?? spanT.mx;
+  if (!TF || !TT) {
+    console.error('channel_stats is EMPTY on prod and no --from/--to given — nothing to verify.');
+    process.exit(2);
+  }
+  const TW = `date >= '${esc(TF)}' AND date <= '${esc(TT)}'`;
+  const TDAYS = daysBetween(TF, TT);
+  const TTABLES = {
+    utm: 'utm_stats',
+    geo: 'geo_device_stats',
+    pages: 'page_stats',
+    exit: 'exit_page_stats',
+  };
+  const NONE_UTM_KEY = [NONE, NONE, NONE].join(' | ');
+  const presentT = Object.fromEntries(
+    Object.entries(TTABLES).map(([k, t]) => [
+      k,
+      new Set(db(`SELECT DISTINCT date d FROM ${t} WHERE ${TW}`).map((r) => r.d)),
+    ]),
+  );
+  const rowsT = Object.fromEntries(
+    Object.entries(TTABLES).map(([k, t]) => [k, db(`SELECT * FROM ${t} WHERE ${TW}`)]),
+  );
+  const rawMetaT = db(
+    `SELECT date_from df, date_to dt, fetched_at fa, endpoint,
+        json_extract(payload,'$.query.dimensions') dims, json_extract(payload,'$.query.metrics') metrics
+      FROM raw_responses WHERE date_to >= '${esc(TF)}' AND date_from <= '${esc(TT)}' ORDER BY id`,
+  );
+  const goalFromRawT =
+    Number(
+      /goal(\d+)reaches/.exec(
+        rawMetaT.filter((r) => String(r.dims).includes('TrafficSource')).at(-1)?.metrics ?? '',
+      )?.[1],
+    ) || undefined;
+  // When the day's rows were synced: latest /stat/v1/data fetch covering that day (late-finalised
+  // sessions heuristic — day D ends at D+1 00:00 MSK = D 21:00Z).
+  const lastFetchByDay = (d) =>
+    Math.max(
+      0,
+      ...rawMetaT
+        .filter((r) => r.endpoint === '/stat/v1/data' && r.df <= d && r.dt >= d)
+        .map((r) => Date.parse(r.fa)),
+    );
+  const tokenT = readEnv('YANDEX_OAUTH_TOKEN');
+  if (!tokenT) throw new Error('YANDEX_OAUTH_TOKEN missing in .env');
+  const mkT = makeMetrika(tokenT);
+  let GOALT = goalFromRawT;
+  if (!GOALT) {
+    // Rare fallback (no goal query in raw_responses): one prod API GET — no extra Metrika pull.
+    const apiT = await makeApi({
+      email: process.env.PCA_ADMIN_EMAIL || 'admin@dashboardcamp.ru',
+      password: process.env.PCA_ADMIN_PASSWORD || 'DemoAdmin-c8ea7234!',
+    });
+    GOALT = (await apiT.json('/metrics/primary-goal').catch(() => null))?.id;
+  }
+  log(
+    `tables-only: ${Object.values(TTABLES).join(', ')} vs Metrika per day, ${TDAYS.length}-day window ${TF}..${TT}, KPI goal ${GOALT}${SAMPLE ? `, SAMPLE=${SAMPLE} (per-table seeds ${SEED}-<table>)` : ''}`,
+  );
+  log(
+    `~${Object.keys(TTABLES).length * (SAMPLE || TDAYS.length)} Metrika calls planned (1 exact per-day pull × 4 tables; shared quota with the prod sync — use --tables-only --sample N to shrink)`,
+  );
+  const results = {};
+  for (const [k, tbl] of Object.entries(TTABLES)) {
+    const q = SYNC_QUERIES[k](GOALT);
+    const covered = TDAYS.filter((d) => presentT[k].has(d));
+    const days = SAMPLE ? sampleDays(SAMPLE, covered, `${SEED}-${k}`) : covered;
+    const stat = {
+      table: tbl,
+      query: { dimensions: q.dimensions, metrics: q.metrics },
+      windowDays: TDAYS.length,
+      compared: 0,
+      exact: 0,
+      explained: 0,
+      mismatch: 0,
+      missing: TDAYS.length - covered.length,
+      truncatedDays: 0,
+      keyDiffs: [],
+      days: {}, // non-exact days: metric deltas, per-key diff counts, explanations
+    };
+    const c = report.check(
+      `tables-only: ${tbl} vs Metrika per day${SAMPLE ? ` — ${days.length} sampled day(s)` : ''} (sync query dims: ${q.dimensions})`,
+      'Metrika',
+      ['DB'],
+    );
+    const sumMk = { visits: 0, users: 0, reaches: 0 };
+    const sumDb = { visits: 0, users: 0, reaches: 0 };
+    for (const d of days) {
+      if (stat.compared % 25 === 0)
+        log(`[${tbl}] day ${stat.compared}/${days.length} — ${mkT.calls()} Metrika call(s) so far`);
+      stat.compared++;
+      const resp = await mkT.get('/stat/v1/data', {
+        ids: COUNTER,
+        dimensions: q.dimensions,
+        metrics: q.metrics,
+        date1: d,
+        date2: d,
+        attribution: 'lastsign',
+        filters: SYNC_FILTERS,
+      });
+      const trunc = resp.total_rows > resp.data.length;
+      if (trunc) stat.truncatedDays++;
+      const mkMap = shapeRows(resp, q, GOALT);
+      const dbMap = sumBy(byDay(rowsT[k], d), keyFns[k]);
+      const mt = total(mkMap);
+      const bt = total(dbMap);
+      sumMk.visits += mt.visits;
+      sumMk.users += mt.users;
+      if (GOALT) sumMk.reaches += mt.reaches;
+      sumDb.visits += bt.visits;
+      sumDb.users += bt.users;
+      if (GOALT) sumDb.reaches += bt.reaches;
+      const diff = dayCellDiff(mkMap, dbMap, { utmNoneKey: k === 'utm' ? NONE_UTM_KEY : undefined });
+      const dv = mt.visits - bt.visits,
+        du = mt.users - bt.users,
+        dr = mt.reaches - bt.reaches;
+      const dayExact =
+        dv === 0 &&
+        du === 0 &&
+        (!GOALT || dr === 0) &&
+        !diff.mkOnly &&
+        !diff.dbOnly &&
+        !diff.valDiff;
+      if (dayExact) {
+        stat.exact++;
+        continue;
+      }
+      // Explain candidates — documented mechanisms only; anything else stays a MISMATCH.
+      const explains = [];
+      const nd = diff.noneDelta;
+      if (
+        nd &&
+        dv === nd.visits &&
+        du === nd.users &&
+        (!GOALT || dr === (nd.reaches ?? 0)) &&
+        !diff.mkOnly &&
+        !diff.dbOnly &&
+        !diff.valDiff
+      )
+        explains.push(
+          `'(none)' UTM bucket (${nd.visits} visits) is not stored in utm_stats — tagged traffic matches`,
+        );
+      const lf = lastFetchByDay(d);
+      if (lf && (lf - Date.parse(`${d}T21:00:00Z`)) / 3.6e6 < 6)
+        explains.push(
+          `day ${d} was synced ${new Date(lf).toISOString()} (<6 h after its MSK midnight): sessions still open/being finalised changed afterwards; next re-sync self-heals`,
+        );
+      if (trunc)
+        explains.push(
+          `Metrika response truncated (${resp.data.length}/${resp.total_rows} rows) — the sync stores the same limit-less pull, long-tail keys can differ between pulls`,
+        );
+      const isExpl = explains.length > 0;
+      if (isExpl) stat.explained++;
+      else stat.mismatch++;
+      stat.days[d] = {
+        visits: [mt.visits, bt.visits],
+        users: [mt.users, bt.users],
+        ...(GOALT ? { reaches: [mt.reaches, bt.reaches] } : {}),
+        metrikaOnlyKeys: diff.mkOnly,
+        dbOnlyKeys: diff.dbOnly,
+        valueDiffKeys: diff.valDiff,
+        ...(trunc ? { truncated: true } : {}),
+        ...(isExpl ? { explains } : {}),
+      };
+      if (diff.worst) stat.keyDiffs.push({ day: d, ...diff.worst });
+      const ex = isExpl ? { explain: explains.join('; ') } : {};
+      if (dv) c.row(`${d} visits`, mt.visits, bt.visits, ex);
+      if (GOALT && dr) c.row(`${d} goal reaches`, mt.reaches, bt.reaches, ex);
+      if (du) c.row(`${d} users (Σ keys)`, mt.users, bt.users, ex);
+      if (diff.mkOnly) c.row(`${d} keys only in Metrika`, 0, diff.mkOnly, ex);
+      if (diff.dbOnly) c.row(`${d} keys only in DB`, 0, diff.dbOnly, ex);
+      if (diff.valDiff) c.row(`${d} keys with value diff`, 0, diff.valDiff, ex);
+    }
+    c.note(
+      `Σ over compared days — Metrika: ${sumMk.visits} visits / ${sumMk.users} users${GOALT ? ` / ${sumMk.reaches} reaches` : ''} vs DB: ${sumDb.visits} / ${sumDb.users}${GOALT ? ` / ${sumDb.reaches}` : ''}`,
+    );
+    c.note(
+      `compared ${stat.compared} day(s): ${stat.exact} exact, ${stat.explained} explained, ${stat.mismatch} MISMATCH; not in DB yet (coverage): ${stat.missing}; truncated Metrika responses: ${stat.truncatedDays}`,
+    );
+    if (stat.keyDiffs.length)
+      c.note(
+        `worst per-key visits diffs: ${stat.keyDiffs
+          .slice(-3)
+          .map((w) => `${w.day} ${w.key}: Metrika ${w.visits[0]} vs DB ${w.visits[1]}`)
+          .join('; ')}`,
+      );
+    if (k === 'utm')
+      c.note(
+        "utm_stats holds tagged visits only: a day with zero UTM-tagged visits has no rows (not a gap); '(none)' buckets are expected-absent and auto-explained above",
+      );
+    stat.verdict = tableVerdict(stat);
+    results[k] = stat;
+  }
+  const failing = Object.values(results).filter((s) => s.verdict.verdict === 'FAIL');
+  if (!JSON_OUT) {
+    report.print();
+    console.log('\n=== PER-TABLE VERDICT (--tables-only) ===');
+    for (const s of Object.values(results)) {
+      console.log(
+        `${padEnd(s.verdict.verdict, 6)} ${padEnd(s.table, 18)} — ${s.exact}/${s.compared} day(s) exact, ${s.explained} explained, ${s.mismatch} MISMATCH, ${s.missing} missing (coverage)${s.truncatedDays ? `, ${s.truncatedDays} truncated` : ''}${s.verdict.reasons.length ? ` — ${s.verdict.reasons.join(', ')}` : ''}`,
+      );
+    }
+    console.log(
+      `\nOVERALL: ${failing.length ? 'FAIL' : 'PASS'} — ${failing.length} failing table(s); Metrika calls: ${mkT.calls()}`,
+    );
+    if (!failing.length && Object.values(results).every((s) => !s.missing))
+      console.log(
+        'All four tables match Metrika per day under sync semantics — final verification PASSED.',
+      );
+  } else {
+    console.log(
+      JSON.stringify(
+        report.json({
+          mode: 'tables-only',
+          window: { from: TF, to: TT, days: TDAYS.length },
+          goal: GOALT ?? null,
+          ...(SAMPLE ? { sample: SAMPLE, seed: SEED } : {}),
+          metrikaCalls: mkT.calls(),
+          tables: results,
+          summary: {
+            overall: failing.length ? 'FAIL' : 'PASS',
+            failingTables: failing.map((s) => s.table),
+          },
+          startedAt: startedAt.toISOString(),
+          finishedAt: new Date().toISOString(),
+        }),
+        null,
+        2,
+      ),
+    );
+  }
+  process.exit(failing.length ? 1 : 0);
+}
 
 // ---------------------------------------------------------------------------------------------
 // 0. Range, KPI goal, coverage, provenance of the last sync
@@ -441,19 +851,8 @@ const apiRows = {
   pages: await api.json(`/metrics/pages${qs}`),
   exit: await api.json(`/metrics/exit-pages${qs}`),
 };
-const keyFns = {
-  channels: (r) => r.channel,
-  utm: (r) =>
-    [
-      r.utm_source ?? r.utmSource,
-      r.utm_medium ?? r.utmMedium,
-      r.utm_campaign ?? r.utmCampaign,
-    ].join(' | '),
-  geo: (r) => `${r.country} | ${r.device}`,
-  pages: (r) => r.page,
-  exit: (r) => r.page,
-};
-const byDay = (rows, d) => rows.filter((r) => r.date === d);
+// keyFns/byDay are defined with the shared helpers at the top (the --tables-only mode uses them
+// before this point); the window aggregates below keep referencing them unchanged.
 
 // Window aggregates per kind: whole-window per-key pulls in --sample mode (key sums are reliable
 // even though Metrika mangles day assignment), Σ of per-day pulls otherwise.
@@ -1585,8 +1984,28 @@ if (globalThis.__dupGroups?.channels)
     'Dates affected start at the first GIVEUP backfill window (2026-03-15..2026-04-03): every replay of a partially-landed chunk\ninserted its channel rows a second time (identical values ×2), so per-day visits/goals are DOUBLED in the product for those\ndays (+2248 visits in the current data). The other stat tables have no duplicates — only the channel kind was hit.\nFix: re-run the sync for the affected window (Admin → Metrika sync 2026-03-15..2026-04-03): resetSyncedWindow wipes and\nrewrites it cleanly, self-healing the doubles; then re-run this script — the duplicate-key gate (section 0) must go to 0.\nLonger term: make the upsert idempotent against chunk replays (unique (date, channel) constraint or DELETE+INSERT per day).',
   );
 
-report.print();
-console.log(
-  `\nRun: ${startedAt.toISOString()} → ${new Date().toISOString()}, Metrika calls: ${mk.calls()}, range ${FROM}..${TO}, KPI goal ${GOAL}${SAMPLE ? `, SAMPLE=${SAMPLE} (seed=${SEED}, days: ${DAYS.join(', ')})` : ''}, missing days: ${MISSING.length}`,
-);
-process.exitCode = report.verdict();
+if (JSON_OUT) {
+  console.log(
+    JSON.stringify(
+      report.json({
+        mode: SAMPLE ? `full --sample ${SAMPLE}` : 'full',
+        window: { from: FROM, to: TO, days: ALL_DAYS.length },
+        goal: GOAL ?? null,
+        ...(SAMPLE ? { seed: SEED, days: DAYS } : {}),
+        metrikaCalls: mk.calls(),
+        missingDays: MISSING.length,
+        startedAt: startedAt.toISOString(),
+        finishedAt: new Date().toISOString(),
+      }),
+      null,
+      2,
+    ),
+  );
+  process.exitCode = report.verdictData().overall === 'FAIL' ? 1 : 0;
+} else {
+  report.print();
+  console.log(
+    `\nRun: ${startedAt.toISOString()} → ${new Date().toISOString()}, Metrika calls: ${mk.calls()}, range ${FROM}..${TO}, KPI goal ${GOAL}${SAMPLE ? `, SAMPLE=${SAMPLE} (seed=${SEED}, days: ${DAYS.join(', ')})` : ''}, missing days: ${MISSING.length}`,
+  );
+  process.exitCode = report.verdict();
+}

@@ -212,6 +212,55 @@ export function shapeRowsByDay(resp, q, goalId) {
   return out;
 }
 
+/**
+ * Diff ONE day's {key → {visits, users, reaches}} maps (Metrika vs DB) for --tables-only.
+ * Pure function (no I/O) so the comparison semantics are unit-testable without Metrika.
+ * The all-(none) UTM key is reported separately as `noneDelta` — it is expected-absent from
+ * utm_stats (documented ANA-109 finding) and must not fail the per-key comparison when passed
+ * as `utmNoneKey`.
+ */
+export function dayCellDiff(mkMap, dbMap, { utmNoneKey } = {}) {
+  let mkOnly = 0,
+    dbOnly = 0,
+    valDiff = 0,
+    valDiffMax = 0,
+    worst = null;
+  let noneDelta = null;
+  for (const key of new Set([...mkMap.keys(), ...dbMap.keys()])) {
+    const mv = mkMap.get(key),
+      bv = dbMap.get(key);
+    if (mv && !bv) {
+      if (utmNoneKey && key === utmNoneKey) {
+        noneDelta = { ...mv };
+        continue;
+      }
+      mkOnly++;
+      continue;
+    }
+    if (!mv && bv) {
+      dbOnly++;
+      continue;
+    }
+    if (mv.visits !== bv.visits || mv.users !== bv.users || mv.reaches !== bv.reaches) {
+      valDiff++;
+      const dd = Math.abs(mv.visits - bv.visits);
+      if (dd > valDiffMax) {
+        valDiffMax = dd;
+        worst = { key, visits: [mv.visits, bv.visits] };
+      }
+    }
+  }
+  return { mkOnly, dbOnly, valDiff, worst, noneDelta };
+}
+
+/** Per-table --tables-only verdict: PASS unless unexplained day mismatches or coverage gaps. */
+export function tableVerdict(stat) {
+  const reasons = [];
+  if (stat.mismatch) reasons.push(`${stat.mismatch} unexplained day mismatch(es)`);
+  if (stat.missing) reasons.push(`${stat.missing} day(s) missing in DB (backfill)`);
+  return { verdict: reasons.length ? 'FAIL' : 'PASS', reasons };
+}
+
 /** DB/API rows → same {key → sums} shape. */
 export function sumBy(rows, keyFn) {
   const out = new Map();
@@ -406,24 +455,68 @@ export class Report {
     }
   }
 
-  verdict() {
+  /** Machine-readable summary (drives verdict() printing and the --json output). */
+  verdictData() {
     const failing = this.checks.filter((c) => c.rows.some((r) => r.status === 'MISMATCH'));
+    return {
+      overall: failing.length ? 'FAIL' : 'PASS',
+      failingChecks: failing.length,
+      failingTitles: failing.map((c) => c.title),
+      findings: this.findings.length,
+      highFindings: this.findings.filter((f) => f.severity === 'HIGH').length,
+      perCheck: this.checks.map((c) => {
+        const bad = c.rows.filter((r) => r.status === 'MISMATCH').length;
+        const exp = c.rows.filter((r) => r.status === 'EXPLAINED').length;
+        return {
+          title: c.title,
+          status: c.info ? 'INFO' : bad ? 'FAIL' : exp ? 'PASS (explained diffs)' : 'PASS',
+          mismatches: bad,
+          explained: exp,
+        };
+      }),
+    };
+  }
+
+  /** Whole report as a JSON-able object (--json mode; human logs stay on stderr). */
+  json(meta = {}) {
+    return {
+      ...meta,
+      checks: this.checks.map((c) => ({
+        title: c.title,
+        refLabel: c.refLabel,
+        labels: c.labels,
+        ...(c.info ? { informational: true } : {}),
+        rows: c.rows.map(({ key, ref, vals, maxPct, status, explain }) => ({
+          key,
+          ref,
+          vals,
+          diffPct: maxPct,
+          status,
+          ...(explain ? { explain } : {}),
+        })),
+        notes: c.notes,
+      })),
+      findings: this.findings,
+      verdict: this.verdictData(),
+    };
+  }
+
+  verdict() {
+    const v = this.verdictData();
     console.log('\n=== FINDINGS (root causes) ===');
     if (!this.findings.length) console.log('(none)');
     this.findings.forEach((f, i) =>
       console.log(`${i + 1}. [${f.severity}] ${f.title}\n   ${f.detail.split('\n').join('\n   ')}`),
     );
     console.log('\n=== VERDICT ===');
-    for (const c of this.checks) {
-      const bad = c.rows.filter((r) => r.status === 'MISMATCH').length;
-      const exp = c.rows.filter((r) => r.status === 'EXPLAINED').length;
-      const st = c.info ? 'INFO' : bad ? 'FAIL' : exp ? 'PASS (explained diffs)' : 'PASS';
-      console.log(`${pad(st, 22)} ${c.title}${bad ? ` — ${bad} unexplained mismatch(es)` : ''}`);
+    for (const p of v.perCheck) {
+      console.log(
+        `${pad(p.status, 22)} ${p.title}${p.mismatches ? ` — ${p.mismatches} unexplained mismatch(es)` : ''}`,
+      );
     }
-    const high = this.findings.filter((f) => f.severity === 'HIGH').length;
     console.log(
-      `\nOVERALL: ${failing.length ? 'FAIL' : 'PASS'} — ${failing.length} failing check(s), ${this.findings.length} finding(s) (${high} HIGH)`,
+      `\nOVERALL: ${v.overall} — ${v.failingChecks} failing check(s), ${v.findings} finding(s) (${v.highFindings} HIGH)`,
     );
-    return failing.length ? 1 : 0;
+    return v.overall === 'FAIL' ? 1 : 0;
   }
 }
