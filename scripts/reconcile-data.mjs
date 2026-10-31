@@ -200,9 +200,7 @@ if (GAP_REPORT) {
   const perTable = {};
   const setsT = {};
   for (const [k, t] of Object.entries(GTABLES)) {
-    const present = new Set(
-      db(`SELECT DISTINCT date d FROM ${t} WHERE ${GW}`).map((r) => r.d),
-    );
+    const present = new Set(db(`SELECT DISTINCT date d FROM ${t} WHERE ${GW}`).map((r) => r.d));
     const missing = GD.filter((d) => !present.has(d));
     setsT[k] = new Set(missing);
     perTable[k] = {
@@ -225,7 +223,9 @@ if (GAP_REPORT) {
   const lastAct = q1('SELECT MAX(fetched_at) fa FROM raw_responses').fa;
   const complete = unionMissing.length === 0;
   if (!JSON_OUT) {
-    console.log(`\n=== GAP REPORT (DB-only, no Metrika calls) — window ${GF}..${GT} (${GD.length} days) ===`);
+    console.log(
+      `\n=== GAP REPORT (DB-only, no Metrika calls) — window ${GF}..${GT} (${GD.length} days) ===`,
+    );
     for (const p of Object.values(perTable)) {
       console.log(
         `${padEnd(p.table, 18)} ${String(p.presentDays).padStart(4)}/${p.windowDays} present (${p.coveragePct}%), missing ${p.missingDays} day(s) in ${p.missingRanges.length} range(s)`,
@@ -238,10 +238,8 @@ if (GAP_REPORT) {
     console.log(
       `\nUNION missing (in ≥1 table): ${unionMissing.length} day(s) in ${unionRanges.length} range(s)`,
     );
-    for (const r of unionRanges.slice(0, 60))
-      console.log(`    ${r.from}..${r.to} (${r.days} d)`);
-    if (unionRanges.length > 60)
-      console.log(`    … ${unionRanges.length - 60} more range(s)`);
+    for (const r of unionRanges.slice(0, 60)) console.log(`    ${r.from}..${r.to} (${r.days} d)`);
+    if (unionRanges.length > 60) console.log(`    … ${unionRanges.length - 60} more range(s)`);
     console.log(`missing in ALL tables (fully absent days): ${missingInAll.length}`);
     console.log(
       `\nESTIMATE to full coverage (loop: ${LOOP_CHUNK}-day POST /api/sync windows, ${LOOP_PAUSE_S}s pause):`,
@@ -253,8 +251,12 @@ if (GAP_REPORT) {
     console.log(
       `  wall time: ≈${wallMin} min (${windows} × ${LOOP_PAUSE_S}s pause + ~0.5 s/call; retries and quota self-stops excluded)`,
     );
-    console.log('  quota: the loop exits on 429 (quota_requests_by_uid) — re-run it until windows = 0');
-    console.log(`last Metrika fetch stored in DB (max raw_responses.fetched_at): ${lastAct ?? '—'}`);
+    console.log(
+      '  quota: the loop exits on 429 (quota_requests_by_uid) — re-run it until windows = 0',
+    );
+    console.log(
+      `last Metrika fetch stored in DB (max raw_responses.fetched_at): ${lastAct ?? '—'}`,
+    );
     console.log(
       complete
         ? '\nCOVERAGE COMPLETE — run --tables-only for the final per-table verification.'
@@ -411,7 +413,9 @@ if (TABLES_ONLY) {
       sumDb.visits += bt.visits;
       sumDb.users += bt.users;
       if (GOALT) sumDb.reaches += bt.reaches;
-      const diff = dayCellDiff(mkMap, dbMap, { utmNoneKey: k === 'utm' ? NONE_UTM_KEY : undefined });
+      const diff = dayCellDiff(mkMap, dbMap, {
+        utmNoneKey: k === 'utm' ? NONE_UTM_KEY : undefined,
+      });
       const dv = mt.visits - bt.visits,
         du = mt.users - bt.users,
         dr = mt.reaches - bt.reaches;
