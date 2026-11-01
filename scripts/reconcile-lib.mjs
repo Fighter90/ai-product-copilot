@@ -2,7 +2,9 @@
 // Everything here is READ-ONLY: SQLite is opened with -readonly over SSH, the prod API is only
 // queried with GET (plus the login POST), Metrika/DataLens are only read. Secrets are never printed.
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { createRequire } from 'node:module';
 import { readEnv, resolveIamToken, createClient } from './datalens-api.mjs';
 
 export { readEnv, resolveIamToken, createClient };
@@ -30,6 +32,62 @@ export function makeDb({
       },
     ).trim();
     return out ? JSON.parse(out) : [];
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Local SQLite file via better-sqlite3 (READ-ONLY) — offline runs on a pulled backup, no SSH.
+// better-sqlite3 is a backend-workspace dep (not a root one): resolve it from this script first,
+// then fall back to the backend package so a fresh checkout works after `pnpm install`.
+function loadBetterSqlite3() {
+  const tryReq = (req) => {
+    try {
+      return req('better-sqlite3');
+    } catch {
+      return null;
+    }
+  };
+  const mod =
+    tryReq(createRequire(import.meta.url)) ??
+    tryReq(createRequire(new URL('../code/backend/package.json', import.meta.url)));
+  if (!mod)
+    throw new Error(
+      'better-sqlite3 is required for --db — install the workspace deps first: pnpm install',
+    );
+  return mod.default ?? mod;
+}
+
+export function makeLocalDb(path) {
+  if (!existsSync(path))
+    throw new Error(
+      `--db: file not found: ${path} (gunzip the backup first, e.g. gzip -dc backup.db.gz > /tmp/pca.db)`,
+    );
+  let db;
+  try {
+    db = loadBetterSqlite3()(path, { readonly: true, fileMustExist: true });
+  } catch (e) {
+    const msg = String(e?.message ?? e);
+    if (/database is locked/i.test(msg))
+      throw new Error(
+        `--db: '${path}' is LOCKED by another process (a running sqlite3/backend, or a WAL without a checkpoint) — close it or point --db at a checkpointed copy`,
+      );
+    if (/unable to open|readonly|read-only|SQLITE_READONLY/i.test(msg))
+      throw new Error(
+        `--db: cannot open '${path}' READ-ONLY — the backup likely carries an un-checkpointed WAL: copy the file together with *.db-wal/*.db-shm to a writable dir, run sqlite3 copy.db 'PRAGMA wal_checkpoint(TRUNCATE);' and retry`,
+      );
+    throw new Error(`--db: cannot open '${path}': ${msg}`);
+  }
+  db.pragma('busy_timeout = 5000');
+  return (sql) => {
+    try {
+      return db.prepare(sql).all();
+    } catch (e) {
+      if (/database is locked|SQLITE_BUSY/i.test(String(e?.message ?? e)))
+        throw new Error(
+          `--db: query hit a LOCKED database ('${path}') — another process is writing it; retry or use a checkpointed copy`,
+        );
+      throw e;
+    }
   };
 }
 

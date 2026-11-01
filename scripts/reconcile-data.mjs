@@ -4,7 +4,7 @@
 //
 //   node scripts/reconcile-data.mjs [--from YYYY-MM-DD --to YYYY-MM-DD] [--skip-live-goals]
 //                                   [--sample N [--seed S]]  (ANA-109: 1.5-year verification)
-//                                   [--tables-only [--sample N]] [--gap-report] [--json]
+//                                   [--tables-only [--sample N]] [--gap-report] [--db <path>] [--json]
 //
 // --sample N: instead of pulling Metrika for EVERY day of the window (5 calls × N days — burns the
 // per-user quota shared with the prod sync), verify (a) N random COVERED days per-day, (b) EVERY
@@ -25,6 +25,11 @@
 // table + their union + the remaining sync windows / Metrika calls the backfill loop still needs
 // until full coverage.
 //
+// --db <path>: read SQLite from a LOCAL backup file (better-sqlite3, readonly) instead of the prod
+// DB over SSH — offline reconciliation (e.g. --gap-report on a pulled backup): gunzip it first,
+//   gzip -dc ~/Backups/pca/pca-YYYYMMDD-HHMMSS.db.gz > /tmp/pca.db
+// and pick a window ENDING BEFORE the snapshot date so the comparison stays honest.
+//
 // --json: machine-readable report on stdout (progress logs stay on stderr); works in every mode.
 //
 // Default range = the date range present in prod channel_stats. STRICTLY READ-ONLY: sqlite3
@@ -32,6 +37,7 @@
 // Exit code: 0 = all exact checks pass (diffs only where explained), 1 = unexplained mismatch.
 import {
   makeDb,
+  makeLocalDb,
   makeMetrika,
   makeApi,
   Report,
@@ -65,7 +71,10 @@ const report = new Report();
 const startedAt = new Date();
 const log = (...a) => console.error('[reconcile]', ...a);
 
-const db = makeDb();
+// Where the SQL goes: a local backup file (--db, better-sqlite3 readonly) or prod over SSH.
+const DB_PATH = arg('db');
+const db = DB_PATH ? makeLocalDb(DB_PATH) : makeDb(); // --db <path>: local backup, else prod over SSH
+if (DB_PATH) log(`db: local file ${DB_PATH} (better-sqlite3, readonly) — no SSH`);
 const q1 = (sql) => db(sql)[0] ?? {};
 const esc = (s) => String(s).replace(/'/g, "''");
 
@@ -224,7 +233,7 @@ if (GAP_REPORT) {
   const complete = unionMissing.length === 0;
   if (!JSON_OUT) {
     console.log(
-      `\n=== GAP REPORT (DB-only, no Metrika calls) — window ${GF}..${GT} (${GD.length} days) ===`,
+      `\n=== GAP REPORT (DB-only, no Metrika calls; ${DB_PATH ? `local db: ${DB_PATH}` : 'prod db over SSH'}) — window ${GF}..${GT} (${GD.length} days) ===`,
     );
     for (const p of Object.values(perTable)) {
       console.log(
@@ -267,6 +276,7 @@ if (GAP_REPORT) {
       JSON.stringify(
         {
           mode: 'gap-report',
+          dbSource: DB_PATH ?? 'prod over SSH',
           window: { from: GF, to: GT, days: GD.length },
           tables: perTable,
           union: { missingDays: unionMissing.length, ranges: unionRanges, dates: unionMissing },
