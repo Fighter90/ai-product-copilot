@@ -6,20 +6,21 @@ English mirror of the wiki. Полная версия на русском — [H
 Yandex.Metrika data into SQLite, shows an analyst cabinet (overview, Live, goals & KPI, funnel,
 Explore, reports, history, B2B), generates GOST-style DOCX/PDF reports, prepares DataLens
 datasets, and answers help questions via a RAG assistant. Runs without a cloud:
-Metrika → SQLite → dashboard → DOCX/PDF. Current version — **v3.1.0**
+Metrika → SQLite → dashboard → DOCX/PDF. Current version — **v3.3.1**
 ([CHANGELOG](https://github.com/Fighter90/ai-product-copilot/blob/main/CHANGELOG.md)).
 
 ## Pages
 
-| Page                                    | About                                                  |
-| --------------------------------------- | ------------------------------------------------------ |
-| [Quickstart](Quickstart.md)             | Local setup from scratch                               |
-| [Roles](Roles.md)                       | Admin vs analyst permissions, sessions, counter grants |
-| [Metrika & Goals](Metrika-and-Goals.md) | Sync pipeline, day-history, KPI «lead ≠ payment»       |
-| [AI Providers](AI-Providers.md)         | Keys, priority chain, fallback, ai_usage               |
-| [DataLens](DataLens.md)                 | CSV datasets, Public API, webhook                      |
-| [Deploy](Deploy.md)                     | Ubuntu + nginx + systemd + certbot layout              |
-| [FAQ](FAQ.md)                           | Frequently asked questions                             |
+| Page                                       | About                                                  |
+| ------------------------------------------ | ------------------------------------------------------ |
+| [Quickstart](Quickstart.md)                | Local setup from scratch                               |
+| [Roles](Roles.md)                          | Admin vs analyst permissions, sessions, counter grants |
+| [Metrika & Goals](Metrika-and-Goals.md)    | Sync pipeline, day-history, KPI «lead ≠ payment»       |
+| [Halloween funnel](../Halloween-funnel.md) | Halloween tariff goals and funnel reading notes        |
+| [AI Providers](AI-Providers.md)            | Keys, priority chain, fallback, ai_usage               |
+| [DataLens](DataLens.md)                    | CSV datasets, Public API, webhook                      |
+| [Deploy](Deploy.md)                        | Ubuntu + nginx + systemd + certbot layout              |
+| [FAQ](FAQ.md)                              | Frequently asked questions                             |
 
 ## Full documentation (repo)
 

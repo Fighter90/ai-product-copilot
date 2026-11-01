@@ -6,13 +6,13 @@
 программ: выгружает данные Яндекс.Метрики в SQLite, показывает кабинет аналитика (обзор, Live,
 цели и KPI, воронка, «Исследуй», отчёты, история, B2B), генерирует отчёты DOCX/PDF по ГОСТ,
 готовит датасеты для DataLens и отвечает на вопросы по справке через RAG-ассистент.
-Работает без облака: Метрика → SQLite → дашборд → DOCX/PDF. Текущая версия — **v3.1.0**
+Работает без облака: Метрика → SQLite → дашборд → DOCX/PDF. Текущая версия — **v3.3.1**
 ([CHANGELOG](../../CHANGELOG.md)).
 
 Страницы вики: [Быстрый старт](Quickstart.md) · [Роли и права](Roles.md) ·
 [AI-провайдеры](AI-Providers.md) · [Метрика и цели](Metrika-and-Goals.md) ·
-[DataLens](DataLens.md) · [Деплой](Deploy.md) · [FAQ — частые вопросы](FAQ.md) ·
-[Roadmap — статус и планы](Roadmap.md)
+[Хэллоуинская воронка](Halloween-funnel.md) · [DataLens](DataLens.md) ·
+[Деплой](Deploy.md) · [FAQ — частые вопросы](FAQ.md) · [Roadmap — статус и планы](Roadmap.md)
 
 EN: [Home](en/Home.md) · [Quickstart](en/Quickstart.md) · [Roles](en/Roles.md) · [AI providers](en/AI-Providers.md) ·
 [Metrika and goals](en/Metrika-and-Goals.md) · [DataLens](en/DataLens.md) · [Deploy](en/Deploy.md) · [FAQ](en/FAQ.md)
@@ -68,7 +68,7 @@ EN: [Home](en/Home.md) · [Quickstart](en/Quickstart.md) · [Roles](en/Roles.md)
 [отчёт по ГОСТ](../specs/014-report-gost.md) · [шаблон спеки](../specs/TEMPLATE.md).
 Актуальные копии перенесены в `openspec/specs/`.
 
-## Справка (help) — 20 статей × RU/EN
+## Справка (help) — 24 статьи × RU/EN
 
 RU: [Начало работы](../help/ru/01-start.md) · [Обзор](../help/ru/02-overview.md) ·
 [Реальное время](../help/ru/03-live.md) · [Цели и KPI](../help/ru/04-goals.md) ·
@@ -80,9 +80,11 @@ RU: [Начало работы](../help/ru/01-start.md) · [Обзор](../help/
 [Как устроен продукт](../help/ru/15-architecture.md) ·
 [Роли](../help/ru/16-roles.md) · [Как строятся отчёты](../help/ru/17-reports-how.md) ·
 [Ключи LLM-провайдеров](../help/ru/18-llm-keys.md) · [Руководство администратора](../help/ru/19-admin-guide.md) ·
-[Руководство аналитика](../help/ru/20-analyst-guide.md)
+[Руководство аналитика](../help/ru/20-analyst-guide.md) · [Маркетинг](../help/ru/21-marketing.md) ·
+[Глоссарий](../help/ru/22-glossary.md) · [Формулы](../help/ru/23-formulas.md) ·
+[Устранение проблем](../help/ru/24-troubleshooting.md)
 
-EN: те же 20 статей в [docs/help/en/](../help/en/) (`01-start.md` … `20-analyst-guide.md`).
+EN: те же 24 статьи в [docs/help/en/](../help/en/) (`01-start.md` … `24-troubleshooting.md`).
 
 ## Прочее
 
