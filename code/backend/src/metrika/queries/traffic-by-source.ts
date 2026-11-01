@@ -2,6 +2,7 @@ import type { ChannelStat } from '@pca/shared';
 import type { MetrikaClient } from '../client';
 import { ENDPOINTS } from '../endpoints';
 import { StatDataResponseSchema, type StatDataResponse } from '../schemas';
+import { dimIndex, rangeDimensions, rangeLimit, rowDate } from './date-dimension';
 import { statFilters } from '../traffic-filter';
 import { mergeByKey, reachRate, weightedRate } from './dedupe';
 import { ratio } from './ratio';
@@ -17,6 +18,11 @@ export interface TrafficQueryOptions {
    * test/robot traffic excluded unless INCLUDE_TEST_TRAFFIC=1 (ANA-22).
    */
   readonly filters?: string;
+  /**
+   * ANA-113: one range request for the whole window (dimensions prefixed with `ym:s:date`)
+   * instead of one request per day — see queries/date-dimension.ts.
+   */
+  readonly dateDimension?: boolean;
 }
 
 type Row = StatDataResponse['data'][number];
@@ -25,8 +31,8 @@ function mapRow(row: Row, opts: TrafficQueryOptions): ChannelStat {
   const m = row.metrics;
   const hasGoal = opts.goalId !== undefined;
   return {
-    date: opts.from,
-    channel: row.dimensions[0]?.name ?? 'unknown',
+    date: rowDate(row, opts.from, opts.dateDimension),
+    channel: row.dimensions[dimIndex(0, opts.dateDimension)]?.name ?? 'unknown',
     utmSource: null,
     utmMedium: null,
     utmCampaign: null,
@@ -143,10 +149,11 @@ export async function trafficBySource(
       // (Search = Google + Yandex …) — visits are additive but users are NOT (the same person
       // across engines counts once per source), so a single-dimension query gives Metrika's
       // native, deduplicated visits AND users per channel.
-      dimensions: 'ym:s:lastsignTrafficSource',
+      dimensions: rangeDimensions('ym:s:lastsignTrafficSource', opts.dateDimension),
       metrics: trafficMetrics(opts.goalId),
       date1: opts.from,
       date2: opts.to,
+      ...rangeLimit(opts.dateDimension),
       attribution: 'lastsign',
       ...(filters ? { filters } : {}),
     },
@@ -154,6 +161,9 @@ export async function trafficBySource(
   );
   return {
     raw,
-    stats: mergeChannelStats(aggregateByChannel(raw.data.map((row) => mapRow(row, opts)))),
+    // ANA-113: in the range variant the channel-only collapse of {@link aggregateByChannel} would
+    // fuse different days into one row (its key has no date) — mergeChannelStats already keys on
+    // (date, channel) and does the same visit-weighted merging, so it handles both modes.
+    stats: mergeChannelStats(raw.data.map((row) => mapRow(row, opts))),
   };
 }

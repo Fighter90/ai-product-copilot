@@ -14,6 +14,31 @@ const goalsFixture = {
 const statFixture = {
   data: [{ dimensions: [{ name: 'podcast' }], metrics: [100, 90, 0.2, 65] }],
 };
+// ANA-113: range-ответ (dimensions начинаются с ym:s:date) — те же данные с датой первой
+// размерностью; responder отдаёт только строки внутри запрошенного окна (как настоящая Метрика).
+const statRangeFixture = {
+  data: Array.from({ length: 7 }, (_, i) => ({
+    dimensions: [{ name: `2025-01-0${i + 1}` }, { name: 'podcast' }],
+    metrics: [100, 90, 0.2, 65],
+  })),
+};
+
+function statResponder() {
+  return (_path: string, params?: Record<string, unknown>) => {
+    const dims = String(params?.['dimensions'] ?? '');
+    if (dims.startsWith('ym:s:date')) {
+      const from = String(params?.['date1'] ?? '');
+      const to = String(params?.['date2'] ?? '');
+      return {
+        data: statRangeFixture.data.filter((r) => {
+          const d = String(r.dimensions[0]?.name ?? '');
+          return d >= from && d <= to;
+        }),
+      };
+    }
+    return statFixture;
+  };
+}
 // bytime shape: data[0].metrics[i] = per-day values of metric i (one series per goal metric).
 const bytimeFixture = {
   data: [
@@ -29,12 +54,12 @@ const bytimeFixture = {
 
 function fakeClient(): MetrikaClient {
   return {
-    get: vi.fn(async (path: string) =>
+    get: vi.fn(async (path: string, params?: Record<string, unknown>) =>
       path.includes('/goals')
         ? goalsFixture
         : path.includes('bytime')
           ? bytimeFixture
-          : statFixture,
+          : statResponder()(path, params),
     ),
   } as unknown as MetrikaClient;
 }
@@ -96,7 +121,7 @@ describe('SyncService.syncGoals', () => {
 });
 
 describe('SyncService.syncTraffic', () => {
-  it('fetches one request per day even for short ranges — every day lands on its own date (ANA-65 №7)', async () => {
+  it('one range request for a short window — every day still lands on its own date (ANA-113; keeps the ANA-65 №7 invariant)', async () => {
     const { days, rows } = await svc.syncTraffic('2025-01-01', '2025-01-03');
     expect(days).toBe(3);
     expect(rows).toBe(3);
@@ -107,11 +132,11 @@ describe('SyncService.syncTraffic', () => {
     expect(dates).toEqual(['2025-01-01', '2025-01-02', '2025-01-03']);
   });
 
-  it('splits a long range into per-day chunks', async () => {
-    const { days, rows } = await svc.syncTraffic('2025-01-01', '2025-01-15');
-    expect(days).toBe(15);
-    expect(rows).toBe(15);
-    expect(metrics.listChannelStats()).toHaveLength(15);
+  it('splits a wide range (>31 days) into per-day chunks — the range row-cap fallback', async () => {
+    const { days, rows } = await svc.syncTraffic('2025-01-01', '2025-02-01');
+    expect(days).toBe(32);
+    expect(rows).toBe(32);
+    expect(metrics.listChannelStats()).toHaveLength(32);
   });
 });
 
@@ -137,12 +162,23 @@ describe('SyncService.syncUtm', () => {
         return {
           data: [
             // Same (source, medium, campaign) twice — the upsert must see ONE summed row.
+            // ANA-113: 1-day window still goes through the range variant (ym:s:date first).
             {
-              dimensions: [{ name: 'vk' }, { name: 'cpc' }, { name: 'spring' }],
+              dimensions: [
+                { name: '2025-01-01' },
+                { name: 'vk' },
+                { name: 'cpc' },
+                { name: 'spring' },
+              ],
               metrics: [10, 8, 1, 0.1],
             },
             {
-              dimensions: [{ name: 'vk' }, { name: 'cpc' }, { name: 'spring' }],
+              dimensions: [
+                { name: '2025-01-01' },
+                { name: 'vk' },
+                { name: 'cpc' },
+                { name: 'spring' },
+              ],
               metrics: [30, 22, 5, 0.125],
             },
           ],
@@ -213,7 +249,7 @@ describe('SyncService.syncAll', () => {
     expect(summary).toEqual({
       goals: 2,
       resolvedGoalId: 80, // explicit goalId passed through
-      days: 7, // one request per day (ANA-65 №7)
+      days: 7, // window length (range request for the 5 small breakdowns, ANA-113)
       channelRows: 7,
       utmRows: 7,
       geoDeviceRows: 7,
@@ -235,12 +271,12 @@ describe('SyncService.syncAll', () => {
 
   it('skips a breakdown whose query the API rejects, still completing the rest', async () => {
     const client = {
-      get: vi.fn(async (path: string, params?: { dimensions?: string }) => {
+      get: vi.fn(async (path: string, params?: Record<string, unknown>) => {
         if (path.includes('/goals')) return goalsFixture;
-        if (params?.dimensions?.includes('UTMSource')) {
+        if (String(params?.['dimensions'] ?? '').includes('UTMSource')) {
           throw new Error('Metrika 400: invalid attribute ym:s:UTMSource');
         }
-        return statFixture;
+        return statResponder()(path, params);
       }),
     } as unknown as MetrikaClient;
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -342,8 +378,9 @@ describe('SyncService.syncAll — failure safety (Metrika 429 quota)', () => {
     const client = {
       get: vi.fn(async (path: string, params?: { dimensions?: string }) => {
         if (path.includes('/goals')) return goalsFixture;
-        if (params?.dimensions?.includes('UTMSource')) throw new Error('Metrika 429');
-        return path.includes('bytime') ? bytimeFixture : statFixture;
+        if (String(params?.['dimensions'] ?? '').includes('UTMSource'))
+          throw new Error('Metrika 429');
+        return path.includes('bytime') ? bytimeFixture : statResponder()(path, params);
       }),
     } as unknown as MetrikaClient;
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -417,8 +454,9 @@ describe('SyncService.syncAll — demo wipe + error surface (ANA-18, ANA-15)', (
     const client = {
       get: vi.fn(async (path: string, params?: { dimensions?: string }) => {
         if (path.includes('/goals')) return goalsFixture;
-        if (params?.dimensions?.includes('UTMSource')) throw new Error('Metrika 400: bad attr');
-        return path.includes('bytime') ? bytimeFixture : statFixture;
+        if (String(params?.['dimensions'] ?? '').includes('UTMSource'))
+          throw new Error('Metrika 400: bad attr');
+        return path.includes('bytime') ? bytimeFixture : statResponder()(path, params);
       }),
     } as unknown as MetrikaClient;
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

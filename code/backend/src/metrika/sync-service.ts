@@ -2,6 +2,7 @@ import { selectPrimaryGoal, type Goal } from '@pca/shared';
 import type { ChannelStat, GeoDeviceStat, PageStat, SyncStepError, UtmStat } from '@pca/shared';
 import type { MetricsRepo } from '../db/repositories/metrics-repo';
 import { dayChunks } from '../utils/date-range';
+import { RANGE_MAX_DAYS } from './queries/date-dimension';
 import { stableHash } from '../utils/hash';
 import type { MetrikaClient } from './client';
 import { ENDPOINTS } from './endpoints';
@@ -113,22 +114,46 @@ export class SyncService {
   ): Promise<{ days: number; rows: number }> {
     const chunks = dayChunks(from, to);
     const acc: ChannelStat[] = [];
-    for (const chunk of chunks) {
+    if (chunks.length <= RANGE_MAX_DAYS) {
+      // ANA-113: одно range-обращение на всё окно (`ym:s:date`) вместо запроса на каждый
+      // день — квота Метрики (quota_requests_by_uid, 5000/сутки) тратится на данные,
+      // а не на per-day чанки.
       const { raw, stats } = await trafficBySource(this.deps.client, {
         counterId: this.deps.counterId,
-        from: chunk.from,
-        to: chunk.to,
+        from,
+        to,
         goalId,
+        dateDimension: true,
       });
       this.deps.metrics.saveRawResponse({
         endpoint: ENDPOINTS.statData,
-        queryHash: stableHash({ q: 'traffic-by-source', goalId, from: chunk.from, to: chunk.to }),
-        dateFrom: chunk.from,
-        dateTo: chunk.to,
+        queryHash: stableHash({ q: 'traffic-by-source', goalId, from, to }),
+        dateFrom: from,
+        dateTo: to,
         payload: raw,
         fetchedAt: this.deps.now(),
       });
       acc.push(...stats);
+    } else {
+      // Широкие окна — прежний цикл per-day: у больших диапазонов row-cap range-ответа
+      // может не хватить (10 000 строк).
+      for (const chunk of chunks) {
+        const { raw, stats } = await trafficBySource(this.deps.client, {
+          counterId: this.deps.counterId,
+          from: chunk.from,
+          to: chunk.to,
+          goalId,
+        });
+        this.deps.metrics.saveRawResponse({
+          endpoint: ENDPOINTS.statData,
+          queryHash: stableHash({ q: 'traffic-by-source', goalId, from: chunk.from, to: chunk.to }),
+          dateFrom: chunk.from,
+          dateTo: chunk.to,
+          payload: raw,
+          fetchedAt: this.deps.now(),
+        });
+        acc.push(...stats);
+      }
     }
     const merged = mergeChannelStats(acc);
     this.deps.metrics.upsertChannelStats(merged);
@@ -138,22 +163,46 @@ export class SyncService {
   async syncUtm(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
     const chunks = dayChunks(from, to);
     const acc: UtmStat[] = [];
-    for (const chunk of chunks) {
+    if (chunks.length <= RANGE_MAX_DAYS) {
+      // ANA-113: одно range-обращение на всё окно (`ym:s:date`) вместо запроса на каждый
+      // день — квота Метрики (quota_requests_by_uid, 5000/сутки) тратится на данные,
+      // а не на per-day чанки.
       const { raw, stats } = await utmBreakdown(this.deps.client, {
         counterId: this.deps.counterId,
-        from: chunk.from,
-        to: chunk.to,
+        from,
+        to,
         goalId,
+        dateDimension: true,
       });
       this.deps.metrics.saveRawResponse({
         endpoint: ENDPOINTS.statData,
-        queryHash: stableHash({ q: 'utm-breakdown', goalId, from: chunk.from, to: chunk.to }),
-        dateFrom: chunk.from,
-        dateTo: chunk.to,
+        queryHash: stableHash({ q: 'utm-breakdown', goalId, from, to }),
+        dateFrom: from,
+        dateTo: to,
         payload: raw,
         fetchedAt: this.deps.now(),
       });
       acc.push(...stats);
+    } else {
+      // Широкие окна — прежний цикл per-day: у больших диапазонов row-cap range-ответа
+      // может не хватить (10 000 строк).
+      for (const chunk of chunks) {
+        const { raw, stats } = await utmBreakdown(this.deps.client, {
+          counterId: this.deps.counterId,
+          from: chunk.from,
+          to: chunk.to,
+          goalId,
+        });
+        this.deps.metrics.saveRawResponse({
+          endpoint: ENDPOINTS.statData,
+          queryHash: stableHash({ q: 'utm-breakdown', goalId, from: chunk.from, to: chunk.to }),
+          dateFrom: chunk.from,
+          dateTo: chunk.to,
+          payload: raw,
+          fetchedAt: this.deps.now(),
+        });
+        acc.push(...stats);
+      }
     }
     const merged = mergeUtmStats(acc);
     this.deps.metrics.upsertUtmStats(merged);
@@ -163,22 +212,46 @@ export class SyncService {
   async syncGeoDevice(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
     const chunks = dayChunks(from, to);
     const acc: GeoDeviceStat[] = [];
-    for (const chunk of chunks) {
+    if (chunks.length <= RANGE_MAX_DAYS) {
+      // ANA-113: одно range-обращение на всё окно (`ym:s:date`) вместо запроса на каждый
+      // день — квота Метрики (quota_requests_by_uid, 5000/сутки) тратится на данные,
+      // а не на per-day чанки.
       const { raw, stats } = await geoDeviceBreakdown(this.deps.client, {
         counterId: this.deps.counterId,
-        from: chunk.from,
-        to: chunk.to,
+        from,
+        to,
         goalId,
+        dateDimension: true,
       });
       this.deps.metrics.saveRawResponse({
         endpoint: ENDPOINTS.statData,
-        queryHash: stableHash({ q: 'geo-device', goalId, from: chunk.from, to: chunk.to }),
-        dateFrom: chunk.from,
-        dateTo: chunk.to,
+        queryHash: stableHash({ q: 'geo-device', goalId, from, to }),
+        dateFrom: from,
+        dateTo: to,
         payload: raw,
         fetchedAt: this.deps.now(),
       });
       acc.push(...stats);
+    } else {
+      // Широкие окна — прежний цикл per-day: у больших диапазонов row-cap range-ответа
+      // может не хватить (10 000 строк).
+      for (const chunk of chunks) {
+        const { raw, stats } = await geoDeviceBreakdown(this.deps.client, {
+          counterId: this.deps.counterId,
+          from: chunk.from,
+          to: chunk.to,
+          goalId,
+        });
+        this.deps.metrics.saveRawResponse({
+          endpoint: ENDPOINTS.statData,
+          queryHash: stableHash({ q: 'geo-device', goalId, from: chunk.from, to: chunk.to }),
+          dateFrom: chunk.from,
+          dateTo: chunk.to,
+          payload: raw,
+          fetchedAt: this.deps.now(),
+        });
+        acc.push(...stats);
+      }
     }
     const merged = mergeGeoDeviceStats(acc);
     this.deps.metrics.upsertGeoDeviceStats(merged);
@@ -271,22 +344,46 @@ export class SyncService {
   async syncBrowserOs(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
     const chunks = dayChunks(from, to);
     const acc: Awaited<ReturnType<typeof browserOsBreakdown>>['stats'] = [];
-    for (const chunk of chunks) {
+    if (chunks.length <= RANGE_MAX_DAYS) {
+      // ANA-113: одно range-обращение на всё окно (`ym:s:date`) вместо запроса на каждый
+      // день — квота Метрики (quota_requests_by_uid, 5000/сутки) тратится на данные,
+      // а не на per-day чанки.
       const { raw, stats } = await browserOsBreakdown(this.deps.client, {
         counterId: this.deps.counterId,
-        from: chunk.from,
-        to: chunk.to,
+        from,
+        to,
         goalId,
+        dateDimension: true,
       });
       this.deps.metrics.saveRawResponse({
         endpoint: ENDPOINTS.statData,
-        queryHash: stableHash({ q: 'browser-os', goalId, from: chunk.from, to: chunk.to }),
-        dateFrom: chunk.from,
-        dateTo: chunk.to,
+        queryHash: stableHash({ q: 'browser-os', goalId, from, to }),
+        dateFrom: from,
+        dateTo: to,
         payload: raw,
         fetchedAt: this.deps.now(),
       });
       acc.push(...stats);
+    } else {
+      // Широкие окна — прежний цикл per-day: у больших диапазонов row-cap range-ответа
+      // может не хватить (10 000 строк).
+      for (const chunk of chunks) {
+        const { raw, stats } = await browserOsBreakdown(this.deps.client, {
+          counterId: this.deps.counterId,
+          from: chunk.from,
+          to: chunk.to,
+          goalId,
+        });
+        this.deps.metrics.saveRawResponse({
+          endpoint: ENDPOINTS.statData,
+          queryHash: stableHash({ q: 'browser-os', goalId, from: chunk.from, to: chunk.to }),
+          dateFrom: chunk.from,
+          dateTo: chunk.to,
+          payload: raw,
+          fetchedAt: this.deps.now(),
+        });
+        acc.push(...stats);
+      }
     }
     const merged = mergeBrowserOsStats(acc);
     return { rows: merged.length };
@@ -295,22 +392,46 @@ export class SyncService {
   async syncNewReturning(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
     const chunks = dayChunks(from, to);
     const acc: Awaited<ReturnType<typeof newReturningBreakdown>>['stats'] = [];
-    for (const chunk of chunks) {
+    if (chunks.length <= RANGE_MAX_DAYS) {
+      // ANA-113: одно range-обращение на всё окно (`ym:s:date`) вместо запроса на каждый
+      // день — квота Метрики (quota_requests_by_uid, 5000/сутки) тратится на данные,
+      // а не на per-day чанки.
       const { raw, stats } = await newReturningBreakdown(this.deps.client, {
         counterId: this.deps.counterId,
-        from: chunk.from,
-        to: chunk.to,
+        from,
+        to,
         goalId,
+        dateDimension: true,
       });
       this.deps.metrics.saveRawResponse({
         endpoint: ENDPOINTS.statData,
-        queryHash: stableHash({ q: 'new-returning', goalId, from: chunk.from, to: chunk.to }),
-        dateFrom: chunk.from,
-        dateTo: chunk.to,
+        queryHash: stableHash({ q: 'new-returning', goalId, from, to }),
+        dateFrom: from,
+        dateTo: to,
         payload: raw,
         fetchedAt: this.deps.now(),
       });
       acc.push(...stats);
+    } else {
+      // Широкие окна — прежний цикл per-day: у больших диапазонов row-cap range-ответа
+      // может не хватить (10 000 строк).
+      for (const chunk of chunks) {
+        const { raw, stats } = await newReturningBreakdown(this.deps.client, {
+          counterId: this.deps.counterId,
+          from: chunk.from,
+          to: chunk.to,
+          goalId,
+        });
+        this.deps.metrics.saveRawResponse({
+          endpoint: ENDPOINTS.statData,
+          queryHash: stableHash({ q: 'new-returning', goalId, from: chunk.from, to: chunk.to }),
+          dateFrom: chunk.from,
+          dateTo: chunk.to,
+          payload: raw,
+          fetchedAt: this.deps.now(),
+        });
+        acc.push(...stats);
+      }
     }
     const merged = mergeNewReturningStats(acc);
     return { rows: merged.length };

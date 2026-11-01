@@ -18,6 +18,31 @@ const goalsFixture = { goals: [{ id: 80, name: 'payment', type: 'action' }] };
 const statFixture = {
   data: [{ dimensions: [{ name: 'podcast' }], metrics: [100, 90, 0.2, 65] }],
 };
+// ANA-113: range-ответ (ym:s:date первой размерностью) для окон ≤ 31 день; responder отдаёт
+// только дни внутри запрошенного окна — как настоящая Метрика.
+const statRangeFixture = {
+  data: Array.from({ length: 3 }, (_, i) => ({
+    dimensions: [{ name: `2025-01-0${i + 1}` }, { name: 'podcast' }],
+    metrics: [100, 90, 0.2, 65],
+  })),
+};
+
+function statResponder(
+  _path: string,
+  params?: { date1?: string; date2?: string; dimensions?: string },
+) {
+  if (String(params?.dimensions ?? '').startsWith('ym:s:date')) {
+    const from = params?.date1 ?? '';
+    const to = params?.date2 ?? '';
+    return {
+      data: statRangeFixture.data.filter((r) => {
+        const d = String(r.dimensions[0]?.name ?? '');
+        return d >= from && d <= to;
+      }),
+    };
+  }
+  return statFixture;
+}
 // bytime shape: data[0].metrics[i] = per-day values of metric i.
 const bytimeFixture = {
   data: [
@@ -38,7 +63,7 @@ function fakeClient() {
     calls.push({ path, params });
     if (path.includes('/goals')) return goalsFixture;
     if (path.includes('bytime')) return bytimeFixture;
-    return statFixture;
+    return statResponder(path, params);
   });
   return { client: { get } as unknown as MetrikaClient, calls };
 }
@@ -218,7 +243,7 @@ describe('SyncService new slices', () => {
     expect(summary).toEqual({
       goals: 1,
       resolvedGoalId: 80,
-      days: 3, // one request per day (ANA-65 №7)
+      days: 3, // window length (small breakdowns go as ONE range request, ANA-113)
       channelRows: 3,
       utmRows: 3,
       geoDeviceRows: 3,
@@ -235,11 +260,13 @@ describe('SyncService new slices', () => {
 
   it('skips a failing new slice without aborting the rest', async () => {
     const failing = {
-      get: vi.fn(async (path: string) => {
-        if (path.includes('/goals')) return goalsFixture;
-        if (path.includes('bytime')) throw new Error('Metrika 400: invalid metric');
-        return statFixture;
-      }),
+      get: vi.fn(
+        async (path: string, params?: { date1?: string; date2?: string; dimensions?: string }) => {
+          if (path.includes('/goals')) return goalsFixture;
+          if (path.includes('bytime')) throw new Error('Metrika 400: invalid metric');
+          return statResponder(path, params);
+        },
+      ),
     } as unknown as MetrikaClient;
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const svc2 = new SyncService({

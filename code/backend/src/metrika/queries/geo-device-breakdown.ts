@@ -3,6 +3,7 @@ import { DIMENSION_NONE } from '@pca/shared';
 import type { MetrikaClient } from '../client';
 import { ENDPOINTS } from '../endpoints';
 import { StatDataResponseSchema, type StatDataResponse } from '../schemas';
+import { dimIndex, rangeDimensions, rangeLimit, rowDate } from './date-dimension';
 import { statFilters } from '../traffic-filter';
 import { mergeByKey, reachRate } from './dedupe';
 import { ratio } from './ratio';
@@ -18,6 +19,11 @@ export interface GeoDeviceQueryOptions {
    * test/robot traffic excluded unless INCLUDE_TEST_TRAFFIC=1 (ANA-22).
    */
   readonly filters?: string;
+  /**
+   * ANA-113: one range request for the whole window (dimensions prefixed with `ym:s:date`)
+   * instead of one request per day — see queries/date-dimension.ts.
+   */
+  readonly dateDimension?: boolean;
 }
 
 type Row = StatDataResponse['data'][number];
@@ -31,9 +37,9 @@ function mapRow(row: Row, opts: GeoDeviceQueryOptions): GeoDeviceStat {
   const m = row.metrics;
   const hasGoal = opts.goalId !== undefined;
   return {
-    date: opts.from,
-    country: dim(row, 0),
-    device: dim(row, 1),
+    date: rowDate(row, opts.from, opts.dateDimension),
+    country: dim(row, dimIndex(0, opts.dateDimension)),
+    device: dim(row, dimIndex(1, opts.dateDimension)),
     visits: m[0] ?? 0,
     users: m[1] ?? 0,
     goalReaches: hasGoal ? (m[2] ?? 0) : 0,
@@ -80,10 +86,11 @@ export async function geoDeviceBreakdown(
     ENDPOINTS.statData,
     {
       ids: opts.counterId,
-      dimensions: 'ym:s:regionCountry,ym:s:deviceCategory',
+      dimensions: rangeDimensions('ym:s:regionCountry,ym:s:deviceCategory', opts.dateDimension),
       metrics: geoDeviceMetrics(opts.goalId),
       date1: opts.from,
       date2: opts.to,
+      ...rangeLimit(opts.dateDimension),
       attribution: 'lastsign',
       ...(filters ? { filters } : {}),
     },
