@@ -134,6 +134,26 @@ describe('ANA-113 range queries', () => {
     });
   }
 
+  it('range + goalId: goal metrics ride along, dimension shift and params hold', async () => {
+    const client = fakeClient({ data: rangeRows(1) });
+    const { stats } = await trafficBySource(client, {
+      counterId: 1,
+      from: '2025-03-01',
+      to: '2025-03-02',
+      goalId: 80,
+      dateDimension: true,
+    });
+    const [, params] = (client.get as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(params['dimensions']).toBe('ym:s:date,ym:s:lastsignTrafficSource');
+    expect(String(params['metrics'])).toContain('ym:s:goal80reaches');
+    // Фикстура содержит только 4 базовые метрики → goal-поля мапятся в 0, не падают.
+    expect(stats[0]?.goalReaches).toBe(0);
+    expect(stats.map((r) => r.date)).toEqual([...days]);
+  });
+
   it('rangeLimit off → no extra params; RANGE_MAX_DAYS guards the row cap', () => {
     expect(rangeLimit(undefined)).toEqual({});
     expect(rangeLimit(false)).toEqual({});

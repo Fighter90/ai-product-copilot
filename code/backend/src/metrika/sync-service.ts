@@ -111,9 +111,10 @@ export class SyncService {
     from: string,
     to: string,
     goalId?: number,
-  ): Promise<{ days: number; rows: number }> {
+  ): Promise<{ days: number; rows: number; truncated?: boolean }> {
     const chunks = dayChunks(from, to);
     const acc: ChannelStat[] = [];
+    let truncated = false;
     if (chunks.length <= RANGE_MAX_DAYS) {
       // ANA-113: одно range-обращение на всё окно (`ym:s:date`) вместо запроса на каждый
       // день — квота Метрики (quota_requests_by_uid, 5000/сутки) тратится на данные,
@@ -134,6 +135,12 @@ export class SyncService {
         fetchedAt: this.deps.now(),
       });
       acc.push(...stats);
+      if (raw.total_rows !== undefined && raw.total_rows > raw.data.length) {
+        console.warn(
+          `[sync] traffic-by-source: range-ответ усечён (${raw.data.length}/${raw.total_rows} строк) — окно неполное`,
+        );
+        truncated = true;
+      }
     } else {
       // Широкие окна — прежний цикл per-day: у больших диапазонов row-cap range-ответа
       // может не хватить (10 000 строк).
@@ -157,12 +164,17 @@ export class SyncService {
     }
     const merged = mergeChannelStats(acc);
     this.deps.metrics.upsertChannelStats(merged);
-    return { days: chunks.length, rows: merged.length };
+    return { days: chunks.length, rows: merged.length, truncated };
   }
 
-  async syncUtm(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
+  async syncUtm(
+    from: string,
+    to: string,
+    goalId?: number,
+  ): Promise<{ rows: number; truncated?: boolean }> {
     const chunks = dayChunks(from, to);
     const acc: UtmStat[] = [];
+    let truncated = false;
     if (chunks.length <= RANGE_MAX_DAYS) {
       // ANA-113: одно range-обращение на всё окно (`ym:s:date`) вместо запроса на каждый
       // день — квота Метрики (quota_requests_by_uid, 5000/сутки) тратится на данные,
@@ -183,6 +195,12 @@ export class SyncService {
         fetchedAt: this.deps.now(),
       });
       acc.push(...stats);
+      if (raw.total_rows !== undefined && raw.total_rows > raw.data.length) {
+        console.warn(
+          `[sync] utm-breakdown: range-ответ усечён (${raw.data.length}/${raw.total_rows} строк) — окно неполное`,
+        );
+        truncated = true;
+      }
     } else {
       // Широкие окна — прежний цикл per-day: у больших диапазонов row-cap range-ответа
       // может не хватить (10 000 строк).
@@ -206,12 +224,17 @@ export class SyncService {
     }
     const merged = mergeUtmStats(acc);
     this.deps.metrics.upsertUtmStats(merged);
-    return { rows: merged.length };
+    return { rows: merged.length, truncated };
   }
 
-  async syncGeoDevice(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
+  async syncGeoDevice(
+    from: string,
+    to: string,
+    goalId?: number,
+  ): Promise<{ rows: number; truncated?: boolean }> {
     const chunks = dayChunks(from, to);
     const acc: GeoDeviceStat[] = [];
+    let truncated = false;
     if (chunks.length <= RANGE_MAX_DAYS) {
       // ANA-113: одно range-обращение на всё окно (`ym:s:date`) вместо запроса на каждый
       // день — квота Метрики (quota_requests_by_uid, 5000/сутки) тратится на данные,
@@ -232,6 +255,12 @@ export class SyncService {
         fetchedAt: this.deps.now(),
       });
       acc.push(...stats);
+      if (raw.total_rows !== undefined && raw.total_rows > raw.data.length) {
+        console.warn(
+          `[sync] geo-device: range-ответ усечён (${raw.data.length}/${raw.total_rows} строк) — окно неполное`,
+        );
+        truncated = true;
+      }
     } else {
       // Широкие окна — прежний цикл per-day: у больших диапазонов row-cap range-ответа
       // может не хватить (10 000 строк).
@@ -255,7 +284,7 @@ export class SyncService {
     }
     const merged = mergeGeoDeviceStats(acc);
     this.deps.metrics.upsertGeoDeviceStats(merged);
-    return { rows: merged.length };
+    return { rows: merged.length, truncated };
   }
 
   async syncPages(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
@@ -341,9 +370,14 @@ export class SyncService {
     return { batches: batches.length, rows: merged.length };
   }
 
-  async syncBrowserOs(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
+  async syncBrowserOs(
+    from: string,
+    to: string,
+    goalId?: number,
+  ): Promise<{ rows: number; truncated?: boolean }> {
     const chunks = dayChunks(from, to);
     const acc: Awaited<ReturnType<typeof browserOsBreakdown>>['stats'] = [];
+    let truncated = false;
     if (chunks.length <= RANGE_MAX_DAYS) {
       // ANA-113: одно range-обращение на всё окно (`ym:s:date`) вместо запроса на каждый
       // день — квота Метрики (quota_requests_by_uid, 5000/сутки) тратится на данные,
@@ -364,6 +398,12 @@ export class SyncService {
         fetchedAt: this.deps.now(),
       });
       acc.push(...stats);
+      if (raw.total_rows !== undefined && raw.total_rows > raw.data.length) {
+        console.warn(
+          `[sync] browser-os: range-ответ усечён (${raw.data.length}/${raw.total_rows} строк) — окно неполное`,
+        );
+        truncated = true;
+      }
     } else {
       // Широкие окна — прежний цикл per-day: у больших диапазонов row-cap range-ответа
       // может не хватить (10 000 строк).
@@ -386,12 +426,17 @@ export class SyncService {
       }
     }
     const merged = mergeBrowserOsStats(acc);
-    return { rows: merged.length };
+    return { rows: merged.length, truncated };
   }
 
-  async syncNewReturning(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
+  async syncNewReturning(
+    from: string,
+    to: string,
+    goalId?: number,
+  ): Promise<{ rows: number; truncated?: boolean }> {
     const chunks = dayChunks(from, to);
     const acc: Awaited<ReturnType<typeof newReturningBreakdown>>['stats'] = [];
+    let truncated = false;
     if (chunks.length <= RANGE_MAX_DAYS) {
       // ANA-113: одно range-обращение на всё окно (`ym:s:date`) вместо запроса на каждый
       // день — квота Метрики (quota_requests_by_uid, 5000/сутки) тратится на данные,
@@ -412,6 +457,12 @@ export class SyncService {
         fetchedAt: this.deps.now(),
       });
       acc.push(...stats);
+      if (raw.total_rows !== undefined && raw.total_rows > raw.data.length) {
+        console.warn(
+          `[sync] new-returning: range-ответ усечён (${raw.data.length}/${raw.total_rows} строк) — окно неполное`,
+        );
+        truncated = true;
+      }
     } else {
       // Широкие окна — прежний цикл per-day: у больших диапазонов row-cap range-ответа
       // может не хватить (10 000 строк).
@@ -434,7 +485,7 @@ export class SyncService {
       }
     }
     const merged = mergeNewReturningStats(acc);
-    return { rows: merged.length };
+    return { rows: merged.length, truncated };
   }
 
   /**
@@ -445,11 +496,20 @@ export class SyncService {
    */
   private async best(
     label: string,
-    fn: () => Promise<{ rows: number }>,
+    fn: () => Promise<{ rows: number; truncated?: boolean }>,
     errors: SyncStepError[] = [],
   ): Promise<{ rows: number }> {
     try {
-      return await fn();
+      const res = await fn();
+      // ANA-113: усечённый range-ответ (row-cap 10000) — данные частичные; делает это видимым
+      // в /api/sync/status, не роняя синк (частичные данные лучше нулей).
+      if (res.truncated) {
+        errors.push({
+          step: label,
+          message: 'range-ответ усечён (row-cap 10000): данные окна неполные',
+        });
+      }
+      return res;
     } catch (err) {
       const message = (err as Error).message;
       console.warn(`[sync] ${label} skipped: ${message}`);

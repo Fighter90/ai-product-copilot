@@ -338,6 +338,45 @@ describe('SyncService.syncAll', () => {
   });
 });
 
+// ANA-113: усечённый range-ответ (row-cap 10000) не роняет синк, но обязан попасть
+// в summary.errors — /api/sync/status и админка обязаны показать неполноту окна.
+describe('SyncService — truncation guard (ANA-113)', () => {
+  it('flags a truncated range response in summary.errors without failing the sync', async () => {
+    const client = {
+      get: vi.fn(async (path: string, params?: Record<string, unknown>) => {
+        if (path.includes('/goals')) return goalsFixture;
+        if (path.includes('bytime')) return bytimeFixture;
+        return { ...statResponder()(path, params), total_rows: 50_000 };
+      }),
+    } as unknown as MetrikaClient;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const svc2 = new SyncService({
+      client,
+      metrics,
+      counterId: 1,
+      archivedThreshold: 77,
+      now: () => 'T',
+    });
+    const summary = await svc2.syncAll('2025-01-01', '2025-01-03', 80);
+    warn.mockRestore();
+    // 4 range-таблицы (utm/geo/browser/nr) обязаны пометить усечение; pages/exit — per-day, нет.
+    const flagged = (summary.errors ?? []).filter((e) => e.message.includes('усечён'));
+    expect(flagged.map((e) => e.step).sort()).toEqual([
+      'browser-os',
+      'geo-device',
+      'new-returning',
+      'utm',
+    ]);
+    // Данные при этом загружены (частичные лучше нулей).
+    expect(metrics.listUtmStats().length).toBeGreaterThan(0);
+  });
+
+  it('a complete range response produces no truncation errors', async () => {
+    const summary = await svc.syncAll('2025-01-01', '2025-01-03', 80);
+    expect((summary.errors ?? []).some((e) => e.message.includes('усечён'))).toBe(false);
+  });
+});
+
 describe('SyncService.syncAll — failure safety (Metrika 429 quota)', () => {
   it('restores the whole window when the required traffic step fails after the wipe', async () => {
     await svc.syncAll('2025-01-01', '2025-01-07', 80);
