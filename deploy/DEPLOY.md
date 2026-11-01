@@ -7,7 +7,9 @@
 ```
 nginx :80/:443 ── /            → статика /opt/pca/frontend/dist (собрана локально)
               └── /api/        → proxy → 127.0.0.1:4000  (Fastify через tsx, systemd: pca-api)
-таймер pca-sync.timer          → каждые 3 часа: sync Яндекс.Метрики (tsx cli-sync)
+таймер pca-sync.timer          → каждые 30 минут (:00/:30): sync Метрики за 3 дня
+                                 (tsx cli-sync --days=3, Nice=10; range-запросы ANA-113)
+таймер pca-datalens.timer      → каждые 30 минут со сдвигом (:15/:45): воркбук DataLens
 SQLite: /opt/pca/data/productcamp.sqlite
 Секреты: /opt/pca/.env         (никогда не rsync-ается и не коммитится)
 ```
@@ -116,6 +118,20 @@ git pull
 ./deploy/deploy.sh
 ```
 
+### Через GitHub Actions (CI/CD)
+
+Тот же деплой без локальной машины — workflow **`.github/workflows/deploy.yml`**
+(environment `production`, `concurrency: production`). Триггеры:
+
+- ручной запуск: `gh workflow run deploy.yml --ref main`;
+- автоматически: пуш тега `v*.*.*`.
+
+Пайплайн: гейты (format/lint/typecheck + тесты backend/frontend/shared) →
+`./deploy/deploy.sh` на раннере (сборка фронта, rsync по SSH-ключу из секретов
+`DEPLOY_SSH_KEY`/`DEPLOY_HOST`) → health-check прода → GitHub Deployment со статусами
+
+- GitHub Release.
+
 Всё: новая сборка + код на сервере, рестарт, health-check. SQLite и `.env` не трогаются.
 Миграции применяются автоматически при старте API (`server.ts` вызывает `migrate(db)`);
 для ручного запуска на сервере: `cd /opt/pca/backend && tsx src/db/cli-migrate.ts`.
@@ -155,6 +171,9 @@ journalctl -u pca-sync.service -n 50 --no-pager   # лог последнего 
 curl -s http://127.0.0.1:4000/api/health | jq
 curl -s https://dashboardcamp.ru/api/health | jq
 
+# Последний синк Метрики (статус + ошибки по шагам, см. 5.4):
+curl -s http://127.0.0.1:4000/api/sync/status | jq
+
 # Заголовки безопасности и кэш
 curl -sI https://dashboardcamp.ru | grep -Ei 'strict|x-content|x-frame|referrer'
 curl -sI https://dashboardcamp.ru/assets/$(curl -s https://dashboardcamp.ru | \
@@ -181,6 +200,9 @@ free -m && df -h /
 
 | Файл                  | Что делает                                                                                                                                                                                                               |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pca-sync.service`    | oneshot-синк Метрики: `tsx src/metrika/cli-sync.ts --days=3` от пользователя `pca`, `Nice=10`, `IOSchedulingClass=idle`, `MemoryMax=350M`; идемпотентен, запись о прогоне в `sync_runs`                                  |
+| `pca-sync.timer`      | Каждые 30 минут (`*:0/30` → :00/:30), `RandomizedDelaySec=5min`, `Persistent=true`; с ANA-113 ≈29 вызовов API/прогон (см. 5.4)                                                                                           |
+| `pca-datalens.timer`  | Каждые 30 минут со сдвигом (`*:15/30` → :15/:45) — не совпадает с синком Метрики, DataLens читает уже обновлённые CSV; юнит пропускается без `DATALENS_WORKBOOK_ID`                                                      |
 | `backup.sh`           | Ночной бэкап: `sqlite3 .backup` (консистентный срез живой WAL-базы, НЕ `cp`) → gzip → `/opt/pca/backups/pca-YYYYMMDD-HHMMSS.db.gz`; хранит 14 копий; `flock` от параллельного запуска; лог `/opt/pca/backups/backup.log` |
 | `pca-backup.service`  | oneshot-юнит от пользователя `pca`, `Nice=10`                                                                                                                                                                            |
 | `pca-backup.timer`    | Ежедневно **04:30**, `Persistent=true` (догонит после простоя)                                                                                                                                                           |
@@ -273,6 +295,22 @@ cat /opt/pca/logs/monitor.log                              # «неудача #3
 
 Если монитор перезапустил API, а он снова падает — причину искать в
 `journalctl -u pca-api -n 50` (см. раздел «Частые проблемы»).
+
+### 5.4 Диагностика квоты Яндекс.Метрики (ANA-113)
+
+- **Лимит:** 5000 запросов/сутки на UID (`quota_requests_by_uid`); квота общая для
+  таймерного синка, ручных прогонов и любого туллинга. **Сброс — 00:00 GMT.**
+- **Расход:** таймер — 48 прогонов/сутки; с ANA-113 (main, коммит `15beda3`) пять разбивок
+  (браузер/ОС, гео/устройства, новый-вернувшийся, источники трафика, UTM) идут одним
+  **range-запросом** на окно ≤31 дня вместо per-day чанков ⇒ **≈29 вызовов API на прогон,
+  ≈1400/сутки из 5000**. Окна >31 дня — фолбэк на per-day (тратит квоту заметно быстрее).
+- **Признак исчерпания:** HTTP **429** от API Метрики в логе синка —
+  `journalctl -u pca-sync.service -n 100` (клиент ретраит 429 с паузами; при полном
+  исчерпании прогон падает и фиксируется в `sync_runs`). Управление целями
+  (создание/архивация) тоже отвечает 429 «Превышен лимит запросов».
+- **Где смотреть последний синк:** `GET /api/sync/status` (админка → «Метрика и данные»)
+  или `journalctl -u pca-sync.service -n 100`. Утренние 429 сами уходят после сброса
+  квоты в 00:00 GMT — следующий слот синка догонит окно (синк идемпотентен).
 
 ## 6. Офсайт-копирование бэкапов (Mac владельца)
 
