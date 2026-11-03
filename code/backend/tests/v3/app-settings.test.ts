@@ -117,10 +117,12 @@ describe('AppSettings.source / view', () => {
     // Masked secret can be echoed back into set() as "keep" (handled by the route, not here).
   });
 
-  it('SECRET_KEYS are exactly the four documented keys', () => {
+  it('SECRET_KEYS are exactly the documented keys (включая резервный аккаунт ANA-107)', () => {
     expect([...SECRET_KEYS].sort()).toEqual([
       'DATALENS_IAM_TOKEN',
       'DATALENS_WEBHOOK_TOKEN',
+      'METRIKA_BACKUP_CLIENT_SECRET',
+      'METRIKA_BACKUP_OAUTH_TOKEN',
       'YANDEX_CLIENT_SECRET',
       'YANDEX_OAUTH_TOKEN',
     ]);

@@ -137,12 +137,10 @@ export async function metrikaGoalsRoutes(
     const clientId = deps.appSettings.get('METRIKA_BACKUP_CLIENT_ID');
     const clientSecret = deps.appSettings.get('METRIKA_BACKUP_CLIENT_SECRET');
     if (!clientId || !clientSecret) {
-      return reply
-        .code(400)
-        .send({
-          error: 'Заполните METRIKA_BACKUP_CLIENT_ID и METRIKA_BACKUP_CLIENT_SECRET',
-          code: 'NOT_CONFIGURED',
-        });
+      return reply.code(400).send({
+        error: 'Заполните METRIKA_BACKUP_CLIENT_ID и METRIKA_BACKUP_CLIENT_SECRET',
+        code: 'NOT_CONFIGURED',
+      });
     }
     const res = await globalThis.fetch('https://oauth.yandex.ru/token', {
       method: 'POST',
