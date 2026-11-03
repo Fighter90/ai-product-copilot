@@ -297,6 +297,12 @@ export const v3 = {
     http<{ KPI_TARGET: { value: string }; EVENT_DATE: { value: string } }>('/settings/public'),
   saveSettings: (patch: Record<string, string | number>) =>
     http<{ ok: true; changed: string[] }>('/settings', { method: 'POST', ...json(patch) }),
+  // ANA-107: обмен verification code резервного аккаунта на OAuth-токен (admin).
+  exchangeBackupToken: (code: string) =>
+    http<{ ok: true; tokenLength: number }>('/goals/backup-token/exchange', {
+      method: 'POST',
+      ...json({ code }),
+    }),
   rotateDatalensToken: () =>
     http<{ token: string }>('/settings/datalens-token', { method: 'POST', ...json({}) }),
   clearMetrikaData: () =>

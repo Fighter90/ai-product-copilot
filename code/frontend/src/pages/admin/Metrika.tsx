@@ -75,6 +75,130 @@ const FIELDS: Array<{
 ];
 
 /** Admin: Metrika connection, KPI goals, data sync and the danger zone. */
+/** ANA-107: резервный аккаунт Метрики — независимая суточная квота. При исчерпании основной
+ * клиент автоматически уходит на резервный токен. Флоу: ввести ClientID/Secret → открыть
+ * ссылку авторизации под резервным аккаунтом → вставить код из redirect → «Обменять». */
+export function MetrikaBackupAccount(): JSX.Element {
+  const { t } = useT();
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => v3.settings(),
+    retry: false,
+  });
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [code, setCode] = useState('');
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (q.data) {
+      setClientId(q.data.METRIKA_BACKUP_CLIENT_ID?.value ?? '');
+    }
+  }, [q.data]);
+
+  const savedSecret = Boolean(q.data?.METRIKA_BACKUP_CLIENT_SECRET?.value);
+  const savedToken = Boolean(q.data?.METRIKA_BACKUP_OAUTH_TOKEN?.value);
+
+  const saveCreds = useMutation({
+    mutationFn: () =>
+      v3.saveSettings({
+        METRIKA_BACKUP_CLIENT_ID: clientId.trim(),
+        METRIKA_BACKUP_CLIENT_SECRET: clientSecret.trim(),
+      }),
+    onSuccess: (r) => {
+      setMsg(`${t('common.save')}: ${r.changed.join(', ')}`);
+      setClientSecret('');
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+    },
+  });
+  const exchange = useMutation({
+    mutationFn: () => v3.exchangeBackupToken(code.trim()),
+    onSuccess: (r) => {
+      setMsg(`${t('i18n.mk.backup.exchanged')} (${r.tokenLength} ${t('i18n.mk.backup.chars')})`);
+      setCode('');
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+    },
+    onError: (err) => setMsg(err.message),
+  });
+
+  const authorizeHref =
+    'https://oauth.yandex.ru/authorize?response_type=code' +
+    `&client_id=${encodeURIComponent(clientId.trim())}` +
+    '&redirect_uri=https://oauth.yandex.ru/verification_code';
+
+  const input = 'w-full rounded border border-line bg-raised px-3 py-2 text-sm';
+
+  return (
+    <Card title={t('i18n.mk.backup.title')}>
+      <p className="mb-4 text-sm text-muted">{t('i18n.mk.backup.subtitle')}</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block text-sm">
+          <span className="mb-1 block text-muted">{t('i18n.mk.backup.clientId')}</span>
+          <input
+            className={input}
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            autoComplete="off"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block text-muted">{t('i18n.mk.backup.clientSecret')}</span>
+          <input
+            className={input}
+            type="password"
+            value={clientSecret}
+            placeholder={savedSecret ? t('i18n.mk.backup.stored') : ''}
+            onChange={(e) => setClientSecret(e.target.value)}
+            autoComplete="new-password"
+          />
+        </label>
+      </div>
+      <button
+        type="button"
+        className="btn-ghost mt-3 text-sm"
+        disabled={!clientId.trim()}
+        onClick={() => saveCreds.mutate()}
+      >
+        {t('common.save')}
+      </button>
+
+      <ol className="mb-3 mt-4 list-decimal space-y-1 pl-5 text-sm text-muted">
+        <li>{t('i18n.mk.backup.stepSave')}</li>
+        <li>
+          <a href={authorizeHref} target="_blank" rel="noreferrer" className="underline">
+            {t('i18n.mk.backup.stepAuthorize')}
+          </a>
+        </li>
+        <li>{t('i18n.mk.backup.stepCode')}</li>
+      </ol>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          className={`${input} max-w-xs`}
+          value={code}
+          placeholder={t('i18n.mk.backup.codePlaceholder')}
+          onChange={(e) => setCode(e.target.value)}
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          className="btn-primary text-sm"
+          disabled={!code.trim()}
+          onClick={() => exchange.mutate()}
+        >
+          {t('i18n.mk.backup.exchange')}
+        </button>
+        {savedToken && <Pill tone="accent">{t('i18n.mk.backup.tokenSet')}</Pill>}
+      </div>
+      {msg && (
+        <p className="mt-2 text-sm text-muted" role="status">
+          {msg}
+        </p>
+      )}
+    </Card>
+  );
+}
+
 export function MetrikaSettings(): JSX.Element {
   const { t } = useT();
   const qc = useQueryClient();

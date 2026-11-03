@@ -44,6 +44,9 @@ const AiProviders = lazy(() =>
 const MetrikaSettings = lazy(() =>
   import('./pages/admin/Metrika').then((m) => ({ default: m.MetrikaSettings })),
 );
+const MetrikaBackupAccount = lazy(() =>
+  import('./pages/admin/Metrika').then((m) => ({ default: m.MetrikaBackupAccount })),
+);
 const Integrations = lazy(() =>
   import('./pages/admin/Integrations').then((m) => ({ default: m.Integrations })),
 );
@@ -133,6 +136,7 @@ export function App(): JSX.Element {
                   element={
                     <RequireAdmin>
                       <MetrikaSettings />
+                      <MetrikaBackupAccount />
                     </RequireAdmin>
                   }
                 />
