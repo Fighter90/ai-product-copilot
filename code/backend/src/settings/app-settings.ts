@@ -7,6 +7,11 @@ export const SETTING_KEYS = [
   'YANDEX_OAUTH_TOKEN',
   'YANDEX_CLIENT_ID',
   'YANDEX_CLIENT_SECRET',
+  // ANA-107 (резервный аккаунт): отдельная пара OAuth-приложения + токен резервного
+  // аккаунта — его суточная квота независима, клиент уходит на неё при 429 quota.
+  'METRIKA_BACKUP_CLIENT_ID',
+  'METRIKA_BACKUP_CLIENT_SECRET',
+  'METRIKA_BACKUP_OAUTH_TOKEN',
   'COUNTER_ID',
   'GOAL_ID',
   'ORDER_GOAL_ID',
@@ -27,6 +32,8 @@ export type SettingKey = (typeof SETTING_KEYS)[number];
 export const SECRET_KEYS: ReadonlySet<SettingKey> = new Set([
   'YANDEX_OAUTH_TOKEN',
   'YANDEX_CLIENT_SECRET',
+  'METRIKA_BACKUP_CLIENT_SECRET',
+  'METRIKA_BACKUP_OAUTH_TOKEN',
   'DATALENS_WEBHOOK_TOKEN',
   'DATALENS_IAM_TOKEN',
 ]);

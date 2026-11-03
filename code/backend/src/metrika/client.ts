@@ -51,6 +51,12 @@ export type QueryParams = Record<string, string | number | undefined>;
 
 export interface MetrikaClientOptions {
   readonly token: string;
+  /**
+   * Резервный OAuth-токен другого аккаунта (ANA-107): суточные квоты quota_requests_by_uid
+   * считаются НА АККАУНТ, поэтому при исчерпании основной квоты клиент повторяет запрос
+   * под резервным токеном (его счётчик независим). Пусто — fallback выключен.
+   */
+  readonly backupToken?: string;
   readonly baseUrl?: string;
   readonly fetchFn?: FetchLike;
   readonly limiter?: RateLimiter;
@@ -73,8 +79,11 @@ export class MetrikaClient {
   private readonly errorDumpDir: string;
   private readonly now: () => number;
 
+  private readonly backupToken?: string;
+
   constructor(opts: MetrikaClientOptions) {
     this.token = opts.token;
+    this.backupToken = opts.backupToken;
     this.baseUrl = opts.baseUrl ?? METRIKA_BASE_URL;
     this.fetchFn = opts.fetchFn ?? (globalThis.fetch as unknown as FetchLike);
     this.limiter = opts.limiter ?? defaultRateLimiter();
@@ -131,7 +140,7 @@ export class MetrikaClient {
     const url = this.buildUrl(path, params);
     const method = body === undefined ? 'GET' : 'POST';
 
-    const exec = async (): Promise<T> => {
+    const execWith = async (token: string): Promise<T> => {
       const wait = this.limiter.take();
       if (wait > 0) await this.sleep(wait);
 
@@ -139,7 +148,7 @@ export class MetrikaClient {
       const res = await this.fetchFn(url, {
         ...(method === 'POST' ? { method } : {}),
         headers: {
-          Authorization: `OAuth ${this.token}`,
+          Authorization: `OAuth ${token}`,
           ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
         },
         ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
@@ -158,6 +167,24 @@ export class MetrikaClient {
         );
       }
       return parsed.data;
+    };
+
+    const exec = async (): Promise<T> => {
+      try {
+        return await execWith(this.token);
+      } catch (err) {
+        // ANA-107: основной аккаунт исчерпал суточную квоту — повторяем под резервным
+        // токеном другого аккаунта (его счётчик независим). Один переключатель на запрос:
+        // если резервный тоже упал — ошибка уходит в retry-цикл как раньше.
+        const quotaHit =
+          err instanceof MetrikaHttpError &&
+          err.status === 429 &&
+          err.message.includes('quota_requests_by_uid');
+        if (quotaHit && this.backupToken) {
+          return execWith(this.backupToken);
+        }
+        throw err;
+      }
     };
 
     return withRetry(exec, {

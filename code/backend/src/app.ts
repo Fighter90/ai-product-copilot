@@ -204,6 +204,7 @@ export function buildServer(
       token: () => cab.settings.get('YANDEX_OAUTH_TOKEN'),
       counterId: () => cab.settings.getNumber('COUNTER_ID'),
       users: cab.users,
+      appSettings: cab.settings,
     });
     app.register(llmRoutes, { prefix: '/api', llm: cab.llm, users: cab.users });
     app.register(helpRoutes, {

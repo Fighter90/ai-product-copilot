@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import type { AppSettings } from '../settings/app-settings';
 import type { UsersRepo } from '../auth/users-repo';
 import { MetrikaClient, MetrikaHttpError } from '../metrika/client';
 import { ENDPOINTS } from '../metrika/endpoints';
@@ -38,6 +39,8 @@ export interface MetrikaGoalsDeps {
   readonly token: () => string;
   readonly counterId: () => number;
   readonly users: UsersRepo;
+  /** Настройки приложения (ANA-107: резервный аккаунт — client_id/secret/token). */
+  readonly appSettings?: AppSettings;
   readonly clientFactory?: (token: string) => MetrikaClient;
   /** Reaches per goal over `days` days; defaults to the Reporting API. */
   readonly goalReaches?: (goalIds: readonly number[], days: number) => Promise<Map<number, number>>;
@@ -121,6 +124,56 @@ export async function metrikaGoalsRoutes(
   };
 
   /** GET /api/admin/metrika/goals/audit?days=90 — reference vs counter, dead goals, duplicates. */
+  /** ANA-107: обмен verification code резервного аккаунта на OAuth-токен (admin).
+   *  Флоу: админ открывает authorize URL (client_id из настроек), логинится резервным
+   *  аккаунтом, получает код из redirect (https://oauth.yandex.ru/verification_code),
+   *  вставляет код сюда — приложение меняет его на токен и сохраняет в настройки. */
+  app.post('/goals/backup-token/exchange', async (req, reply) => {
+    const body = z.object({ code: z.string().min(5).max(256) }).safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: 'invalid code', code: 'BAD_INPUT' });
+    if (!deps.appSettings) {
+      return reply.code(500).send({ error: 'settings not wired', code: 'NO_SETTINGS' });
+    }
+    const clientId = deps.appSettings.get('METRIKA_BACKUP_CLIENT_ID');
+    const clientSecret = deps.appSettings.get('METRIKA_BACKUP_CLIENT_SECRET');
+    if (!clientId || !clientSecret) {
+      return reply
+        .code(400)
+        .send({
+          error: 'Заполните METRIKA_BACKUP_CLIENT_ID и METRIKA_BACKUP_CLIENT_SECRET',
+          code: 'NOT_CONFIGURED',
+        });
+    }
+    const res = await globalThis.fetch('https://oauth.yandex.ru/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: body.data.code,
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+    });
+    const payload = (await res.json().catch(() => ({}))) as {
+      access_token?: string;
+      error?: string;
+      error_description?: string;
+    };
+    if (!res.ok || !payload.access_token) {
+      return reply.code(400).send({
+        error: payload.error_description ?? payload.error ?? 'token exchange failed',
+        code: 'EXCHANGE_FAILED',
+      });
+    }
+    deps.appSettings.set(
+      'METRIKA_BACKUP_OAUTH_TOKEN',
+      payload.access_token,
+      req.user?.email ?? null,
+    );
+    deps.users.audit(req.user!, 'metrika.backup_token', '', {});
+    return { ok: true, tokenLength: payload.access_token.length };
+  });
+
   app.get('/admin/metrika/goals/audit', async (req, reply) => {
     if (!ready(reply)) return;
     const query = AuditQuery.safeParse(req.query ?? {});

@@ -468,3 +468,104 @@ describe('role guard', () => {
     expect(mgr.get).not.toHaveBeenCalled();
   });
 });
+
+describe('POST /goals/backup-token/exchange (ANA-107, резервный аккаунт)', () => {
+  const settings = new Map<string, string>();
+  const settingsFake = {
+    get: (k: string) => settings.get(k),
+    set: (k: string, v: string) => {
+      settings.set(k, v);
+    },
+  };
+
+  async function buildExchange(): Promise<FastifyInstance> {
+    const users = { audit: vi.fn() } as unknown as UsersRepo;
+    const app = Fastify({ logger: false });
+    await app.register(metrikaGoalsRoutes, {
+      prefix: '/api',
+      token: () => 'tok',
+      counterId: () => 123,
+      users,
+      appSettings: settingsFake as never,
+    });
+    await app.ready();
+    return app;
+  }
+
+  afterEach(() => settings.clear());
+
+  it('400 NOT_CONFIGURED без client_id/secret', async () => {
+    const app = await buildExchange();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/goals/backup-token/exchange',
+      payload: { code: 'abc123456789' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe('NOT_CONFIGURED');
+    await app.close();
+  });
+
+  it('обменивает код на токен и сохраняет в настройки (ANA-107)', async () => {
+    settings.set('METRIKA_BACKUP_CLIENT_ID', 'cid');
+    settings.set('METRIKA_BACKUP_CLIENT_SECRET', 'secret');
+    const fetchMock = vi.fn(async (_url: string) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ access_token: 'y0_backup_token_123' }),
+      text: async () => '',
+    })) as unknown as ReturnType<typeof vi.fn> & {
+      mock: { calls: Array<[string, { body?: string }]> };
+    };
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    let app: Awaited<ReturnType<typeof buildExchange>> | undefined;
+    try {
+      app = await buildExchange();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/goals/backup-token/exchange',
+        payload: { code: 'verification-code-123' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, tokenLength: 19 });
+      expect(settings.get('METRIKA_BACKUP_OAUTH_TOKEN')).toBe('y0_backup_token_123');
+      const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+      expect(body).toMatchObject({
+        grant_type: 'authorization_code',
+        code: 'verification-code-123',
+        client_id: 'cid',
+        client_secret: 'secret',
+      });
+    } finally {
+      globalThis.fetch = realFetch;
+      await app!.close();
+    }
+  });
+
+  it('400 EXCHANGE_FAILED, когда OAuth отклоняет код', async () => {
+    settings.set('METRIKA_BACKUP_CLIENT_ID', 'cid');
+    settings.set('METRIKA_BACKUP_CLIENT_SECRET', 'secret');
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'invalid_grant', error_description: 'Code was expired' }),
+      text: async () => '',
+    }));
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    try {
+      const app = await buildExchange();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/goals/backup-token/exchange',
+        payload: { code: 'expired' },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().code).toBe('EXCHANGE_FAILED');
+      await app.close();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});

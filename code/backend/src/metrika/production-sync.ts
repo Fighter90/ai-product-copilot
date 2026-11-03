@@ -26,7 +26,10 @@ const envCredentials: MetrikaCredentials = {
  */
 function pacedClient(token: string): MetrikaClient {
   const delayMs = Number(process.env.METRIKA_REQUEST_DELAY_MS ?? 0);
-  const inner = new MetrikaClient({ token });
+  // ANA-107: резервный аккаунт (отдельная суточная квота) — cli-sync/бэкфилл-луп уходят
+  // на него при исчерпании основной (фолбэк внутри клиента).
+  const backup = process.env.METRIKA_BACKUP_OAUTH_TOKEN;
+  const inner = new MetrikaClient({ token, backupToken: backup || undefined });
   if (!Number.isFinite(delayMs) || delayMs <= 0) return inner;
   return {
     get: async (path, params, schema) => {
