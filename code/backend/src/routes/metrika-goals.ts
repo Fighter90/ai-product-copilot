@@ -142,15 +142,18 @@ export async function metrikaGoalsRoutes(
         code: 'NOT_CONFIGURED',
       });
     }
+    // Yandex /token принимает ТОЛЬКО application/x-www-form-urlencoded (JSON игнорирует —
+    // «grant_type not in POST»).
+    const form = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: body.data.code,
+      client_id: clientId,
+      client_secret: clientSecret,
+    });
     const res = await globalThis.fetch('https://oauth.yandex.ru/token', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        grant_type: 'authorization_code',
-        code: body.data.code,
-        client_id: clientId,
-        client_secret: clientSecret,
-      }),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
     });
     const payload = (await res.json().catch(() => ({}))) as {
       access_token?: string;

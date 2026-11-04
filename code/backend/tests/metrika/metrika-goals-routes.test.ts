@@ -530,13 +530,11 @@ describe('POST /goals/backup-token/exchange (ANA-107, резервный акк�
       expect(res.statusCode).toBe(200);
       expect(res.json()).toMatchObject({ ok: true, tokenLength: 19 });
       expect(settings.get('METRIKA_BACKUP_OAUTH_TOKEN')).toBe('y0_backup_token_123');
-      const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
-      expect(body).toMatchObject({
-        grant_type: 'authorization_code',
-        code: 'verification-code-123',
-        client_id: 'cid',
-        client_secret: 'secret',
-      });
+      const body = new URLSearchParams(fetchMock.mock.calls[0]![1]!.body as string);
+      expect(body.get('grant_type')).toBe('authorization_code');
+      expect(body.get('code')).toBe('verification-code-123');
+      expect(body.get('client_id')).toBe('cid');
+      expect(body.get('client_secret')).toBe('secret');
     } finally {
       globalThis.fetch = realFetch;
       await app!.close();
