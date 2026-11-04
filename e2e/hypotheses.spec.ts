@@ -128,11 +128,16 @@ test.describe('Hypotheses workspace (ANA-37)', () => {
     await expect(column.getByTestId('hyp-card-100')).toBeVisible();
   });
 
-  test('delete removes the card from the kanban', async ({ page }) => {
+  test('delete confirms via the styled dialog and removes the card (БАГ-15)', async ({ page }) => {
     await mockWorkspace(page, { hypotheses: [SEEDED_HYPOTHESIS] });
     await page.goto('/app/hypotheses');
-    page.on('dialog', (d) => void d.accept());
     await page.getByTestId('hyp-card-100').getByRole('button', { name: 'Удалить' }).click();
+    // БАГ-15 removal-UX: the styled ConfirmDialog names the hypothesis; no native confirm().
+    await expect(page.getByTestId('confirm-body')).toContainText('Гипотеза про подкаст');
+    await page.getByRole('button', { name: 'Отмена' }).click();
+    await expect(page.getByTestId('confirm-body')).toHaveCount(0);
+    await page.getByTestId('hyp-card-100').getByRole('button', { name: 'Удалить' }).click();
+    await page.getByTestId('confirm-accept').click();
     await expect(page.getByTestId('hyp-card-100')).toHaveCount(0);
   });
 

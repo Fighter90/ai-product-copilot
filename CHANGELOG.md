@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **CSP × ANA-41:** шрифт Inter не применялся на проде — CSP (`script-src` без
+  `'unsafe-inline'`) блокировал инлайновый `onload` у неблокирующего font-`<link media="print">`,
+  стиль навсегда оставался «print-only» (ошибка в консоли на каждой странице). Подмена media
+  перенесена из инлайнового хендлера в бандл (`enablePrintStylesheet` в `main.tsx`); хеш
+  инлайнового скрипта темы в CSP не изменился; +3 unit-теста (`font-media.test.ts`).
+
 ### Changed
 
 - **ANA-113:** range-запросы разбивок Метрики (`ym:s:date`) — окно ≤31 дня одним вызовом вместо
