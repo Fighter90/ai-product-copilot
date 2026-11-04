@@ -11,6 +11,7 @@ export default tseslint.config(
       '**/coverage/**',
       'data/**',
       '.qwen/**',
+      'QA/**',
       '**/*.config.js',
       '**/*.config.ts',
     ],

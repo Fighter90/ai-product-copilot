@@ -47,6 +47,9 @@ const MetrikaSettings = lazy(() =>
 const MetrikaBackupAccount = lazy(() =>
   import('./pages/admin/Metrika').then((m) => ({ default: m.MetrikaBackupAccount })),
 );
+const MetrikaDangerZone = lazy(() =>
+  import('./pages/admin/Metrika').then((m) => ({ default: m.MetrikaDangerZone })),
+);
 const Integrations = lazy(() =>
   import('./pages/admin/Integrations').then((m) => ({ default: m.Integrations })),
 );
@@ -137,6 +140,7 @@ export function App(): JSX.Element {
                     <RequireAdmin>
                       <MetrikaSettings />
                       <MetrikaBackupAccount />
+                      <MetrikaDangerZone />
                     </RequireAdmin>
                   }
                 />

@@ -205,8 +205,6 @@ export function MetrikaSettings(): JSX.Element {
   const { from, to } = useFilters();
   const q = useQuery({ queryKey: ['settings'], queryFn: v3.settings });
   const [form, setForm] = useState<Record<string, string>>({});
-  const [confirm, setConfirm] = useState('');
-  const [danger, setDanger] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -244,15 +242,6 @@ export function MetrikaSettings(): JSX.Element {
   });
   // ANA-68 style: { run: null } = ещё не запускался — нормальное состояние, без 404 в консоли.
   const lastRun = syncStatusQ.data?.run ?? null;
-  const clear = useMutation({
-    mutationFn: v3.clearMetrikaData,
-    onSuccess: () => {
-      setDanger(false);
-      setConfirm('');
-      setMsg(t('i18n.mk.cleared'));
-      void qc.invalidateQueries();
-    },
-  });
 
   return (
     <div className="space-y-6">
@@ -388,6 +377,35 @@ export function MetrikaSettings(): JSX.Element {
         </div>
       </Card>
       <B2cPaymentsCard />
+    </div>
+  );
+}
+
+/** ANA-107/v3.4.0: опасная зона — последняя карточка страницы (после резервного аккаунта):
+ *  деструктивное действие всегда внизу, случайно не нажимается при работе с настройками. */
+export function MetrikaDangerZone(): JSX.Element {
+  const { t } = useT();
+  const qc = useQueryClient();
+  const [danger, setDanger] = useState(false);
+  const [confirm, setConfirm] = useState('');
+  const [msg, setMsg] = useState<string | null>(null);
+  const clear = useMutation({
+    mutationFn: v3.clearMetrikaData,
+    onSuccess: () => {
+      setDanger(false);
+      setConfirm('');
+      setMsg(t('i18n.mk.cleared'));
+      void qc.invalidateQueries();
+    },
+  });
+
+  return (
+    <div className="space-y-6">
+      {msg && (
+        <div className="card break-all border-accent/40 p-3 text-sm" onClick={() => setMsg(null)}>
+          {msg}
+        </div>
+      )}
       <Card
         title={
           <span className="flex items-center gap-2 text-red-600">
