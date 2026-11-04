@@ -253,11 +253,10 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
     deps.today ??
     (() => new Date().toLocaleDateString('sv-SE', { timeZone: deps.tz ?? 'Europe/Moscow' }));
   const client = () =>
-    (deps.clientFactory ??
-      ((t, backup) => new MetrikaClient({ token: t, backupToken: backup, retries: 2 })))(
-      deps.token(),
-      deps.backupToken?.(),
-    );
+    (
+      deps.clientFactory ??
+      ((t, backup) => new MetrikaClient({ token: t, backupToken: backup, retries: 2 }))
+    )(deps.token(), deps.backupToken?.());
 
   const ready = (reply: { code: (n: number) => { send: (b: unknown) => unknown } }) => {
     if (!deps.token() || !deps.counterId()) {
