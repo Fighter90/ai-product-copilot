@@ -90,6 +90,8 @@ export const ru = {
 
   'footer.rights': 'Сделано для команды ProductCamp',
   'footer.changelog': 'История изменений',
+  'footer.author': 'Сделал Сергей Емельянов',
+  'footer.cv': 'Резюме',
 
   'auth.title': 'Вход в кабинет',
   'auth.subtitle': 'Доступ выдаёт администратор. Нет аккаунта — напишите ему.',
@@ -1412,6 +1414,8 @@ export const en: Record<DictKey, string> = {
 
   'footer.rights': 'Built for the ProductCamp team',
   'footer.changelog': 'Changelog',
+  'footer.author': 'Created by Sergei Emelianov',
+  'footer.cv': 'CV',
 
   'auth.title': 'Sign in to the cabinet',
   'auth.subtitle': 'Access is granted by an administrator. No account yet — ask them.',

@@ -73,6 +73,28 @@ export function PublicFooter(): JSX.Element {
           <BrandMark className="h-6 w-6" />
           <span>{t('footer.rights')}</span>
         </div>
+        {/* Атрибуция автора (заказчик 04.11): Created by ... · LinkedIn · CV */}
+        <span className="flex items-center gap-2">
+          <span>{t('footer.author')}</span>
+          <span aria-hidden>·</span>
+          <a
+            href="https://www.linkedin.com/in/sergei-emelianov-in-job/"
+            target="_blank"
+            rel="noreferrer"
+            className="hover:text-ink"
+          >
+            LinkedIn
+          </a>
+          <span aria-hidden>·</span>
+          <a
+            href="https://sergey-cv.com/"
+            target="_blank"
+            rel="noreferrer"
+            className="hover:text-ink"
+          >
+            {t('footer.cv')}
+          </a>
+        </span>
         <div className="flex items-center gap-5">
           <Link to="/help" className="hover:text-ink">
             {t('nav.help')}

@@ -532,8 +532,29 @@ export function CabinetLayout(): JSX.Element {
           </ErrorBoundary>
         </main>
 
-        <footer className="hidden border-t border-line px-6 py-4 text-xs text-muted lg:flex lg:items-center lg:justify-between">
+        <footer className="hidden border-t border-line px-6 py-4 text-xs text-muted lg:flex lg:items-center lg:gap-4 lg:justify-between">
           <span>{t('footer.rights')}</span>
+          <span className="flex items-center gap-3">
+            <span>{t('footer.author')}</span>
+            <span aria-hidden>·</span>
+            <a
+              href="https://www.linkedin.com/in/sergei-emelianov-in-job/"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-ink"
+            >
+              LinkedIn
+            </a>
+            <span aria-hidden>·</span>
+            <a
+              href="https://sergey-cv.com/"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-ink"
+            >
+              {t('footer.cv')}
+            </a>
+          </span>
           <span className="flex items-center gap-2">
             <BuildMismatchBadge />
             <VersionBadge />
