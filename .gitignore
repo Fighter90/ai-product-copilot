@@ -45,3 +45,4 @@ code/backend/data/
 
 # Generated report exports (not source)
 outputs/
+.playwright-cli/
