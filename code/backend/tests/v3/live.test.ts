@@ -345,7 +345,7 @@ describe('backupToken fallback (ANA-107: резервный аккаунт)', ()
       },
     });
     await app.ready();
-    const res = await app.inject({
+    await app.inject({
       method: 'GET',
       url: '/live-t/live/summary?from=2025-01-01&to=2025-01-07',
     });
