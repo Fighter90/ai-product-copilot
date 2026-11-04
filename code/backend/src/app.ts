@@ -215,6 +215,11 @@ export function buildServer(
     app.register(liveRoutes, {
       prefix: '/api',
       token: () => cab.settings.get('YANDEX_OAUTH_TOKEN'),
+      // ANA-107: резервный аккаунт — live-страницы переживают исчерпание квоты основного.
+      backupToken: () =>
+        cab.settings.get('METRIKA_BACKUP_OAUTH_TOKEN') ||
+        process.env.METRIKA_BACKUP_OAUTH_TOKEN ||
+        '',
       counterId: () => cab.settings.getNumber('COUNTER_ID'),
       orderGoalId: () =>
         cab.settings.getNumber('ORDER_GOAL_ID') || cab.settings.getNumber('GOAL_ID'),

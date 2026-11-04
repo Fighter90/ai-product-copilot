@@ -329,3 +329,29 @@ describe('liveRoutes', () => {
     expect(get.mock.calls.length).toBe(afterFirst); // из кэша
   });
 });
+
+describe('backupToken fallback (ANA-107: резервный аккаунт)', () => {
+  it('default clientFactory passes the backup token to the client', async () => {
+    const seen: Array<{ token: string; backup?: string }> = [];
+    const app = Fastify({ logger: false });
+    await app.register(liveRoutes, {
+      prefix: '/live-t',
+      token: () => 'primary-token',
+      counterId: () => 123,
+      backupToken: () => 'backup-token',
+      clientFactory: (t, backup) => {
+        seen.push({ token: t, backup });
+        return { get: vi.fn(async () => ({ data: [], totals: [] })) } as unknown as MetrikaClient;
+      },
+    });
+    await app.ready();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/live-t/live/summary?from=2025-01-01&to=2025-01-07',
+    });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0]!.backup).toBe('backup-token');
+    expect(seen[0]!.token).toBe('primary-token');
+    await app.close();
+  });
+});

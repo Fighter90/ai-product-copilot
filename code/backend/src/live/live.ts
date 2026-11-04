@@ -234,7 +234,10 @@ export interface LiveDeps {
   readonly counterId: () => number;
   readonly orderGoalId?: () => number;
   readonly tz?: string;
-  readonly clientFactory?: (token: string) => MetrikaClient;
+  /** ANA-107: резервный OAuth-токен — при 429 quota_requests_by_uid основного аккаунта
+   *  клиент повторяет запрос под ним (отдельная суточная квота резервного аккаунта). */
+  readonly backupToken?: () => string;
+  readonly clientFactory?: (token: string, backupToken?: string) => MetrikaClient;
   readonly cache?: TtlCache;
   readonly today?: () => string;
   /** Manually entered payments for [from, to] — the «Оплата» step when no payment goal exists. */
@@ -250,7 +253,11 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
     deps.today ??
     (() => new Date().toLocaleDateString('sv-SE', { timeZone: deps.tz ?? 'Europe/Moscow' }));
   const client = () =>
-    (deps.clientFactory ?? ((t) => new MetrikaClient({ token: t, retries: 2 })))(deps.token());
+    (deps.clientFactory ??
+      ((t, backup) => new MetrikaClient({ token: t, backupToken: backup, retries: 2 })))(
+      deps.token(),
+      deps.backupToken?.(),
+    );
 
   const ready = (reply: { code: (n: number) => { send: (b: unknown) => unknown } }) => {
     if (!deps.token() || !deps.counterId()) {
