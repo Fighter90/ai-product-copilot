@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { ReportSnapshot } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
 vi.mock('../lib/api', () => ({
-  api: { buildSnapshot: vi.fn(), generateInsights: vi.fn() },
+  api: {
+    buildSnapshot: vi.fn(),
+    generateInsights: vi.fn(),
+    generateHypotheses: vi.fn(),
+    getSnapshot: vi.fn(),
+  },
 }));
 vi.mock('../lib/api-v3', () => ({
   // A provider is configured by default so the wrapper's AI button is enabled; the empty case
@@ -114,18 +119,18 @@ describe('ReportPreviewView', () => {
     expect(onExport).toHaveBeenCalledWith('snap-1', 'pdf');
   });
 
-  it('KPI label follows the snapshot goalLabel (Заказов for a purchase goal — ANA-19)', () => {
+  it('KPI label follows the snapshot goalLabel (Заявок for a purchase goal — БАГ-02: заявки, не «заказы»)', () => {
     const paidSnapshot = {
       ...snapshot,
       goalLabel: {
-        title: 'Заказов',
+        title: 'Заявок',
         isPaid: true,
-        showApplicationsCaveat: false,
+        showApplicationsCaveat: true,
         showEstimate: false,
       },
     };
     render(<ReportPreviewView {...baseProps} snapshot={paidSnapshot} />);
-    expect(screen.getByText('Заказов')).toBeInTheDocument();
+    expect(screen.getByText('Заявок')).toBeInTheDocument();
     expect(screen.queryByText('Заявок B2C')).not.toBeInTheDocument();
   });
 
@@ -298,6 +303,11 @@ describe('ReportPreviewView (EN locale)', () => {
 describe('ReportPreview (wrapper)', () => {
   beforeEach(() => {
     vi.mocked(api.buildSnapshot).mockResolvedValue(snapshot);
+    // БАГ-21 backfill calls this after the narrative; default to a resolved promise so the
+    // mutation chain never rejects on an incomplete mock.
+    vi.mocked(api.generateHypotheses).mockResolvedValue({
+      hypotheses: { problems: [], solutions: [] },
+    } as never);
   });
 
   it('builds a snapshot then downloads the DOCX export', async () => {
@@ -324,6 +334,27 @@ describe('ReportPreview (wrapper)', () => {
     expect(await screen.findByText(/AI: рост заявок/)).toBeInTheDocument();
     // ANA-33: «Авто» is the default choice — no providerId is pinned in the request.
     expect(vi.mocked(api.generateInsights).mock.calls[0]?.slice(0, 2)).toEqual(['snap-1', 'auto']);
+  });
+
+  it('БАГ-21: after the narrative, hypotheses are backfilled — «не сгенерированы» не зависает', async () => {
+    vi.mocked(api.generateInsights).mockResolvedValue({ narrative: 'AI: рост заявок' });
+    vi.mocked(api.generateHypotheses).mockResolvedValue({
+      hypotheses: { problems: [{ title: 'p1' }], solutions: [{ title: 's1' }] },
+    } as never);
+    // getSnapshot powers the existing poll (enabled while the snapshot has no hypotheses yet).
+    vi.mocked(api.getSnapshot).mockResolvedValue({ ...snapshot });
+    renderWithProviders(<ReportPreview />);
+    fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
+    expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
+    await screen.findByText(/AI: рост заявок/);
+    // The narrative alone used to leave «AI-гипотез: не сгенерированы» forever when the backend's
+    // fire-and-forget auto-generation was lost — now the same provider backfills the hypotheses.
+    await waitFor(() =>
+      expect(vi.mocked(api.generateHypotheses)).toHaveBeenCalledWith('snap-1', 'auto'),
+    );
+    expect(screen.getByText(/AI-гипотез: не сгенерированы/)).toBeInTheDocument();
   });
 });
 

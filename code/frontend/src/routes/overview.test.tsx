@@ -228,9 +228,9 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
         stats={[{ ...sample, visits: 1000, goalReaches: 52 }]}
         b2bDeals={[{ id: 1, company: 'A', tickets: 30, stage: 'paid', dateAdded: '2025-01-01' }]}
         goalLabel={{
-          title: 'Заказов',
+          title: 'Заявок',
           isPaid: true,
-          showApplicationsCaveat: false,
+          showApplicationsCaveat: true,
           showEstimate: false,
         }}
       />,

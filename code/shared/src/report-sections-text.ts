@@ -537,7 +537,7 @@ const EN: ReportText = {
   titleTraceable: 'Every figure traces back to raw_responses in SQLite (anti-hallucination).',
 
   summaryHeading: 'Key results',
-  goalTitle: (label) => (label?.isPaid ? 'Orders' : 'B2C applications'),
+  goalTitle: (label) => (label?.isPaid ? 'Applications' : 'B2C applications'),
   summaryGoal: (title, n) => `${title} (primary goal reaches for the period): ${n}`,
   summaryPaid: (n) => `B2B paid (tickets): ${n}`,
   summaryGap: (n) => `Gap to target (by payments): ${n}`,

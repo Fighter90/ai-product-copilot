@@ -168,4 +168,34 @@ describe('BehaviorView (en locale)', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/Лучший CR: \/good 4\.0%/)).toBeInTheDocument();
   });
+
+  it('БАГ-09: «Лучший CR 100%» на 2 визитах и «худший bounce» на 5 не показываются — порог визитов', () => {
+    // Точная прод-ситуация 04.11: /builder-payment 2 визита CR 100% и /PCxPS_special 5 визитов
+    // bounce 100% получали бейджи рядом с «Общий CR 0.6% — низкий».
+    render(
+      <BehaviorView
+        status="success"
+        entry={[
+          page({ page: '/', visits: 2000, goalReaches: 12, bounceRate: 0.24 }), // CR 0.6% — низкий
+          page({ page: '/builder-payment', visits: 2, goalReaches: 2, bounceRate: 0.5 }), // CR 100%
+          page({ page: '/PCxPS_special', visits: 5, goalReaches: 0, bounceRate: 1 }), // bounce 100%
+        ]}
+        exit={[]}
+      />,
+    );
+    expect(screen.queryByText(/Лучший CR: \/builder-payment/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Худший bounce: \/PCxPS_special/)).not.toBeInTheDocument();
+    // А страница с достаточным трафиком по-прежнему получает бейдж.
+    render(
+      <BehaviorView
+        status="success"
+        entry={[
+          page({ page: '/big', visits: 200, goalReaches: 0, bounceRate: 0.9 }), // bounce 90% > 50%
+          page({ page: '/rest', visits: 200, goalReaches: 0, bounceRate: 0.2 }),
+        ]}
+        exit={[]}
+      />,
+    );
+    expect(screen.getByText(/Худший bounce: \/big 90\.0%/)).toBeInTheDocument();
+  });
 });

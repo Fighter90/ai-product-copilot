@@ -601,10 +601,6 @@ export function ReportPreview(): JSX.Element {
   const location = useLocation();
   const navigate = useNavigate();
   const buildMut = useMutation({ mutationFn: api.buildSnapshot });
-  const insightsMut = useMutation({
-    mutationFn: (input: { snapshotId: string; providerId: string }) =>
-      api.generateInsights(input.snapshotId, input.providerId),
-  });
 
   // ANA-33: usable AI providers (enabled + key set) — analysts read them from /ai/available.
   const providersQ = useQuery({
@@ -625,6 +621,19 @@ export function ReportPreview(): JSX.Element {
   });
 
   const snapshot = existingSnapshot.data ?? buildMut.data;
+  // БАГ-21: «Сгенерировать AI-анализ» пополнял только narrative — строка «AI-гипотез: не
+  // сгенерированы» могла висеть вечно, когда fire-and-forget автогенерация на бэке терялась
+  // (параллельные AI-вызовы, тихий .catch). Досыпаем гипотезы тем же провайдером: бэкенд
+  // возвращает уже готовые, а существующий поллинг среза сам подхватит результат.
+  const insightsMut = useMutation({
+    mutationFn: async (input: { snapshotId: string; providerId: string }) => {
+      const res = await api.generateInsights(input.snapshotId, input.providerId);
+      if (!snapshot?.generatedHypotheses) {
+        void api.generateHypotheses(input.snapshotId, input.providerId).catch(() => undefined);
+      }
+      return res;
+    },
+  });
   // БАГ-21: AI-гипотезы дорисовываются на бэке после сборки среза (fire-and-forget), поэтому
   // опрашиваем срез, пока они не появятся — строка «AI-гипотез: …» обновляется сама, без
   // перезагрузки страницы. Опрос останавливается на результате или после ~5 минут.

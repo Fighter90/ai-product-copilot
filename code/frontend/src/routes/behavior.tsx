@@ -332,24 +332,33 @@ export function BehaviorView({
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('an.keyInsights')}</h3>
         <div className="flex flex-wrap gap-2">
-          {bestPage && bestPage.conversionRate >= CR_GOOD_TARGET && (
-            <InsightBadge
-              type="good"
-              text={t('ins.bestCr', {
-                page: shortLabel(bestPage.page),
-                cr: formatPercent(bestPage.conversionRate),
-              })}
-            />
-          )}
-          {worstPage && worstPage.bounceRate > BOUNCE_HIGH && (
-            <InsightBadge
-              type="warning"
-              text={t('ins.worstBounce', {
-                page: shortLabel(worstPage.page),
-                bounce: formatPercent(worstPage.bounceRate),
-              })}
-            />
-          )}
+          {/* БАГ-09: best/worst are picked over ALL rows — without the MIN_PAGE_VISITS gate a
+              2-visit page with 100% CR got praised right next to «Общий CR 0.6% — низкий».
+              Same threshold the adjacent tables use for judging a page. */}
+          {bestPage &&
+            bestPage.visits > MIN_PAGE_VISITS &&
+            bestPage.conversionRate >= CR_GOOD_TARGET && (
+              <InsightBadge
+                type="good"
+                text={t('ins.bestCr', {
+                  page: shortLabel(bestPage.page),
+                  cr: formatPercent(bestPage.conversionRate),
+                })}
+              />
+            )}
+          {/* БАГ-09: без порога визитов «худший bounce» ловил 5-visit страницы с 100% отказов —
+              шум, противоречащий таблице. Порог тот же, что у бейджей таблицы. */}
+          {worstPage &&
+            worstPage.visits > MIN_PAGE_VISITS &&
+            worstPage.bounceRate > BOUNCE_HIGH && (
+              <InsightBadge
+                type="warning"
+                text={t('ins.worstBounce', {
+                  page: shortLabel(worstPage.page),
+                  bounce: formatPercent(worstPage.bounceRate),
+                })}
+              />
+            )}
           {entryCR >= CR_GOOD_TARGET ? (
             <InsightBadge
               type="good"
@@ -409,15 +418,17 @@ export function BehaviorView({
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('an.recommendations')}</h3>
         <ul className="space-y-2 text-sm text-slate-600">
-          {worstPage && worstPage.bounceRate > BOUNCE_HIGH && (
-            <li className="flex items-start gap-2">
-              <span className="text-red-500">🔴</span>
-              <span>
-                <b>{shortLabel(worstPage.page)}</b>{' '}
-                {t('an.beh.rec.worst', { bounce: formatPercent(worstPage.bounceRate) })}
-              </span>
-            </li>
-          )}
+          {worstPage &&
+            worstPage.visits > MIN_PAGE_VISITS &&
+            worstPage.bounceRate > BOUNCE_HIGH && (
+              <li className="flex items-start gap-2">
+                <span className="text-red-500">🔴</span>
+                <span>
+                  <b>{shortLabel(worstPage.page)}</b>{' '}
+                  {t('an.beh.rec.worst', { bounce: formatPercent(worstPage.bounceRate) })}
+                </span>
+              </li>
+            )}
           {entryCR < CR_GOOD_TARGET && (
             <li className="flex items-start gap-2">
               <span className="text-amber-500">🟡</span>

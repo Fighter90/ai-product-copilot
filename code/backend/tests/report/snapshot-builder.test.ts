@@ -166,7 +166,7 @@ describe('SnapshotBuilder', () => {
   });
 
   it('REG-03: purchase-goal reaches are NOT payments — gap = target − B2C paid − B2B paid', () => {
-    // Seed a purchase goal: its reaches are orders («Заказов»), never payments.
+    // Seed a purchase goal: its reaches are «Заявок» (БАГ-02), never payments.
     metrics.upsertGoals([
       {
         id: 1,
@@ -178,7 +178,7 @@ describe('SnapshotBuilder', () => {
       },
     ]);
     const snap = builder.build({ id: 'p', generatedAt: 'T', from: '2025-01-01', to: '2025-01-07' });
-    expect(snap.goalLabel).toMatchObject({ title: 'Заказов', isPaid: true });
+    expect(snap.goalLabel).toMatchObject({ title: 'Заявок', isPaid: true });
     // 7 Metrika orders stay a separate metric; gap = 300 − 0 (B2C) − 20 (B2B) = 280.
     expect(snap.kpi.b2cApplications).toBe(7);
     expect(snap.kpi.gap).toBe(280);

@@ -70,13 +70,14 @@ describe('KPI & forecast (GoalsView)', () => {
       deals: [],
       overallCR: 0.005,
       goalLabel: {
-        title: 'Заказов',
+        title: 'Заявок',
         isPaid: true,
-        showApplicationsCaveat: false,
+        showApplicationsCaveat: true,
         showEstimate: false,
       },
     });
-    expect(screen.getByText('Orders (Metrika): 40')).toBeInTheDocument();
+    // БАГ-02: Metrika reaches are labelled «Applications», not «Orders».
+    expect(screen.getByText('Applications (Metrika): 40')).toBeInTheDocument();
     expect(screen.getByText(/critically low/)).toBeInTheDocument();
     expectNoCyrillic(container);
   });
@@ -84,15 +85,16 @@ describe('KPI & forecast (GoalsView)', () => {
   it('REG-03 (заявка ≠ оплата): ring/remaining count money only — Metrika orders are separate', () => {
     view({
       goalLabel: {
-        title: 'Заказов',
+        title: 'Заявок',
         isPaid: true,
-        showApplicationsCaveat: false,
+        showApplicationsCaveat: true,
         showEstimate: false,
       },
     });
     // paid = B2C 0 + B2B paid 20 → remaining 280; the 40 Metrika orders are NOT payments.
     expect(screen.getAllByText('280').length).toBeGreaterThan(0);
-    expect(screen.getByText(/это заказы, не оплаты/)).toBeInTheDocument();
+    // БАГ-02: purchase-goal reaches are «заявки» with the caveat on — «это заявки, не оплаты».
+    expect(screen.getByText(/Это заявки, не оплаты/)).toBeInTheDocument();
   });
 
   it('keeps loading and error states in English', () => {
