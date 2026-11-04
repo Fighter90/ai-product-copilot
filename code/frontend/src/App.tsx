@@ -138,9 +138,12 @@ export function App(): JSX.Element {
                   path="admin/metrika"
                   element={
                     <RequireAdmin>
-                      <MetrikaSettings />
-                      <MetrikaBackupAccount />
-                      <MetrikaDangerZone />
+                      {/* единый space-y: одинаковые вертикальные отступы между блоками страницы */}
+                      <div className="space-y-6">
+                        <MetrikaSettings />
+                        <MetrikaBackupAccount />
+                        <MetrikaDangerZone />
+                      </div>
                     </RequireAdmin>
                   }
                 />
