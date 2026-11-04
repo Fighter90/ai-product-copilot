@@ -117,8 +117,9 @@ test.describe('Read-only dashboard pages render their data', () => {
     await page.goto('/app');
     const strip = page.getByTestId('kpi-strip');
     await expect(strip.getByText(/Успеваем к 300\?/)).toBeVisible();
-    // Mocked primary goal is a purchase goal → the KPI tile counts orders.
-    await expect(strip.getByText(/Заказов/)).toBeVisible();
+    // Mocked primary goal is a purchase goal → the KPI tile counts Метрика reaches as «заявки»
+    // (БАГ-02: заказы Метрики подписаны «заявки»).
+    await expect(strip.getByText(/Заявок/)).toBeVisible();
     await expect(page.locator('canvas').first()).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Топ стран по визитам' })).toBeVisible();
 
