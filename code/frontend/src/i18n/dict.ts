@@ -233,7 +233,8 @@ export const ru = {
   'admin.ai.extraFolderId': 'ID каталога (folder ID)',
 
   'admin.metrika.title': 'Метрика и данные',
-  'admin.metrika.subtitle': 'Подключение счётчика, цели KPI, синхронизация и опасные действия',
+  'admin.metrika.subtitle':
+    'Подключение счётчика (основной и резервный аккаунты), цели KPI, синхронизация и опасные действия',
 
   'admin.datalens.title': 'Интеграции · DataLens',
   'admin.datalens.webhook': 'URL вебхука для DataLens',
@@ -1555,7 +1556,8 @@ export const en: Record<DictKey, string> = {
   'admin.ai.extraFolderId': 'Folder ID',
 
   'admin.metrika.title': 'Metrika & data',
-  'admin.metrika.subtitle': 'Counter connection, KPI goals, sync and dangerous actions',
+  'admin.metrika.subtitle':
+    'Counter connection (primary and backup accounts), KPI goals, sync and dangerous actions',
 
   'admin.datalens.title': 'Integrations · DataLens',
   'admin.datalens.webhook': 'Webhook URL for DataLens',
