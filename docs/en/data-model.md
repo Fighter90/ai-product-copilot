@@ -266,9 +266,13 @@ Allowed keys (`SETTING_KEYS` in `settings/app-settings.ts`):
 | `YANDEX_OAUTH_TOKEN`                       |   ✅   | Metrika OAuth token                                                                                                 |
 | `YANDEX_CLIENT_ID`                         |        | OAuth app id                                                                                                        |
 | `YANDEX_CLIENT_SECRET`                     |   ✅   | OAuth app secret                                                                                                    |
+| `METRIKA_BACKUP_CLIENT_ID`                 |        | backup-account OAuth app id (ANA-107)                                                                               |
+| `METRIKA_BACKUP_CLIENT_SECRET`             |   ✅   | backup-account OAuth app secret                                                                                     |
+| `METRIKA_BACKUP_OAUTH_TOKEN`               |   ✅   | backup-account token — independent daily quota; used on 429 `quota_requests_by_uid`                                 |
 | `COUNTER_ID`                               |        | Metrika counter                                                                                                     |
 | `GOAL_ID` / `ORDER_GOAL_ID`                |        | KPI goal / "Order" goal for live pages                                                                              |
 | `KPI_TARGET`                               |        | target number of payments (default 300)                                                                             |
+| `EVENT_DATE`                               |        | KPI deadline date (YYYY-MM-DD); empty → heuristic                                                                   |
 | `DATALENS_WEBHOOK_TOKEN`                   |   ✅   | webhook receiver token                                                                                              |
 | `DATALENS_LINKS`                           |        | team DataLens dashboard links (one per line)                                                                        |
 | `DATALENS_ORG_ID` / `DATALENS_WORKBOOK_ID` |        | DataLens Public API organization / workbook                                                                         |

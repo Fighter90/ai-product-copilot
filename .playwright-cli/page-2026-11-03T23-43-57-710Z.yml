@@ -1,0 +1,303 @@
+- generic [ref=e2]:
+    - generic [ref=e3]:
+        - banner [ref=e4]:
+            - generic [ref=e5]:
+                - link "ProductCamp Analytics Copilot" [ref=e6] [cursor=pointer]:
+                    - /url: /
+                    - generic [ref=e12]:
+                        - text: ProductCamp
+                        - generic [ref=e13]: Analytics Copilot
+                - navigation [ref=e14]:
+                    - link "О продукте" [ref=e15] [cursor=pointer]:
+                        - /url: /
+                    - link "Справка" [ref=e16] [cursor=pointer]:
+                        - /url: /help
+                - generic [ref=e17]:
+                    - group "Язык" [ref=e18]:
+                        - button "ru" [pressed] [ref=e19] [cursor=pointer]
+                        - button "en" [ref=e20] [cursor=pointer]
+                    - button "Ночная тема" [ref=e21] [cursor=pointer]
+                    - link "Войти" [ref=e24] [cursor=pointer]:
+                        - /url: /login
+        - main [ref=e27]:
+            - generic [ref=e28]:
+                - generic [aria-hidden]:
+                    - generic:
+                        - generic:
+                            - generic: reg_step1 · заказы
+                            - generic: '15'
+                    - generic:
+                        - generic:
+                            - generic: CR визит → заказ
+                            - generic: 1,3%
+                    - generic:
+                        - generic:
+                            - generic: AI · ICE 512
+                            - generic: Упростить корзину для мобильных
+                - generic [ref=e29]:
+                    - generic [ref=e30]:
+                        - generic [ref=e31]: Для команды ProductCamp
+                        - heading "От Метрики к гипотезам" [level=1] [ref=e33]: От Метрикик гипотезам
+                        - paragraph [ref=e34]: 'Аналитический копилот трека «Конверсии и лидген»: живые цели Яндекс.Метрики, воронка заявка → заказ → оплата, AI-гипотезы по ICE и отчёты DOCX/PDF — в одном кабинете с ролями.'
+                        - generic [ref=e35]:
+                            - link "Войти в кабинет" [ref=e36] [cursor=pointer]:
+                                - /url: /login
+                            - link "Как это работает" [ref=e39] [cursor=pointer]:
+                                - /url: '#how'
+                    - generic [ref=e40]:
+                        - generic [ref=e41]:
+                            - generic [ref=e42]: '163'
+                            - generic [ref=e43]: цели счётчика под контролем
+                        - generic [ref=e44]:
+                            - generic [ref=e45]: 60 с
+                            - generic [ref=e46]: обновление живых данных
+                        - generic [ref=e47]:
+                            - generic [ref=e48]: '4'
+                            - generic [ref=e49]: AI-провайдера с фолбэком
+                        - generic [ref=e50]:
+                            - generic [ref=e51]: '0'
+                            - generic [ref=e52]: цифр без источника
+                - link "scroll" [ref=e53] [cursor=pointer]:
+                    - /url: '#problem'
+            - generic [ref=e57]:
+                - generic [ref=e58]:
+                    - generic [ref=e59]: Проблема
+                    - heading "Цифры есть, ответа нет" [level=2] [ref=e60]
+                - generic [ref=e61]:
+                    - generic [ref=e62]:
+                        - heading "Заявка ≠ оплата" [level=3] [ref=e67]
+                        - paragraph [ref=e68]: Метрика считает заказы в корзине, а не оплаты. Без разделения KPI «300 платных билетов» превращается в гадание.
+                    - generic [ref=e69]:
+                        - heading "163 цели и путаница" [level=3] [ref=e74]
+                        - paragraph [ref=e75]: 'По аудиту: 75 целей мертвы 90 дней, есть дубли, кнопочные цели ломаются после правок Тильды.'
+                    - generic [ref=e76]:
+                        - heading "Excel и чаты" [level=3] [ref=e81]
+                        - paragraph [ref=e82]: Ручные выгрузки, гипотезы в мессенджерах, решения не связаны с данными и не воспроизводятся.
+            - generic [ref=e83]:
+                - generic [aria-hidden]: FLOW
+                - generic [ref=e84]:
+                    - generic [ref=e85]:
+                        - generic [ref=e86]: 01—04
+                        - heading "Как работает" [level=2] [ref=e87]
+                    - list [ref=e88]:
+                        - listitem [ref=e89]:
+                            - generic [ref=e90]: '01'
+                            - heading "Подключить" [level=3] [ref=e91]
+                            - paragraph [ref=e92]: Администратор подключает счётчик Метрики по OAuth, создаёт аккаунты и выдаёт доступ аналитикам — пара минут, без регистрации и паролей в чатах.
+                        - listitem [ref=e95]:
+                            - generic [ref=e96]: '02'
+                            - heading "Синхронизировать" [level=3] [ref=e97]
+                            - paragraph [ref=e98]: 'Каждые 3 часа кабинет забирает данные Метрики: сырые ответы API сохраняются в базу, поэтому любая цифра отчёта прослеживается до исходного ответа.'
+                        - listitem [ref=e101]:
+                            - generic [ref=e102]: '03'
+                            - heading "Навести порядок в целях" [level=3] [ref=e103]
+                            - paragraph [ref=e104]: 'Аудит всех 163 целей счётчика: мёртвые без достижений 90 дней, дубли, роль каждой цели в воронке — архивировать лишние можно прямо из кабинета.'
+                        - listitem [ref=e107]:
+                            - generic [ref=e108]: '04'
+                            - heading "Смотреть вживую" [level=3] [ref=e109]
+                            - paragraph [ref=e110]: Цели, воронка pc-goals, источники, UTM, страницы и устройства — с автообновлением, фильтрами периодов и выгрузкой CSV.
+                        - listitem [ref=e111]:
+                            - generic [ref=e112]: '05'
+                            - heading "Разобрать срез" [level=3] [ref=e113]
+                            - paragraph [ref=e114]: Отчёт собирается из неизменяемого среза данных в DOCX/PDF; AI-разбор по шести разделам опирается только на факты этого среза.
+                        - listitem [ref=e115]:
+                            - generic [ref=e116]: '06'
+                            - heading "Решать" [level=3] [ref=e117]
+                            - paragraph [ref=e118]: AI предлагает гипотезы с ICE-оценкой, допущениями и методами проверки — решение фиксируется рядом с теми данными, на которых оно принято.
+            - generic [ref=e120]:
+                - generic [ref=e121]:
+                    - generic [ref=e122]: Copilot
+                    - heading "Возможности" [level=2] [ref=e123]
+                - generic [ref=e124]:
+                    - generic [ref=e125]:
+                        - heading "Цели Метрики" [level=3] [ref=e130]
+                        - paragraph [ref=e131]: 'Все цели счётчика: достижения, конверсия, динамика, статус живая/спящая/мёртвая и дубли.'
+                    - generic [ref=e132]:
+                        - heading "Воронка pc-goals" [level=3] [ref=e137]
+                        - paragraph [ref=e138]: Визит → билеты → CTA → регистрация → корзина → заказ, тарифы и роли участников.
+                    - generic [ref=e139]:
+                        - heading "Подробная аналитика" [level=3] [ref=e142]
+                        - paragraph [ref=e143]: Источники, UTM, страницы входа и выхода, устройства, гео — с сортировкой и экспортом CSV.
+                    - generic [ref=e144]:
+                        - heading "AI-гипотезы" [level=3] [ref=e148]
+                        - paragraph [ref=e149]: Формат гипотезы, 3 допущения, 2 метода проверки, ICE = I × C × E, светофор и дедлайн.
+                    - generic [ref=e150]:
+                        - heading "Отчёты DOCX/PDF" [level=3] [ref=e154]
+                        - paragraph [ref=e155]: 'Детерминированный отчёт из среза данных: один ID → одинаковые файлы.'
+                    - generic [ref=e156]:
+                        - heading "DataLens" [level=3] [ref=e161]
+                        - paragraph [ref=e162]: Экспорт типизированных CSV и приёмник вебхуков DataLens для свободного анализа.
+            - generic [ref=e164]:
+                - generic [ref=e165]:
+                    - generic [ref=e166]: AI
+                    - heading "AI-провайдеры" [level=2] [ref=e167]
+                    - paragraph [ref=e168]: Администратор подключает любые из четырёх и задаёт порядок фолбэка. Ключи хранятся зашифрованными.
+                - generic [ref=e169]:
+                    - generic [ref=e170]:
+                        - generic [ref=e171]:
+                            - generic [ref=e172]: OpenRouter
+                            - generic [ref=e173]: '#1'
+                        - generic [ref=e174]: Claude · GPT · Gemini · DeepSeek
+                    - generic [ref=e177]:
+                        - generic [ref=e178]:
+                            - generic [ref=e179]: Anthropic
+                            - generic [ref=e180]: '#2'
+                        - generic [ref=e181]: Claude Sonnet / Opus
+                    - generic [ref=e184]:
+                        - generic [ref=e185]:
+                            - generic [ref=e186]: YandexGPT
+                            - generic [ref=e187]: '#3'
+                        - generic [ref=e188]: AI Studio · Yandex Cloud
+                    - generic [ref=e191]:
+                        - generic [ref=e192]:
+                            - generic [ref=e193]: GigaChat
+                            - generic [ref=e194]: '#4'
+                        - generic [ref=e195]: Сбер · GigaChat-2
+            - generic [ref=e199]:
+                - generic [ref=e200]:
+                    - generic [ref=e201]: Data
+                    - heading "Интеграции" [level=2] [ref=e202]
+                    - paragraph [ref=e203]: Данные Яндекс.Метрики и ваш DataLens — в одной системе без ручных выгрузок.
+                - generic [ref=e204]:
+                    - generic [ref=e205]:
+                        - heading "Яндекс.Метрика" [level=3] [ref=e211]
+                        - paragraph [ref=e212]: 'Счётчик ProductCamp подключён напрямую: цели, визиты, источники, поведение — в кабинете и в реальном времени.'
+                        - list [ref=e213]:
+                            - listitem [ref=e214]:
+                                - generic [ref=e217]: Синк по дням + live-запросы без записи в базу
+                            - listitem [ref=e218]:
+                                - generic [ref=e221]: 'Цели: создание и архивация из админки'
+                            - listitem [ref=e222]:
+                                - generic [ref=e225]: Фильтр служебного трафика, синк каждые 3 часа
+                        - 'link "Настройка: «Админ → Метрика и данные» — счётчик и OAuth-токен →" [ref=e226] [cursor=pointer]':
+                            - /url: /help/admin
+                    - generic [ref=e227]:
+                        - heading "DataLens" [level=3] [ref=e233]
+                        - paragraph [ref=e234]: 'Агрегаты выгружаются в ваш DataLens: готовые CSV-датасеты, воркбук и подключение созданы, вебхук-алерты приходят в кабинет.'
+                        - list [ref=e235]:
+                            - listitem [ref=e236]:
+                                - generic [ref=e239]: '5 датасетов: каналы, UTM, гео/устройства, страницы, B2B'
+                            - listitem [ref=e240]:
+                                - generic [ref=e243]: Воркбук и коннектор Метрики созданы через Public API
+                            - listitem [ref=e244]:
+                                - generic [ref=e247]: Вебхук-алерты чартов — уведомления в кабинете
+                        - 'link "Настройка: «Админ → Интеграции» — токен вебхуков; CSV на странице DataLens →" [ref=e248] [cursor=pointer]':
+                            - /url: /help/datalens
+            - generic [ref=e250]:
+                - generic [ref=e251]:
+                    - generic [ref=e252]: RBAC
+                    - heading "Роли" [level=2] [ref=e253]
+                    - paragraph [ref=e254]: Администратор настраивает всё. Аналитик загружает данные, строит отчёты и гипотезы.
+                - table [ref=e256]:
+                    - rowgroup [ref=e257]:
+                        - row [ref=e258]:
+                            - columnheader "Действие" [ref=e259]
+                            - columnheader "Администратор" [ref=e260]
+                            - columnheader "Аналитик" [ref=e261]
+                    - rowgroup [ref=e262]:
+                        - row [ref=e263]:
+                            - cell "Создать пользователя, выдать роль и доступ" [ref=e264]
+                            - cell [ref=e265]
+                            - cell "—" [ref=e268]
+                        - row [ref=e269]:
+                            - cell "Подключить Метрику, выбрать цели KPI" [ref=e270]
+                            - cell [ref=e271]
+                            - cell "—" [ref=e274]
+                        - row [ref=e275]:
+                            - cell "Настроить AI-провайдеров и ключи" [ref=e276]
+                            - cell [ref=e277]
+                            - cell "—" [ref=e280]
+                        - row [ref=e281]:
+                            - cell "Журнал действий, интеграции, вебхуки" [ref=e282]
+                            - cell [ref=e283]
+                            - cell "—" [ref=e286]
+                        - row [ref=e287]:
+                            - cell "Загрузить данные из Метрики" [ref=e288]
+                            - cell [ref=e289]
+                            - cell [ref=e292]
+                        - row [ref=e295]:
+                            - cell "Дашборд, живые цели, data grids" [ref=e296]
+                            - cell [ref=e297]
+                            - cell [ref=e300]
+                        - row [ref=e303]:
+                            - cell "Сгенерировать отчёт и гипотезы, экспорт" [ref=e304]
+                            - cell [ref=e305]
+                            - cell [ref=e308]
+                        - row [ref=e311]:
+                            - cell "Вести B2B-сделки" [ref=e312]
+                            - cell [ref=e313]
+                            - cell [ref=e316]
+            - generic [ref=e320]:
+                - generic [ref=e321]:
+                    - generic [ref=e322]: Trust
+                    - heading "Надёжность" [level=2] [ref=e323]
+                - generic [ref=e324]:
+                    - generic [ref=e325]:
+                        - heading "Анти-галлюцинация" [level=3] [ref=e329]
+                        - paragraph [ref=e330]: Ни одной цифры в отчёте без следа в сырых ответах Метрики. AI видит только факты среза.
+                    - generic [ref=e331]:
+                        - heading "Безопасность" [level=3] [ref=e335]
+                        - paragraph [ref=e336]: Сессии httpOnly, роли на сервере, AES-256-GCM для ключей, журнал всех изменений.
+                    - generic [ref=e337]:
+                        - heading "Командная работа" [level=3] [ref=e343]
+                        - paragraph [ref=e344]: Каждый аналитик в своём аккаунте, администратор управляет доступом в один клик.
+                    - generic [ref=e345]:
+                        - heading "История и срезы" [level=3] [ref=e350]
+                        - paragraph [ref=e351]: 'Год истории данных и неизменяемые снапшоты отчётов: цифра прошлого не перепишется задним числом.'
+            - generic [ref=e353]:
+                - generic [ref=e354]:
+                    - generic [ref=e355]: '?'
+                    - heading "Вопросы" [level=2] [ref=e356]
+                - generic [ref=e357]:
+                    - generic [ref=e358]:
+                        - button "Чем заказ отличается от оплаты?" [expanded] [ref=e359] [cursor=pointer]
+                        - paragraph [ref=e364]: 'Заказ — это цель в Метрике: заявка оставлена, переход к оплате начат. Оплата — фактически купленный билет: B2B-сделка в кабинете или подтверждённая оплата B2C. KPI «300 оплат» считается только по оплаченным, заказы показываются отдельной строкой — цифры никогда не складываются в одну.'
+                    - generic [ref=e365]:
+                        - button "Нужен ли AI, чтобы пользоваться?" [ref=e366] [cursor=pointer]
+                        - paragraph [ref=e369]: Нет. Дашборд, цели, воронка, отчёты и выгрузки работают без провайдера. AI добавляет гипотезы, разбор отчёта и ассистента по справке. Провайдера и порядок фолбэка настраивает администратор — можно вообще без AI.
+                    - generic [ref=e370]:
+                        - button "Откуда данные в разделе «Сейчас»?" [ref=e371] [cursor=pointer]
+                        - paragraph [ref=e374]: 'Напрямую из Reporting API Метрики с кэшем 60 секунд. Тестовый трафик отфильтрован: песочницы pc-goals (URL вида file:…), пометки env=test, а роботы отсекаются на уровне настроек счётчика — в цифрах только живые посетители.'
+                    - generic [ref=e375]:
+                        - button "За какой период доступны данные?" [ref=e376] [cursor=pointer]
+                        - paragraph [ref=e379]: 'Синк проходит каждые 3 часа (окно 14 дней), история догружается до года. Все сырые ответы Метрики сохраняются в базу: любая цифра кабинета и отчёта прослеживается до исходного ответа API — ничего «из воздуха».'
+                    - generic [ref=e380]:
+                        - button "Что происходит, если Метрика недоступна?" [ref=e381] [cursor=pointer]
+                        - paragraph [ref=e384]: 'Синк падает безопасно: окно данных сначала сохраняется в памяти и восстанавливается при сбое, поэтому неудачная загрузка не оставляет кабинет с пустыми таблицами. Попытки повторяются с задержкой (например, при исчерпании квоты API), «Сейчас» продолжает работать с кэшем.'
+                    - generic [ref=e385]:
+                        - button "Что такое гипотеза и как считается ICE?" [ref=e386] [cursor=pointer]
+                        - paragraph [ref=e389]: 'Гипотеза — это формат работы с идеей: что делаем, 3 допущения, 2 метода проверки, ICE = Impact × Confidence × Ease, статус и дедлайн. Идеи можно вносить вручную («→ гипотеза» из любого инсайта) или импортировать сгенерированные AI.'
+                    - generic [ref=e390]:
+                        - button "Как ИИ не выдумывает цифры?" [ref=e391] [cursor=pointer]
+                        - paragraph [ref=e394]: 'В промпт уходят только факты среза данных. После генерации каждое число в тексте гипотезы сверяется со срезом: чего нет в данных — помечается предупреждением «непроверенное число». В отчёте указано, какой провайдер и модель делали разбор.'
+                    - generic [ref=e395]:
+                        - button "Что ИИ видит о наших данных?" [ref=e396] [cursor=pointer]
+                        - paragraph [ref=e399]: 'Только агрегаты среза: числа по дням, каналам и целям. Личных данных и сырых логов ИИ не получает. Ключи провайдеров хранятся зашифрованными (AES-256-GCM); если данные не должны покидать РФ-контур — включается GigaChat.'
+                    - generic [ref=e400]:
+                        - button "Можно ли анализировать в DataLens?" [ref=e401] [cursor=pointer]
+                        - paragraph [ref=e404]: Да. Дашборд «Трафик и цели» в DataLens собирается автоматически (визиты, источники, заказы), типизированные CSV выгружаются для подключения «Файлы», а вебхуки DataLens приходят обратно в кабинет.
+                    - generic [ref=e405]:
+                        - button "Кто и как управляет доступом?" [ref=e406] [cursor=pointer]
+                        - paragraph [ref=e409]: 'Самостоятельной регистрации нет: администратор создаёт аккаунты и выдаёт временный пароль, аналитик меняет его при первом входе. Роли проверяются на сервере: админ настраивает интеграции и ключи, аналитик работает с данными, отчётами и гипотезами.'
+                    - generic [ref=e410]:
+                        - button "А если данные Метрики и кабинета расходятся?" [ref=e411] [cursor=pointer]
+                        - paragraph [ref=e414]: 'Все запросы синка воспроизводимы: те же фильтры, атрибуция по последнему значимому источнику, запросы по-дневные. Есть скрипт сверки «Метрика ↔ база ↔ API ↔ CSV ↔ отчёт ↔ DataLens» — расхождение считается багом, а не особенностью.'
+                    - generic [ref=e415]:
+                        - button "Что нужно для старта?" [ref=e416] [cursor=pointer]
+                        - paragraph [ref=e419]: OAuth-доступ к счётчику Метрики и аккаунт от администратора — остальное кабинет подтянет сам. AI-провайдер (10 минут в настройках) и DataLens подключаются опционально; деплой — скриптом на любой VPS с HTTPS.
+            - generic [ref=e483]:
+                - heading "Начните с живых целей" [level=2] [ref=e484]
+                - paragraph [ref=e485]: Войдите — первый экран покажет, успеваем ли к 300 оплатам.
+                - link "Войти в кабинет" [ref=e486] [cursor=pointer]:
+                    - /url: /login
+        - contentinfo [ref=e489]:
+            - generic [ref=e490]:
+                - generic [ref=e491]: Сделано для команды ProductCamp
+                - generic [ref=e498]:
+                    - link "Справка" [ref=e499] [cursor=pointer]:
+                        - /url: /help
+                    - link "История изменений" [ref=e500] [cursor=pointer]:
+                        - /url: https://github.com/Fighter90/ai-product-copilot/blob/main/CHANGELOG.md
+                    - link "v3.3.1 · b5c4231 · 03.11.2026" [ref=e502] [cursor=pointer]:
+                        - /url: https://github.com/Fighter90/ai-product-copilot/blob/main/CHANGELOG.md
+    - button "Ассистент по справке" [ref=e503] [cursor=pointer]

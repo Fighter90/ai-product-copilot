@@ -5,7 +5,7 @@
 How to use the ProductCamp Conversion Analytics **web cabinet** (v3). For the "Conversions &
 lead-gen" track team.
 
-> ✅ **Status: v3.0.0.** A multi-user cabinet with session login and **Administrator / Analyst**
+> ✅ **Status: v3.4.0.** A multi-user cabinet with session login and **Administrator / Analyst**
 > roles plus an action audit log. Real-time monitoring: **Live**, **Goals** (+ goal detail),
 > **Live funnel**. Analytics: Traffic, Behavior, Funnel, KPI, **Explore** (presets), Report
 > (DOCX/PDF + AI), History, B2B, **DataLens**. Administration: Users, AI providers

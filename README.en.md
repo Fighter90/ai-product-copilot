@@ -8,7 +8,7 @@
 [![Docs links](https://github.com/Fighter90/ai-product-copilot/actions/workflows/docs-links.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/docs-links.yml)
 ![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
 ![pnpm](https://img.shields.io/badge/pnpm-9-orange)
-![Version](https://img.shields.io/badge/version-v3.1.0-blue)
+![Version](https://img.shields.io/badge/version-v3.4.0-blue)
 
 **Live site:** [dashboardcamp.ru](https://dashboardcamp.ru) — the landing page and help center are
 public; the cabinet requires sign-in.
@@ -21,7 +21,7 @@ the report.
 
 > **Campaign KPI:** 300+ **paid** tickets. Throughout the tool: **an application ≠ a payment**.
 
-> ✅ **Status: working product v3.3.1.** The cabinet ships session-based authentication,
+> ✅ **Status: working product v3.4.0.** The cabinet ships session-based authentication,
 > **Administrator / Analyst** roles, and an action audit log. Real-time monitoring: Live, Goals
 > (+ goal detail), Live funnel. Analytics: Traffic, Behavior, Funnel, KPI, Explore (presets),
 > Report, History, B2B, DataLens. Administration: Users, AI providers (OpenRouter / Anthropic /
@@ -61,6 +61,10 @@ the report.
   (saw tickets → CTA → registration → cart → order) — queried directly from the Reporting API.
 - **Daily analytics** — channels, UTM, geo+devices, entry/exit pages, the "visit → application →
   payment" funnel, the 300 KPI with a "What if" simulator, 11 Explore presets.
+- **Backup Metrika account** — an independent daily API quota: on `429 quota_requests_by_uid` the
+  client automatically retries under the backup token (sync, cli-sync and live pages); configured
+  via the "Backup Metrika account" card in admin (ClientID/Secret, Verification Code → token
+  exchange).
 - **Reports** — an immutable snapshot → GOST-formatted DOCX/PDF with charts; GOST-2 front matter
   (a real TOC field, a list of figures, designations & terms, introduction, executive summary),
   bordered tables, «Рисунок N» captions, a human-readable period on the cover; AI analysis,
@@ -155,17 +159,19 @@ secrets.
 
 **Yandex Metrika** (initial values; admins edit them in the UI, which overrides `.env`)
 
-| Variable                                    | Default                                     | Purpose                                                               |
-| ------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------- |
-| `YANDEX_OAUTH_TOKEN`                        | —                                           | OAuth token: `metrika:read` (+ `metrika:write` for goals)             |
-| `YANDEX_CLIENT_ID` / `YANDEX_CLIENT_SECRET` | —                                           | OAuth app used by `pnpm auth`                                         |
-| `OAUTH_REDIRECT_URI`                        | `https://oauth.yandex.ru/verification_code` | OAuth app redirect URI                                                |
-| `COUNTER_ID`                                | `0`                                         | counter id; `0` = not set (demo mode works)                           |
-| `GOAL_ID`                                   | `0`                                         | KPI goal; `0` = auto-detect the purchase goal on sync                 |
-| `TIMEZONE`                                  | `Europe/Moscow`                             | time zone of daily aggregates                                         |
-| `ARCHIVED_GOAL_ID_THRESHOLD`                | `77`                                        | goal ids below the threshold are treated as archived                  |
-| `LOW_UTM_COVERAGE_RATIO`                    | `0.7`                                       | threshold of the `low_utm_coverage` flag                              |
-| `INCLUDE_TEST_TRAFFIC`                      | —                                           | `1` disables excluding robots and test (`file:`) sessions in the sync |
+| Variable                                    | Default                                     | Purpose                                                                 |
+| ------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------- |
+| `YANDEX_OAUTH_TOKEN`                        | —                                           | OAuth token: `metrika:read` (+ `metrika:write` for goals)               |
+| `METRIKA_BACKUP_OAUTH_TOKEN`                | —                                           | backup-account token: on 429 per-UID the client falls back to its quota |
+| `METRIKA_BACKUP_CLIENT_ID` / `_SECRET`      | —                                           | backup-account OAuth app (code exchange in admin)                       |
+| `YANDEX_CLIENT_ID` / `YANDEX_CLIENT_SECRET` | —                                           | OAuth app used by `pnpm auth`                                           |
+| `OAUTH_REDIRECT_URI`                        | `https://oauth.yandex.ru/verification_code` | OAuth app redirect URI                                                  |
+| `COUNTER_ID`                                | `0`                                         | counter id; `0` = not set (demo mode works)                             |
+| `GOAL_ID`                                   | `0`                                         | KPI goal; `0` = auto-detect the purchase goal on sync                   |
+| `TIMEZONE`                                  | `Europe/Moscow`                             | time zone of daily aggregates                                           |
+| `ARCHIVED_GOAL_ID_THRESHOLD`                | `77`                                        | goal ids below the threshold are treated as archived                    |
+| `LOW_UTM_COVERAGE_RATIO`                    | `0.7`                                       | threshold of the `low_utm_coverage` flag                                |
+| `INCLUDE_TEST_TRAFFIC`                      | —                                           | `1` disables excluding robots and test (`file:`) sessions in the sync   |
 
 **AI providers** (optional seed for an empty `ai_providers` table; the UI is the main path)
 

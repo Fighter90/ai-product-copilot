@@ -1,0 +1,18 @@
+{
+  "create_hypothesis": {
+    "status": 201,
+    "id": 4
+  },
+  "bag15_card_placement": {
+    "column": "Бэклог",
+    "overflow": false,
+    "cardScrollW": 178,
+    "cardClientW": 159
+  },
+  "bag15_delete_removal_ux": {
+    "nativeConfirmSeen": true,
+    "nativeText": "Удалить гипотезу «QA БАГ-15 карточка (удаляется скриптом)»?",
+    "styledDialogOnProd": false
+  },
+  "bag15_card_deleted": true
+}

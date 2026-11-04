@@ -7,7 +7,7 @@ v3 is a multi-user **web cabinet** on top of the analytics tool: it pulls Yandex
 SQLite → API → cabinet (roles, audit) + DataLens + AI providers. The public part (landing page,
 sign-in, help center) needs no session; everything under `/app` requires signing in.
 
-**Current version:** v3.1.0 (2026-10-26) · **Live site:** <https://dashboardcamp.ru>
+**Current version:** v3.4.0 (2026-11-05) · **Live site:** <https://dashboardcamp.ru>
 
 ## Components
 

@@ -75,6 +75,7 @@ _Metrika settings: counter, sync controls, goal management._
 3. **Scheduled sync** — systemd runs a sync **every 30 minutes** on the server; the admin page shows when it last succeeded.
 4. **`GOAL_ID` pinning** — fixes the primary KPI goal instead of auto-detecting the purchase goal; needed when several purchase-like goals exist.
 5. **Data cleanup** — removes collected daily rows (with confirmation); the next sync re-fills them.
+6. **Backup Metrika account** — the card at the bottom of the page: the backup Yandex account's OAuth app Client ID/Secret, an authorization link, and a Verification Code → token exchange. When the primary account's daily API quota is exhausted (429), the client automatically retries under the backup token — the yellow "Metrika data temporarily unavailable" banner disappears while the backup quota lasts. Details: docs/admin-guide.md → "Backup Metrika account" (RU).
 
 ### Creating and archiving goals from the admin UI
 

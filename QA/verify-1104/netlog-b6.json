@@ -1,0 +1,232 @@
+[
+  {
+    "u": "/api/auth/me",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/notifications",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/metrics/coverage",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/demo/status",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/health",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/metrics/channels?from=2026-10-22&to=2026-11-04",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/metrics/primary-goal",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/metrics/geo-device?from=2026-10-22&to=2026-11-04",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/metrics/utm?from=2026-10-22&to=2026-11-04",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/metrics/pages?from=2026-10-22&to=2026-11-04",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/metrics/exit-pages?from=2026-10-22&to=2026-11-04",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/b2b",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/payments/summary?from=2026-10-22&to=2026-11-04",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/metrics/kpi-target",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/settings/public",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/auth/me",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/notifications",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/metrics/coverage",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/demo/status",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/health",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/ai/available",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot",
+    "s": 201,
+    "m": "POST"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/notifications",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/demo/status",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  },
+  {
+    "u": "/api/report/snapshot/b6ae0e2c-3619-4dcc-9891-121654afdc10",
+    "s": 200,
+    "m": "GET"
+  }
+]

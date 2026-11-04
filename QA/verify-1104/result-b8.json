@@ -1,0 +1,12 @@
+{
+  "final_state": {
+    "state": {
+      "done": false,
+      "pending": true,
+      "unavail": null,
+      "narrativeHead": null
+    },
+    "waited": 150,
+    "postInfo": null
+  }
+}

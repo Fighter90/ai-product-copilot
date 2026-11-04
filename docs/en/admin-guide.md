@@ -1,6 +1,6 @@
 # Administrator guide
 
-> 🇬🇧 English · [🇷🇺 Русский](../admin-guide.md). Product version v3.1.0 · live site
+> 🇬🇧 English · [🇷🇺 Русский](../admin-guide.md). Product version v3.4.0 · live site
 > <https://dashboardcamp.ru>. A page-by-page walkthrough with buttons and screenshots lives in the
 > cabinet's built-in help (`/help`, "Admin" section); this document is a self-contained
 > administrator handbook.

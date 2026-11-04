@@ -141,14 +141,35 @@ pnpm build       # сборка (артефакт frontend → code/frontend/dis
 
 ### Догрузка истории и квота Метрики (ANA-107)
 
-Per-user квота Reporting API — скользящие 24 ч. Догруз окон порциями по 10 дней
-выполняют server-side скрипты (идемпотентные, стартуют с первого пропущенного дня):
+У Reporting API **две квоты** (скользящие 24 ч, сброс — начало следующего суточного окна):
+
+- **per-UID** (5000 запр./сут на пользователя) — своя у основного и резервного аккаунтов;
+- **per-counter** — общая на счётчик для всех пользователей; резервный токен её **не расширяет**.
+
+Догруз окон порциями по 10 дней выполняют server-side скрипты (идемпотентные, стартуют
+с первого пропущенного дня):
 
 - `/opt/pca/backfill-tables-loop.sh` — пер-таблицный луп (utm/geo/pages/exit), patient mode:
   при 429 ждёт 180–600 с и повторяет. Журнал `/tmp/backfill-tables.log`, финиш — `TABLES_DONE`.
 - Во время догрузки **останавливайте** `pca-sync.timer` (30-минутные прогоны съедают квоту)
   и возвращайте после `TABLES_DONE`: `systemctl enable --now pca-sync.timer`.
 - Разовые окна: `/opt/pca/backfill-remaining.sh FROM TO`.
+
+#### Резервный аккаунт (v3.4.0)
+
+- Токен резерва хранится в `/opt/pca/.env` (`METRIKA_BACKUP_OAUTH_TOKEN`) **и** в настройках
+  админки (зашифрованным); синк на сервере читает env-фолбэк.
+- Ручной выпуск токена: ссылка `https://oauth.yandex.ru/authorize?response_type=code&client_id=…&redirect_uri=https://oauth.yandex.ru/verification_code`
+  под резервным аккаунтом → код → `POST /api/goals/backup-token/exchange` (form-encoded;
+  Yandex `/token` JSON не принимает) — или вписать токен прямо в `.env`.
+- Проверка токена: management-список счётчиков (`/management/v1/counters`) — покажет владельца
+  и доступ; stat-probe `/stat/v1/data` — покажет 200/403/429 и тип квоты
+  (`quota_requests_by_uid` — исчерпан per-UID этого токена, `quota_requests_by_counter_id` —
+  общая квота счётчика, ждать сброса).
+- Финальная per-таблицная сверка против Метрики: `node scripts/reconcile-data.mjs --tables-only
+--from=… --to=…` (~2220 вызовов на 555 дней); чтобы прогнать под резервной квотой:
+  `YANDEX_OAUTH_TOKEN=<backup> node scripts/reconcile-data.mjs …`; офлайн gap-report по бэкапу
+  без SSH: `node scripts/reconcile-data.mjs --db <backup.db.gz-распакованный> --gap-report`.
 
 Регенерация IAM-токена DataLens (≤12 ч) — `scripts/refresh-datalens-token.mjs` на машине
 оператора (cron 2×/сут): обновляет `/opt/pca/.env` И настройки админки одним токеном.
