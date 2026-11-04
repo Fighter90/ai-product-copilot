@@ -6,19 +6,43 @@
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-11-05
+
+### Added
+
+- **ANA-107 — резервный аккаунт Метрики:** независимая суточная квота. Настройки
+  `METRIKA_BACKUP_CLIENT_ID/SECRET/OAUTH_TOKEN` (секреты зашифрованы), admin-эндпоинт обмена
+  verification code на OAuth-токен (`POST /api/goals/backup-token/exchange`, form-encoded —
+  Yandex /token игнорирует JSON), карточка «Резервный аккаунт Метрики» на админ-странице
+  «Метрика и данные» (ClientID/Secret, ссылка авторизации, обмен кода, статус токена).
+- **Фолбэк квоты везде:** клиент Метрики при `429 quota_requests_by_uid` автоматически повторяет
+  запрос под резервным токеном — sync-клиент, cli-sync и live-страницы («Сейчас», воронка) —
+  единая цепочка; карточка резервного аккаунта в админке и подзаголовок страницы (ru/en)
+  упоминают оба аккаунта.
+- **Футер-атрибуция:** «Created by Sergei Emelianov · LinkedIn · CV» (ru/en, прод + кабинет).
+
 ### Fixed
 
-- **CSP × ANA-41:** шрифт Inter не применялся на проде — CSP (`script-src` без
-  `'unsafe-inline'`) блокировал инлайновый `onload` у неблокирующего font-`<link media="print">`,
-  стиль навсегда оставался «print-only» (ошибка в консоли на каждой странице). Подмена media
-  перенесена из инлайнового хендлера в бандл (`enablePrintStylesheet` в `main.tsx`); хеш
-  инлайнового скрипта темы в CSP не изменился; +3 unit-теста (`font-media.test.ts`).
+- **Верификация баг-репорта 28.10 (22/22 закрыты):** БАГ-02 — лексика «заявки/оплаты» раздельно
+  (format-goal, report-sections, dict ru/en); БАГ-09 — порог `MIN_PAGE_VISITS` для «Лучший CR /
+  Худший bounce»; БАГ-15 — styled ConfirmDialog вместо системного `confirm()`; БАГ-21 — бэкфилл
+  AI-гипотез после AI-анализа (report-preview).
+- **CSP × ANA-41:** шрифт Inter не применялся на проде — CSP блокировал инлайновый `onload`
+  у неблокирующего font-`<link media="print">`; подмена media перенесена в бандл
+  (`enablePrintStylesheet`); +3 unit-теста.
+- **Security-проход:** payments-границы (updatedBy), CSV-инъекции, rate-limit `datalens:check`.
+- **Perf:** echarts ленивый (`EChartInner` — страницы без графиков не тянут ~385KB), шрифты
+  non-blocking; flake-фиксы (App-изоляция, lazy-wait ×4, дата B2cPaymentsCard).
 
 ### Changed
 
 - **ANA-113:** range-запросы разбивок Метрики (`ym:s:date`) — окно ≤31 дня одним вызовом вместо
   запроса на каждый день; суточная квота API (5000 запросов/UID) больше не выжигается per-day
   чанками; per-day остаётся фолбэком для широких окон.
+- **e2e-CI:** workflow переведён на `workflow_dispatch` — runner не поднимает WebServer,
+  push-прогоны падали средово (реальный e2e — агенты на проде).
+- **ops:** admin-ops workflow удалён (ANA-115 done); `reconcile --db <path>` — офлайн
+  gap-report по локальному бэкапу.
 
 ## [3.3.1] - 2026-10-29
 
