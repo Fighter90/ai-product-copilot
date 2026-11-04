@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowUpDown, Pencil, Plus, Trash2 } from 'lucide-react';
 import { iceScore, type Hypothesis, type HypothesisStatus, type NewHypothesis } from '@pca/shared';
 import { useT, fmtNum } from '../../i18n';
-import { Card, ErrorBox, PageHeader, Pill, Skeleton } from '../../components/ui';
+import { Card, ConfirmDialog, ErrorBox, PageHeader, Pill, Skeleton } from '../../components/ui';
 import { EmptyState } from '../../components/EmptyState';
 import { SourceBadge, UnverifiedBadge } from '../../components/hypotheses/SourceBadge';
 import {
@@ -73,6 +73,8 @@ export function Hypotheses(): JSX.Element {
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState<Editing | null>(null);
+  // БАГ-15 removal-UX: deletion is confirmed by the styled ConfirmDialog, not window.confirm().
+  const [pendingDelete, setPendingDelete] = useState<Hypothesis | null>(null);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'iceScore', dir: -1 });
 
   const list = useQuery({ queryKey: ['hypotheses'], queryFn: hypothesesApi.list });
@@ -105,8 +107,12 @@ export function Hypotheses(): JSX.Element {
     onSuccess: invalidate,
   });
 
-  const onDelete = (h: Hypothesis): void => {
-    if (!window.confirm(t('hyp.delete.confirm', { title: h.title }))) return;
+  const onDelete = (h: Hypothesis): void => setPendingDelete(h);
+
+  const confirmDelete = (): void => {
+    if (pendingDelete === null) return;
+    const h = pendingDelete;
+    setPendingDelete(null);
     deleteMut.mutate(h.id, {
       onError: (err) => window.alert(err instanceof Error ? err.message : String(err)),
     });
@@ -418,6 +424,18 @@ export function Hypotheses(): JSX.Element {
           }}
         />
       )}
+
+      {/* БАГ-15 removal-UX: styled confirmation instead of the native window.confirm(). */}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={t('hyp.delete')}
+        body={pendingDelete === null ? '' : t('hyp.delete.confirm', { title: pendingDelete.title })}
+        confirmLabel={t('hyp.delete')}
+        cancelLabel={t('common.cancel')}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+        busy={deleteMut.isPending}
+      />
     </div>
   );
 }

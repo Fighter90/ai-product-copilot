@@ -224,13 +224,25 @@ describe('Hypotheses page', () => {
     await waitFor(() => expect(hypothesesApi.setStatus).toHaveBeenCalledWith(1, 'in_progress'));
   });
 
-  it('deletes after confirm', async () => {
+  it('БАГ-15 removal-UX: delete asks via the styled ConfirmDialog (not window.confirm)', async () => {
     vi.mocked(hypothesesApi.remove).mockResolvedValue(undefined);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirmSpy = vi.spyOn(window, 'confirm');
     renderWithProviders(<Hypotheses />, '/app/hypotheses');
     fireEvent.click((await screen.findAllByRole('button', { name: 'Удалить' }))[0]!);
+    // The styled dialog names the hypothesis; the native confirm is never called.
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('confirm-body')).toHaveTextContent(
+      'Удалить гипотезу «AAA низкий»?',
+    );
+    // Cancel keeps the card.
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
+    expect(hypothesesApi.remove).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('confirm-body')).not.toBeInTheDocument();
+    // Accept deletes.
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Удалить' }))[0]!);
+    fireEvent.click(await screen.findByTestId('confirm-accept'));
     await waitFor(() => expect(hypothesesApi.remove).toHaveBeenCalledWith(1));
-    vi.restoreAllMocks();
+    confirmSpy.mockRestore();
   });
 
   it('ANA-38: imports an AI hypothesis from the latest snapshot with provenance', async () => {

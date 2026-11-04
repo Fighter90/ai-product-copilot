@@ -265,6 +265,53 @@ export function Modal({
   );
 }
 
+/**
+ * Styled destructive-action confirmation (БАГ-15 removal-UX): the same Modal chrome as the
+ * rest of the app instead of the browser's native window.confirm(). Cancel is the safe
+ * default — Escape/backdrop close it, and the confirm button only fires onConfirm once.
+ */
+export function ConfirmDialog({
+  open,
+  title,
+  body,
+  confirmLabel,
+  cancelLabel,
+  onConfirm,
+  onCancel,
+  busy = false,
+}: {
+  open: boolean;
+  title: ReactNode;
+  body: ReactNode;
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  busy?: boolean;
+}): JSX.Element | null {
+  return (
+    <Modal open={open} size="md" title={title} onClose={busy ? () => {} : onCancel}>
+      <p className="text-sm text-ink" data-testid="confirm-body">
+        {body}
+      </p>
+      <div className="mt-4 flex justify-end gap-2">
+        <button type="button" className="btn-ghost" onClick={onCancel} disabled={busy}>
+          {cancelLabel}
+        </button>
+        <button
+          type="button"
+          data-testid="confirm-accept"
+          className="btn-danger"
+          onClick={onConfirm}
+          disabled={busy}
+        >
+          {confirmLabel}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 export function ThemeToggle({ className = '' }: { className?: string }): JSX.Element {
   const { theme, toggleTheme } = usePrefs();
   const { t } = useT();

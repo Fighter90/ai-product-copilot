@@ -14,6 +14,7 @@ vi.mock('../../lib/api', async (importOriginal) => ({
   },
 }));
 import { api } from '../../lib/api';
+import { isoDaysAgo } from '../../store/filters';
 import { B2cPaymentsCard } from './B2cPaymentsCard';
 
 const mocked = vi.mocked(api);
@@ -57,21 +58,25 @@ describe('B2cPaymentsCard (ANA-19)', () => {
 
   it('saves one day (PUT upsert) with parsed numbers', async () => {
     mockData();
+    // Дата = min допустимого окна (filters.from = isoDaysAgo(13)): раньше тест хардкодил
+    // «2026-10-21», и как только скользящее окно ушло вперёд, jsdom-валидация (min) стала
+    // блокировать submit — тест ломался со сменой суток. Берём дату из того же окна.
+    const day = isoDaysAgo(13);
     mocked.saveB2cPayment.mockResolvedValue({
-      date: '2026-10-21',
+      date: day,
       tickets: 7,
       source: 'manual',
       updatedAt: 'T',
     });
     renderWithProviders(<B2cPaymentsCard />);
     await screen.findByTestId('b2c-row-2026-10-19');
-    fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-10-21' } });
+    fireEvent.change(screen.getByLabelText('Дата'), { target: { value: day } });
     fireEvent.change(screen.getByLabelText('Билеты'), { target: { value: '7' } });
     fireEvent.change(screen.getByLabelText('Сумма, ₽'), { target: { value: '98000' } });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить день' }));
-    await screen.findByText('Оплаты за 2026-10-21 сохранены.');
+    await screen.findByText(`Оплаты за ${day} сохранены.`);
     expect(mocked.saveB2cPayment).toHaveBeenCalledWith({
-      date: '2026-10-21',
+      date: day,
       tickets: 7,
       amountRub: 98000,
     });
