@@ -736,7 +736,7 @@ export const ru = {
   'an.live.refresh': 'Обновить',
   'an.goals.archived': 'Архивная',
   'quota.banner':
-    'Данные Метрики временно недоступны: исчерпана квота API. Показаны последние сохранённые данные.',
+    'Живые данные Метрики временно недоступны (квота API или сбой). Показаны последние доступные данные; полная история за любой период — в разделах из базы данных.',
   'quota.dismiss': 'Скрыть',
   'an.goals.archivedHidden': 'Скрыто архивных целей: {n} — включите «Архивные цели» в фильтре.',
   'an.goals.dupHint': 'Цели с одинаковым типом и условиями — считают одно и то же.',
@@ -2059,7 +2059,7 @@ export const en: Record<DictKey, string> = {
   'an.live.refresh': 'Refresh',
   'an.goals.archived': 'Archived',
   'quota.banner':
-    'Metrika data is temporarily unavailable: the API quota is exhausted. Showing the last saved snapshot.',
+    'Live Metrika data is temporarily unavailable (API quota or outage). Showing the latest available data; full-period history lives in the database-backed sections.',
   'quota.dismiss': 'Hide',
   'an.goals.archivedHidden': 'Archived goals hidden: {n} — turn on "Archived goals" in the filter.',
   'an.goals.dupHint': 'Goals with identical type and conditions — they count the same thing.',

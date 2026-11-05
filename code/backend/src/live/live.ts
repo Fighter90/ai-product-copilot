@@ -214,18 +214,30 @@ export class TtlCache {
     private readonly ttlMs: number,
     private readonly now: () => number = Date.now,
   ) {}
+  /**
+   * STALE-ON-ERROR (v3.4.1): when the source (Metrika) fails — 429 quota, 400 query_error,
+   * network — return the LAST GOOD value instead of throwing, flagged `stale: true`, so live
+   * pages always render something («показаны последние доступные данные») instead of an error
+   * box. Fresh values clear the flag. Without any last-good value the error still propagates
+   * (the route layer turns it into a human-readable 503).
+   */
   async get<T>(
     key: string,
     load: () => Promise<T>,
     ttl = this.ttlMs,
-  ): Promise<{ value: T; cachedAt: number }> {
+  ): Promise<{ value: T; cachedAt: number; stale?: boolean }> {
     const hit = this.m.get(key);
     if (hit && this.now() - hit.at < ttl) return { value: hit.v as T, cachedAt: hit.at };
-    const v = await load();
-    const at = this.now();
-    this.m.set(key, { at, v });
-    if (this.m.size > 500) this.m.delete(this.m.keys().next().value!);
-    return { value: v, cachedAt: at };
+    try {
+      const v = await load();
+      const at = this.now();
+      this.m.set(key, { at, v });
+      if (this.m.size > 500) this.m.delete(this.m.keys().next().value!);
+      return { value: v, cachedAt: at };
+    } catch (err) {
+      if (!hit) throw err;
+      return { value: hit.v as T, cachedAt: hit.at, stale: true };
+    }
   }
 }
 
@@ -295,9 +307,53 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
     }
     const p = parsed.data;
     const to = p.to ?? today();
-    const from = p.from ?? to;
-    return { from, to, filters: p.test === '1' ? undefined : TEST_FILTER };
+    let from = p.from ?? to;
+    // QUERY_TOO_COMPLEX guard (v3.4.1): Metrika rejects long-interval goal/breakdown queries
+    // with 400 «Запрос слишком сложный» (10–26 s server-side before failing). Live screens are
+    // real-time monitoring — clamp the window to the last 31 days and tell the UI; full-period
+    // history belongs to the DB-backed sections (Трафик/Поведение/Отчёт/KPI), which are
+    // unaffected: they read SQLite, not Metrika.
+    let clamped = false;
+    const minFrom = new Date(`${to}T00:00:00Z`);
+    minFrom.setUTCDate(minFrom.getUTCDate() - 30);
+    const minIso = minFrom.toISOString().slice(0, 10);
+    if (from < minIso) {
+      from = minIso;
+      clamped = true;
+    }
+    return { from, to, filters: p.test === '1' ? undefined : TEST_FILTER, clamped };
   };
+
+  // Human-readable degradation (v3.4.1): Metrika failures on live routes become 503 with a
+  // localized, actionable message + machine code — never a raw «Bad Request».
+  app.setErrorHandler((err: unknown, _req, reply) => {
+    const e = err as { status?: number; name?: string; message?: string };
+    if (e?.name === 'MetrikaHttpError' && e?.status === 429) {
+      reply.code(503).send({
+        error:
+          'Данные Метрики временно недоступны: исчерпана суточная квота API. Используется резервный аккаунт; если он тоже исчерпан — показаны последние сохранённые данные.',
+        code: 'METRIKA_QUOTA',
+      });
+      return;
+    }
+    if (e?.name === 'MetrikaHttpError' && e?.status === 400) {
+      reply.code(503).send({
+        error:
+          'Метрика не смогла обработать запрос (слишком широкий интервал). Живые данные показываются за последние 31 день; полная история за любой период — в разделах из базы данных (Трафик, Поведение, Отчёт, KPI).',
+        code: 'METRIKA_QUERY_TOO_COMPLEX',
+      });
+      return;
+    }
+    if (e?.name === 'MetrikaHttpError') {
+      reply.code(503).send({
+        error:
+          'Данные Метрики временно недоступны (ошибка API). Показаны последние сохранённые данные, актуальность восстановится автоматически.',
+        code: 'METRIKA_UNAVAILABLE',
+      });
+      return;
+    }
+    reply.code(500).send({ error: 'Внутренняя ошибка сервера. Повторите попытку позже.' });
+  });
 
   /** Real-time summary: totals for the period, by hour when it is a single day. */
   app.get('/live/summary', async (req, reply) => {
@@ -324,6 +380,8 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
     return {
       from,
       to,
+      ...(pr.clamped ? { rangeClamped: true, effectiveFrom: pr.from } : {}),
+      ...(totals.stale ? { stale: true } : {}),
       updatedAt: new Date(totals.cachedAt).toISOString(),
       totals: {
         visits: t[0] ?? 0,
@@ -347,7 +405,8 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
     if (!pr) return;
     const { from, to, filters } = pr;
     const prev = previousPeriod(from, to);
-    const list = (await goals()).value;
+    const goalsRes = await goals();
+    const list = goalsRes.value;
     const dupes = duplicateGroups(list);
     // Metrika allows 20 metrics per request: the current period asks reaches + converted visits
     // (10 goals/request), comparison periods only reaches (20 goals/request).
@@ -387,6 +446,8 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
     return {
       from,
       to,
+      ...(pr.clamped ? { rangeClamped: true, effectiveFrom: pr.from } : {}),
+      ...(goalsRes.stale ? { stale: true } : {}),
       previous: prev,
       visits: totalVisits,
       updatedAt: new Date().toISOString(),
@@ -469,6 +530,8 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
       },
       from,
       to,
+      ...(pr.clamped ? { rangeClamped: true, effectiveFrom: pr.from } : {}),
+      ...(series.stale ? { stale: true } : {}),
       updatedAt: new Date(series.cachedAt).toISOString(),
       totals: { visits: totals[0] ?? 0, reaches: totals[1] ?? 0, conversionRate: totals[2] ?? 0 },
       series: series.value.data.map((r) => ({
@@ -577,6 +640,7 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
     return {
       from,
       to,
+      ...(pr.clamped ? { rangeClamped: true, effectiveFrom: pr.from } : {}),
       updatedAt: new Date().toISOString(),
       stages: stages.map((s, i) => ({
         ...s,

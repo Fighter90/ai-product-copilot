@@ -8,7 +8,7 @@
 [![Docs links](https://github.com/Fighter90/ai-product-copilot/actions/workflows/docs-links.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/docs-links.yml)
 ![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
 ![pnpm](https://img.shields.io/badge/pnpm-9-orange)
-![Version](https://img.shields.io/badge/version-v3.4.0-blue)
+![Version](https://img.shields.io/badge/version-v3.4.1-blue)
 
 **Live site:** [dashboardcamp.ru](https://dashboardcamp.ru) — the landing page and help center are
 public; the cabinet requires sign-in.
@@ -21,7 +21,7 @@ the report.
 
 > **Campaign KPI:** 300+ **paid** tickets. Throughout the tool: **an application ≠ a payment**.
 
-> ✅ **Status: working product v3.4.0.** The cabinet ships session-based authentication,
+> ✅ **Status: working product v3.4.1.** The cabinet ships session-based authentication,
 > **Administrator / Analyst** roles, and an action audit log. Real-time monitoring: Live, Goals
 > (+ goal detail), Live funnel. Analytics: Traffic, Behavior, Funnel, KPI, Explore (presets),
 > Report, History, B2B, DataLens. Administration: Users, AI providers (OpenRouter / Anthropic /

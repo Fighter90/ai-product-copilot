@@ -102,21 +102,47 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     // Throttled — several live widgets can 429 within one render pass. Scoped to Metrika-backed
     // endpoints: auth login, help questions and DataLens have their own 429 rate limits and must
     // not trigger a banner that claims Metrika data is stale.
+    const text = await res.text();
+    // v3.4.1: live-degradation — бэкенд отвечает 503 {code: METRIKA_*} на любой сбой Метрики
+    // (квота 429, query_error 400, сеть): тот же баннер «показаны последние доступные данные».
+    if (
+      res.status === 503 &&
+      /METRIKA_(QUOTA|UNAVAILABLE|QUERY_TOO_COMPLEX)/.test(text) &&
+      /^\/(live|metrics)\b/.test(path) &&
+      typeof window !== 'undefined'
+    ) {
+      dispatchQuotaBanner();
+    }
     if (
       res.status === 429 &&
       /^\/(live|metrics|sync|admin\/metrika)\b/.test(path) &&
       typeof window !== 'undefined'
     ) {
-      const last = (window as { __pcaQuotaAt?: number }).__pcaQuotaAt ?? 0;
-      if (Date.now() - last > 30_000) {
-        (window as { __pcaQuotaAt?: number }).__pcaQuotaAt = Date.now();
-        window.dispatchEvent(new CustomEvent('pca:metrika-quota'));
-      }
+      dispatchQuotaBanner();
     }
-    throw new ApiError(res.status, readableError(res.status, await res.text()));
+    throw new ApiError(res.status, readableError(res.status, text));
   }
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  const data = (await res.json()) as T;
+  // v3.4.1: stale-on-error — бэкенд отдал прошлые данные с флагом stale (источник упал,
+  // кэш спас): показать тот же баннер, чтобы цифры не выглядели «живыми».
+  if (
+    typeof window !== 'undefined' &&
+    /^\/live\b/.test(path) &&
+    (data as { stale?: unknown })?.stale === true
+  ) {
+    dispatchQuotaBanner();
+  }
+  return data;
+}
+
+/** ANA-112 × v3.4.1: баннер «последние доступные данные» — не чаще раза в 30 с. */
+function dispatchQuotaBanner(): void {
+  const last = (window as { __pcaQuotaAt?: number }).__pcaQuotaAt ?? 0;
+  if (Date.now() - last > 30_000) {
+    (window as { __pcaQuotaAt?: number }).__pcaQuotaAt = Date.now();
+    window.dispatchEvent(new CustomEvent('pca:metrika-quota'));
+  }
 }
 
 export { http };

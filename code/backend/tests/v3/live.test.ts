@@ -355,3 +355,90 @@ describe('backupToken fallback (ANA-107: резервный аккаунт)', ()
     await app.close();
   });
 });
+
+describe('TtlCache stale-on-error (v3.4.1: live-страницы переживают сбой Метрики)', () => {
+  it('returns the last good value flagged stale when the source fails', async () => {
+    const cache = new TtlCache(0); // ttl 0 → каждый get перезагружает источник
+    await cache.get('k', async () => ({ n: 1 })); // первое — успех, ложится в кэш
+    const failing = vi.fn(async () => {
+      throw new Error('Metrika 400: query_error');
+    });
+    const r = await cache.get('k', failing);
+    expect(r.stale).toBe(true);
+    expect(r.value).toEqual({ n: 1 });
+    expect(failing).toHaveBeenCalledTimes(1); // источник дёргался, но ответ — из кэша
+  });
+
+  it('propagates the error when there is no last-good value', async () => {
+    const cache = new TtlCache(0);
+    await expect(
+      cache.get('empty', async () => {
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+  });
+});
+
+describe('live-роуты: человекочитаемая деградация (v3.4.1)', () => {
+  function makeApp(opts: { failAfter?: number } = {}) {
+    let calls = 0;
+    const cache = new TtlCache(0); // без кэширования — предсказуемый вызов источника
+    const app = Fastify({ logger: false });
+    void app.register(liveRoutes, {
+      prefix: '/live-t',
+      token: () => 'primary-token',
+      counterId: () => 123,
+      cache,
+      clientFactory: () =>
+        ({
+          get: async () => {
+            calls++;
+            if (opts.failAfter !== undefined && calls > opts.failAfter) {
+              const e = new Error('Metrika 400: query_error') as Error & { status: number };
+              e.status = 400;
+              e.name = 'MetrikaHttpError';
+              throw e;
+            }
+            return {
+              data: [{ dimensions: [{ name: '2025-01-01' }], metrics: [1, 2] }],
+              totals: [3],
+              query: { date1: '2025-01-01', date2: '2025-01-01' },
+            };
+          },
+        }) as unknown as MetrikaClient,
+    });
+    return { app, calls: () => calls };
+  }
+
+  it('400 query_error → 503 с человекочитаемым текстом и кодом (без кэша)', async () => {
+    const { app } = makeApp({ failAfter: 0 });
+    await app.ready();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/live-t/live/summary?from=2025-01-01&to=2025-01-07',
+    });
+    expect(res.statusCode).toBe(503);
+    const body = res.json() as { error: string; code: string };
+    expect(body.code).toBe('METRIKA_QUERY_TOO_COMPLEX');
+    expect(body.error).toContain('Метрика');
+    await app.close();
+  });
+
+  it('после успеха сбой отдаёт прошлые данные со stale-флагом', async () => {
+    const { app } = makeApp({ failAfter: 2 }); // первый запрос (2 stat-вызова) — успех, дальше сбой
+    await app.ready();
+    const ok1 = await app.inject({
+      method: 'GET',
+      url: '/live-t/live/summary?from=2025-01-01&to=2025-01-07',
+    });
+    expect(ok1.statusCode).toBe(200);
+    expect(ok1.json()).not.toHaveProperty('stale');
+    const ok2 = await app.inject({
+      method: 'GET',
+      url: '/live-t/live/summary?from=2025-01-01&to=2025-01-07',
+    });
+    expect(ok2.statusCode).toBe(200);
+    expect(ok2.json()).toHaveProperty('stale', true);
+    await app.close();
+  });
+});

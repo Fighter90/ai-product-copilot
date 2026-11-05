@@ -8,7 +8,7 @@
 [![Docs links](https://github.com/Fighter90/ai-product-copilot/actions/workflows/docs-links.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/docs-links.yml)
 ![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
 ![pnpm](https://img.shields.io/badge/pnpm-9-orange)
-![Version](https://img.shields.io/badge/version-v3.4.0-blue)
+![Version](https://img.shields.io/badge/version-v3.4.1-blue)
 
 **Стенд:** [dashboardcamp.ru](https://dashboardcamp.ru) — лендинг и справка открыты всем, кабинет —
 после входа.
@@ -20,7 +20,7 @@
 
 > **KPI кампании:** 300+ **платных** билетов. Везде в инструменте: **заявка ≠ оплата**.
 
-> ✅ **Статус: рабочий продукт v3.4.0.** Личный кабинет: аутентификация по сессиям, роли
+> ✅ **Статус: рабочий продукт v3.4.1.** Личный кабинет: аутентификация по сессиям, роли
 > **Администратор / Аналитик**, журнал действий (аудит). Мониторинг реального времени: Live,
 > Цели (+деталь цели), Воронка live. Аналитика: Трафик, Поведение, Воронка, KPI, Исследуй
 > (пресеты), Отчёт, История, B2B, DataLens. Админка: Пользователи, AI-провайдеры
