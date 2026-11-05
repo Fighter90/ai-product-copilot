@@ -8,7 +8,7 @@
 [![Docs links](https://github.com/Fighter90/ai-product-copilot/actions/workflows/docs-links.yml/badge.svg?branch=main)](https://github.com/Fighter90/ai-product-copilot/actions/workflows/docs-links.yml)
 ![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
 ![pnpm](https://img.shields.io/badge/pnpm-9-orange)
-![Version](https://img.shields.io/badge/version-v3.4.1-blue)
+![Version](https://img.shields.io/badge/version-v3.4.2-blue)
 
 **Live site:** [dashboardcamp.ru](https://dashboardcamp.ru) — the landing page and help center are
 public; the cabinet requires sign-in.
@@ -21,7 +21,7 @@ the report.
 
 > **Campaign KPI:** 300+ **paid** tickets. Throughout the tool: **an application ≠ a payment**.
 
-> ✅ **Status: working product v3.4.1.** The cabinet ships session-based authentication,
+> ✅ **Status: working product v3.4.2.** The cabinet ships session-based authentication,
 > **Administrator / Analyst** roles, and an action audit log. Real-time monitoring: Live, Goals
 > (+ goal detail), Live funnel. Analytics: Traffic, Behavior, Funnel, KPI, Explore (presets),
 > Report, History, B2B, DataLens. Administration: Users, AI providers (OpenRouter / Anthropic /
@@ -65,6 +65,9 @@ the report.
   client automatically retries under the backup token (sync, cli-sync and live pages); configured
   via the "Backup Metrika account" card in admin (ClientID/Secret, Verification Code → token
   exchange).
+- **Resilient live screens** — on any Metrika failure (quota, outage) live pages show the latest
+  available data with a banner instead of an error; live queries are capped at 31 days, full
+  history lives in the database-backed sections (SQLite), quota-independent.
 - **Reports** — an immutable snapshot → GOST-formatted DOCX/PDF with charts; GOST-2 front matter
   (a real TOC field, a list of figures, designations & terms, introduction, executive summary),
   bordered tables, «Рисунок N» captions, a human-readable period on the cover; AI analysis,
@@ -368,7 +371,8 @@ Full history: [CHANGELOG.md](CHANGELOG.md). Recent:
 
 | Version             | Date       | Description                                                                                                                                                                                                                                                         |
 | ------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **v3.4.0** (Latest) | 2026-11-05 | Backup Metrika account (ANA-107): independent daily quota, automatic 429 fallback in every path (sync/cli/live), admin card; bug-report 28.10 verified 22/22; CSP fonts, perf (lazy echarts); ≤31-day range requests (×31 quota saving)                             |
+| **v3.4.1** (Latest) | 2026-11-05 | Live pages survive any Metrika failure (stale cache + human-readable 503s), root cause of "Bad Request" eliminated (31-day live clamp); final per-key verification — OVERALL PASS on 556 days × 4 tables                                                            |
+| v3.4.0              | 2026-11-05 | Backup Metrika account (ANA-107), quota fallback in every path, 22/22 bug-report verified, CSP fonts, perf, ≤31-day range requests                                                                                                                                  |
 | v3.3.1              | 2026-10-29 | REG-01..12: demo access, 400 instead of 500, "paid"-boundaries, period coverage, sync statuses, snapshots, security                                                                                                                                                 |
 | v3.3.0              | 2026-10-28 | 30-minute sync, "stats" import (marketing), help center, duplicate goals                                                                                                                                                                                            |
 | v3.2.0              | 2026-10-27 | See [CHANGELOG.md](CHANGELOG.md)                                                                                                                                                                                                                                    |

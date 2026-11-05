@@ -17,6 +17,12 @@ The "Live" section queries the Metrika Reporting API directly, so it shows **tod
 | Live funnel | `/app/funnel-live` | The pc-goals funnel from "saw tickets" to "left contacts"                                 |
 | Goal detail | `/app/goals/:id`   | Per-goal breakdown: sources, devices, entry pages                                         |
 
+> **Resilience (v3.4.1):** live queries are limited to a 31-day window (Metrika rejects wider
+> goal breakdowns — "query too complex"); if the filter period is longer, the page shows the
+> last 31 days automatically. If Metrika is unavailable (quota, outage), the page renders the
+> **latest available data** with a yellow banner — an error page is never shown. Full-period
+> history lives in the database-backed sections (Traffic, Behavior, Report, KPI).
+
 ![Live page screenshot](/screenshots/04-live.png)
 _Live goals with today's reaches and comparison against yesterday and averages._
 

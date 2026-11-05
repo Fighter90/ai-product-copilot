@@ -2,7 +2,7 @@
 title: When something does not work
 section: Reference
 order: 24
-summary: 14 common situations as «symptom → cause → action»: empty charts, 429/Metrika quota, logout, 504 AI analysis, gaps in data, login and deploy issues.
+summary: common situations as «symptom → cause → action»: empty charts, 429/Metrika quota, logout, 504 AI analysis, gaps in data, login and deploy issues.
 ---
 
 # When something does not work
@@ -27,6 +27,15 @@ yesterday runs (systemd timer). Analyst: switch to a covered period — the Filt
 lost — the sync snapshots the window and restores it. Load smaller chunks or enable
 `METRIKA_REQUEST_DELAY_MS` pacing (ms between requests). The last run status is in
 `Administration → Metrika and data` (ANA-15: steps and their errors).
+
+### 2a. Yellow banner "Live Metrika data is temporarily unavailable" (v3.4.1)
+
+**Cause:** live pages read the Reporting API directly; when the quota is exhausted or the API
+fails, the page shows the **latest available data** from cache — an error page never replaces
+data. Live queries are limited to a 31-day window (Metrika rejects wider goal breakdowns).
+**Action:** nothing — the banner disappears once the API recovers; full-period history lives
+in the database-backed sections (Traffic, Behavior, Report, KPI), which run on SQLite and are
+quota-independent. The primary account is automatically backed by a second account (ANA-107).
 
 ### 3. Numbers differ between pages
 
