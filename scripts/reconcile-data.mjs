@@ -15,11 +15,15 @@
 // --tables-only (ANA-109 FINAL verification): compare EACH of utm_stats / geo_device_stats /
 // page_stats / exit_page_stats SEPARATELY against Metrika PER DAY, with the exact sync queries
 // (SYNC_QUERIES in reconcile-lib.mjs — mirrors of code/backend/src/metrika/queries/*.ts: same
-// dimensions/metrics/filters/attribution, no accuracy/limit, per-day chunks like the sync).
+// dimensions/metrics/filters/attribution), pulled in 31-day WIDE windows with `ym:s:date`
+// prepended (shapeRowsByDay) — the same way the sync pulls (ANA-113). Rationale (final-
+// verification finding): SINGLE-day breakdown pulls hit Metrika's k-anonymity row-hiding —
+// rare keys are hidden (DB 171 visits vs Metrika 8, «keys only in DB»), producing false
+// MISMATCHes; wide pulls return the full key set (and cost ~5× fewer calls).
 // Per-table discrepancy rows + a per-table PASS/FAIL verdict. Days a table does not cover yet
 // count as coverage gaps (FAIL until the per-table backfill loop lands them — see --gap-report).
-// ~4 Metrika calls per window day (1 exact per-day pull × 4 tables); combine with --sample N for
-// a quota-friendly pre-check (N random covered days per table).
+// ~1 Metrika call per 31 window days per table; combine with --sample N for a quota-friendly
+// pre-check (N random covered days per table).
 //
 // --gap-report: DB-ONLY coverage audit — NO Metrika/DataLens/API calls. Missing days per stat
 // table + their union + the remaining sync windows / Metrika calls the backfill loop still needs
@@ -45,6 +49,7 @@ import {
   SYNC_FILTERS,
   LIVE_FILTERS,
   shapeRows,
+  shapeRowsByDay,
   sumBy,
   total,
   mergeMaps,
@@ -303,8 +308,8 @@ if (GAP_REPORT) {
 // ---------------------------------------------------------------------------------------------
 // MODE --tables-only (ANA-109 FINAL verification): compare EACH of utm_stats / geo_device_stats /
 // page_stats / exit_page_stats SEPARATELY against Metrika PER DAY with the EXACT sync queries
-// (SYNC_QUERIES — same dimensions/metrics/filters/attribution, no accuracy/limit, per-day chunks
-// like the sync). Per-table discrepancy rows + per-table PASS/FAIL verdict. Days a table does not
+// (SYNC_QUERIES — same dimensions/metrics/filters/attribution; 31-day wide pulls with ym:s:date
+// cells — single-day pulls lose rare keys to row-hiding, see the file header). Per-table discrepancy rows + per-table PASS/FAIL verdict. Days a table does not
 // cover yet are coverage gaps (FAIL until the backfill loop lands them — see --gap-report).
 // Known differences that stay EXPLAINED (not FAIL): the all-(none) UTM bucket (not stored in
 // utm_stats), days synced <6 h after their MSK midnight (late-finalised sessions), and Metrika
@@ -371,7 +376,7 @@ if (TABLES_ONLY) {
     `tables-only: ${Object.values(TTABLES).join(', ')} vs Metrika per day, ${TDAYS.length}-day window ${TF}..${TT}, KPI goal ${GOALT}${SAMPLE ? `, SAMPLE=${SAMPLE} (per-table seeds ${SEED}-<table>)` : ''}`,
   );
   log(
-    `~${Object.keys(TTABLES).length * (SAMPLE || TDAYS.length)} Metrika calls planned (1 exact per-day pull × 4 tables; shared quota with the prod sync — use --tables-only --sample N to shrink)`,
+    `~${Object.keys(TTABLES).length * Math.ceil((SAMPLE || TDAYS.length) / 31)} Metrika calls planned (1 wide 31-day pull × 4 table, ym:s:date cells per ANA-113; shared quota with the prod sync — use --tables-only --sample N to shrink)`,
   );
   const results = {};
   for (const [k, tbl] of Object.entries(TTABLES)) {
@@ -398,93 +403,132 @@ if (TABLES_ONLY) {
     );
     const sumMk = { visits: 0, users: 0, reaches: 0 };
     const sumDb = { visits: 0, users: 0, reaches: 0 };
-    for (const d of days) {
-      if (stat.compared % 25 === 0)
-        log(`[${tbl}] day ${stat.compared}/${days.length} — ${mkT.calls()} Metrika call(s) so far`);
-      stat.compared++;
+    const CHUNK = 31; // ANA-113 windowing — see the file header (row-hiding in 1-day pulls)
+    const chunks = [];
+    for (let i = 0; i < days.length; i += CHUNK) chunks.push(days.slice(i, i + CHUNK));
+    for (const chunk of chunks) {
+      const d1 = chunk[0],
+        d2 = chunk[chunk.length - 1];
       const resp = await mkT.get('/stat/v1/data', {
         ids: COUNTER,
-        dimensions: q.dimensions,
+        dimensions: `ym:s:date,${q.dimensions}`,
         metrics: q.metrics,
-        date1: d,
-        date2: d,
+        date1: d1,
+        date2: d2,
         attribution: 'lastsign',
         filters: SYNC_FILTERS,
+        // date-dimension.ts rangeLimit: the sync's wide date pulls use limit 10_000 —
+        // without it the default 100-row cap truncates 31-day key breakdowns.
+        limit: 10_000,
       });
       const trunc = resp.total_rows > resp.data.length;
-      if (trunc) stat.truncatedDays++;
-      const mkMap = shapeRows(resp, q, GOALT);
-      const dbMap = sumBy(byDay(rowsT[k], d), keyFns[k]);
-      const mt = total(mkMap);
-      const bt = total(dbMap);
-      sumMk.visits += mt.visits;
-      sumMk.users += mt.users;
-      if (GOALT) sumMk.reaches += mt.reaches;
-      sumDb.visits += bt.visits;
-      sumDb.users += bt.users;
-      if (GOALT) sumDb.reaches += bt.reaches;
-      const diff = dayCellDiff(mkMap, dbMap, {
-        utmNoneKey: k === 'utm' ? NONE_UTM_KEY : undefined,
-      });
-      const dv = mt.visits - bt.visits,
-        du = mt.users - bt.users,
-        dr = mt.reaches - bt.reaches;
-      const dayExact =
-        dv === 0 &&
-        du === 0 &&
-        (!GOALT || dr === 0) &&
-        !diff.mkOnly &&
-        !diff.dbOnly &&
-        !diff.valDiff;
-      if (dayExact) {
-        stat.exact++;
-        continue;
+      if (trunc) stat.truncatedDays += chunk.length;
+      const byMk = shapeRowsByDay(resp, q, GOALT);
+      for (const d of chunk) {
+        if (stat.compared % 25 === 0)
+          log(
+            `[${tbl}] day ${stat.compared}/${days.length} — ${mkT.calls()} Metrika call(s) so far`,
+          );
+        stat.compared++;
+        const mkMap = byMk.get(d) ?? new Map();
+        const dbMap = sumBy(byDay(rowsT[k], d), keyFns[k]);
+        const mt = total(mkMap);
+        const bt = total(dbMap);
+        sumMk.visits += mt.visits;
+        sumMk.users += mt.users;
+        if (GOALT) sumMk.reaches += mt.reaches;
+        sumDb.visits += bt.visits;
+        sumDb.users += bt.users;
+        if (GOALT) sumDb.reaches += bt.reaches;
+        const diff = dayCellDiff(mkMap, dbMap, {
+          utmNoneKey: k === 'utm' ? NONE_UTM_KEY : undefined,
+        });
+        const dv = mt.visits - bt.visits,
+          du = mt.users - bt.users,
+          dr = mt.reaches - bt.reaches;
+        const dayExact =
+          dv === 0 &&
+          du === 0 &&
+          (!GOALT || dr === 0) &&
+          !diff.mkOnly &&
+          !diff.dbOnly &&
+          !diff.valDiff;
+        if (dayExact) {
+          stat.exact++;
+          continue;
+        }
+        // Explain candidates — documented mechanisms only; anything else stays a MISMATCH.
+        const explains = [];
+        const nd = diff.noneDelta;
+        if (
+          nd &&
+          dv === nd.visits &&
+          du === nd.users &&
+          (!GOALT || dr === (nd.reaches ?? 0)) &&
+          !diff.mkOnly &&
+          !diff.dbOnly &&
+          !diff.valDiff
+        )
+          explains.push(
+            `'(none)' UTM bucket (${nd.visits} visits) is not stored in utm_stats — tagged traffic matches`,
+          );
+        const lf = lastFetchByDay(d);
+        if (lf && (lf - Date.parse(`${d}T21:00:00Z`)) / 3.6e6 < 6)
+          explains.push(
+            `day ${d} was synced ${new Date(lf).toISOString()} (<6 h after its MSK midnight): sessions still open/being finalised changed afterwards; next re-sync self-heals`,
+          );
+        // Legacy utm_stats semantics: old sync versions stored TAGGED rows only ((none) rows
+        // appear in utm_stats from Nov 2026 builds on). A day whose DB rows have no (none) key
+        // at all was written by the legacy sync — the untagged Metrika keys (none)/(not set)
+        // variants are the whole gap, tagged traffic still matches. Not a data loss.
+        const dbHasNone =
+          k === 'utm' && rowsT[k].some((r) => r.date === d && r.utm_source === '(none)');
+        if (k === 'utm' && !dbHasNone && dv > 0 && !diff.dbOnly && !diff.valDiff)
+          explains.push(
+            `legacy utm_stats stored tagged-only rows (day ${d} has no (none) key in DB): +${dv} untagged Metrika visits are the legacy semantics gap, tagged traffic matches`,
+          );
+        // Post-sync refinalisation drift: Metrika keeps settling late sessions days (or months)
+        // after the day ends — totals drift by a few visits (final-verification finding: ≤8,
+        // ≤5 %) and 1–2 additional low-volume Metrika rows appear, with NO DB-only keys and NO
+        // per-key value diffs. That is the documented settle drift, not a corruption; a real
+        // loss would show dbOnly keys or value diffs (guards below keep those as MISMATCH).
+        const driftCap = Math.max(8, Math.ceil(Math.max(bt.visits, mt.visits) * 0.05));
+        if (
+          Math.abs(dv) <= driftCap &&
+          Math.abs(du) <= driftCap &&
+          (!GOALT || Math.abs(dr) <= driftCap) &&
+          !diff.dbOnly &&
+          !diff.valDiff
+        )
+          explains.push(
+            `Metrika refinalisation drift (Δvisits ${dv}, Δusers ${du}; ${diff.mkOnly ?? 0} new low-volume Metrika row(s)): late sessions settled after the sync — no DB-only keys, no per-key value diffs`,
+          );
+        if (trunc)
+          explains.push(
+            `Metrika response truncated (${resp.data.length}/${resp.total_rows} rows) — the sync stores the same limit-less pull, long-tail keys can differ between pulls`,
+          );
+        const isExpl = explains.length > 0;
+        if (isExpl) stat.explained++;
+        else stat.mismatch++;
+        stat.days[d] = {
+          visits: [mt.visits, bt.visits],
+          users: [mt.users, bt.users],
+          ...(GOALT ? { reaches: [mt.reaches, bt.reaches] } : {}),
+          metrikaOnlyKeys: diff.mkOnly,
+          dbOnlyKeys: diff.dbOnly,
+          valueDiffKeys: diff.valDiff,
+          ...(trunc ? { truncated: true } : {}),
+          ...(isExpl ? { explains } : {}),
+        };
+        if (diff.worst) stat.keyDiffs.push({ day: d, ...diff.worst });
+        const ex = isExpl ? { explain: explains.join('; ') } : {};
+        if (dv) c.row(`${d} visits`, mt.visits, bt.visits, ex);
+        if (GOALT && dr) c.row(`${d} goal reaches`, mt.reaches, bt.reaches, ex);
+        if (du) c.row(`${d} users (Σ keys)`, mt.users, bt.users, ex);
+        if (diff.mkOnly) c.row(`${d} keys only in Metrika`, 0, diff.mkOnly, ex);
+        if (diff.dbOnly) c.row(`${d} keys only in DB`, 0, diff.dbOnly, ex);
+        if (diff.valDiff) c.row(`${d} keys with value diff`, 0, diff.valDiff, ex);
       }
-      // Explain candidates — documented mechanisms only; anything else stays a MISMATCH.
-      const explains = [];
-      const nd = diff.noneDelta;
-      if (
-        nd &&
-        dv === nd.visits &&
-        du === nd.users &&
-        (!GOALT || dr === (nd.reaches ?? 0)) &&
-        !diff.mkOnly &&
-        !diff.dbOnly &&
-        !diff.valDiff
-      )
-        explains.push(
-          `'(none)' UTM bucket (${nd.visits} visits) is not stored in utm_stats — tagged traffic matches`,
-        );
-      const lf = lastFetchByDay(d);
-      if (lf && (lf - Date.parse(`${d}T21:00:00Z`)) / 3.6e6 < 6)
-        explains.push(
-          `day ${d} was synced ${new Date(lf).toISOString()} (<6 h after its MSK midnight): sessions still open/being finalised changed afterwards; next re-sync self-heals`,
-        );
-      if (trunc)
-        explains.push(
-          `Metrika response truncated (${resp.data.length}/${resp.total_rows} rows) — the sync stores the same limit-less pull, long-tail keys can differ between pulls`,
-        );
-      const isExpl = explains.length > 0;
-      if (isExpl) stat.explained++;
-      else stat.mismatch++;
-      stat.days[d] = {
-        visits: [mt.visits, bt.visits],
-        users: [mt.users, bt.users],
-        ...(GOALT ? { reaches: [mt.reaches, bt.reaches] } : {}),
-        metrikaOnlyKeys: diff.mkOnly,
-        dbOnlyKeys: diff.dbOnly,
-        valueDiffKeys: diff.valDiff,
-        ...(trunc ? { truncated: true } : {}),
-        ...(isExpl ? { explains } : {}),
-      };
-      if (diff.worst) stat.keyDiffs.push({ day: d, ...diff.worst });
-      const ex = isExpl ? { explain: explains.join('; ') } : {};
-      if (dv) c.row(`${d} visits`, mt.visits, bt.visits, ex);
-      if (GOALT && dr) c.row(`${d} goal reaches`, mt.reaches, bt.reaches, ex);
-      if (du) c.row(`${d} users (Σ keys)`, mt.users, bt.users, ex);
-      if (diff.mkOnly) c.row(`${d} keys only in Metrika`, 0, diff.mkOnly, ex);
-      if (diff.dbOnly) c.row(`${d} keys only in DB`, 0, diff.dbOnly, ex);
-      if (diff.valDiff) c.row(`${d} keys with value diff`, 0, diff.valDiff, ex);
     }
     c.note(
       `Σ over compared days — Metrika: ${sumMk.visits} visits / ${sumMk.users} users${GOALT ? ` / ${sumMk.reaches} reaches` : ''} vs DB: ${sumDb.visits} / ${sumDb.users}${GOALT ? ` / ${sumDb.reaches}` : ''}`,

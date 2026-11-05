@@ -179,14 +179,28 @@ export const TEST_URL_FILTER = "ym:s:startURL!~'^file:'";
 export const SYNC_FILTERS = TEST_URL_FILTER;
 export const LIVE_FILTERS = TEST_URL_FILTER; // live.ts TEST_FILTER
 
+// normalize-page.ts — FULL port: Tilda virtual pageviews (/tilda/popup/…, /tilda/click/…,
+// /tilda/form…/submitted, /tilda/cart/…) are widget EVENTS, not pages; the sync groups them
+// into the single «/tilda/*» bucket (ANA-22). Without this bucket the reconcile saw the raw
+// tilda URLs as «keys only in Metrika» and the DB bucket as «key only in DB».
+export const TILDA_EVENTS_GROUP = '/tilda/*';
+
+export function isTildaVirtualEvent(url) {
+  const path = /^[a-z][a-z0-9+.-]*:\/\//i.test(url)
+    ? (url.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/?]*/i, '').split('?')[0] ?? '')
+    : (url.split('?')[0] ?? '');
+  return path.startsWith('/tilda/');
+}
+
 export function normalizePageUrl(url) {
-  // normalize-page.ts
+  const trimmed = String(url).trim();
+  if (isTildaVirtualEvent(trimmed)) return TILDA_EVENTS_GROUP;
   try {
-    const u = new URL(url);
+    const u = new URL(trimmed);
     const path = u.pathname.replace(/\/+$/, '') || '/';
     return `${u.protocol}//${u.host.toLowerCase()}${path}`;
   } catch {
-    return String(url).trim();
+    return trimmed;
   }
 }
 
