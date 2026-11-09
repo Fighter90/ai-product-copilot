@@ -35,6 +35,9 @@ code/backend/data/
 *.log
 .DS_Store
 
+# Agent swarm state (lock + cycle logs)
+.task-board/
+
 # Claude Code session lock (never commit)
 .claude/scheduled_tasks.lock
 
