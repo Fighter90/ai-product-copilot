@@ -7,6 +7,12 @@ export default defineConfig({
     // scrypt-backed suites (secrets, passwords) are CPU-bound and blow the 5 s default on a
     // loaded box; vitest 4 fails them even when the overrun comes from a blocked event loop.
     testTimeout: 20_000,
+    // Same hazard in hooks: vitest 4 caps beforeEach at its own 10 s default regardless of
+    // testTimeout. build()-style beforeEach (scrypt users + SQLite migrations + Fastify ready)
+    // blow it under parallel --coverage load; the hook then never assigns the test ctx and
+    // afterEach crashes with «Cannot read properties of undefined (reading 'app')», failing
+    // every test in the file (ANA-125 review round 3 gate failure).
+    hookTimeout: 20_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

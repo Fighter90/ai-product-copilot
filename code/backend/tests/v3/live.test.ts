@@ -5,6 +5,7 @@ import {
   eventOf,
   goalStatus,
   isArchivedLiveGoal,
+  LIVE_CACHE_TTL_MS,
   liveRoutes,
   PC_FUNNEL,
   PC_FUNNEL_GOAL_STEPS,
@@ -352,6 +353,157 @@ describe('backupToken fallback (ANA-107: резервный аккаунт)', ()
     expect(seen.length).toBeGreaterThan(0);
     expect(seen[0]!.backup).toBe('backup-token');
     expect(seen[0]!.token).toBe('primary-token');
+    await app.close();
+  });
+});
+
+describe('ANA-125: параллельные чанки reach() + TTL живого периода', () => {
+  it('LIVE_CACHE_TTL_MS: 180–300 c (прежние 60 c перечитывали живой период каждую минуту)', () => {
+    expect(LIVE_CACHE_TTL_MS).toBeGreaterThanOrEqual(180_000);
+    expect(LIVE_CACHE_TTL_MS).toBeLessThanOrEqual(300_000);
+  });
+
+  it('кэш с новым TTL держит источник 4 минуты, потом перечитывает', async () => {
+    let t = 0;
+    const cache = new TtlCache(LIVE_CACHE_TTL_MS, () => t);
+    const load = vi.fn(async () => 'x');
+    await cache.get('k', load);
+    t = 120_000; // 2 минуты — старый TTL 60 c уже истёк бы
+    await cache.get('k', load);
+    expect(load).toHaveBeenCalledTimes(1);
+    t = LIVE_CACHE_TTL_MS + 1;
+    await cache.get('k', load);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * 25 целей → 3 чанка текущего периода (по 10, с visits) + 2+2+2 чанка сравнительных
+   * (по 20). Чанки одного периода должны уйти в Метрику одновременно (раньше — строго
+   * по очереди), но суммарно в полёте — не больше 4 запросов, как при прежнем
+   * меж-периодном Promise.all. Число запросов и payload не меняются.
+   */
+  it('/live/goals: чанки одного периода в полёте одновременно, в полёте ≤4 запросов', async () => {
+    const manyGoals = Array.from({ length: 25 }, (_, i) => goal({ id: 100 + i }));
+    let chunkMetrics: string[] = [];
+    let atMaxMetrics: string[] = [];
+    const gates: Array<() => void> = [];
+    const get = vi.fn(async (_path: string, params: Record<string, unknown>) => {
+      if (_path !== '/stat/v1/data') return { goals: manyGoals }; // Management API: список целей
+      const metrics = String(params.metrics ?? '');
+      const isChunk = /goal\d+reaches/.test(metrics); // visits-запрос периода — не чанк
+      if (isChunk) {
+        chunkMetrics = [...chunkMetrics, metrics];
+        if (chunkMetrics.length > atMaxMetrics.length) atMaxMetrics = [...chunkMetrics];
+      }
+      await new Promise<void>((r) => gates.push(r)); // держим запрос в полёте
+      if (isChunk) chunkMetrics = chunkMetrics.filter((m) => m !== metrics);
+      return { totals: [10], data: [] };
+    });
+    const app = Fastify({ logger: false });
+    await app.register(liveRoutes, {
+      prefix: '/api',
+      token: () => 'tok',
+      counterId: () => 123,
+      clientFactory: () => ({ get }) as unknown as MetrikaClient,
+      today: () => '2025-06-15',
+    });
+    await app.ready();
+    const pending = app.inject({
+      method: 'GET',
+      url: '/api/live/goals?from=2025-06-01&to=2025-06-07',
+    });
+    try {
+      // Первый запрос — visits текущего периода, он один и его надо пропустить; дальше
+      // прокачиваем обработчик, пока чанк-запросы не упрутся в семафор и не перестанут
+      // стартовать (стабильное состояние: 4 в полёте, очередь ждёт).
+      let released = false;
+      let stable = 0;
+      let prev = -1;
+      for (let i = 0; i < 200; i++) {
+        if (!released && gates.length > 0) {
+          gates.shift()!();
+          released = true;
+          stable = 0;
+          await new Promise((r) => setTimeout(r, 2));
+          continue;
+        }
+        const calls = get.mock.calls.length;
+        stable = released && calls === prev ? stable + 1 : 0;
+        prev = calls;
+        if (stable >= 2) break; // два опроса подряд без роста — устойчивое состояние
+        await new Promise((r) => setTimeout(r, 2));
+      }
+      expect(gates).toHaveLength(4); // ровно 4 запроса Метрики в полёте — лимит не наращён
+      // Цель — единственный период с метриками goal*Nvisits: ≥2 таких чанка в полёте
+      // одновременно доказывают параллельность чанков одного периода.
+      const curChunksAtMax = atMaxMetrics.filter((m) => /goal\d+visits/.test(m));
+      expect(curChunksAtMax.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      // Отпускаем ворота волнами: освобождение слота пускает следующий чанк из очереди
+      // семафора, он в свою очередь встаёт на новые ворота — ждём, пока очередь иссякнет.
+      while (gates.length > 0) {
+        for (const r of gates.splice(0)) r();
+        await new Promise((r) => setTimeout(r, 2));
+      }
+    }
+    const res = await pending;
+    expect(res.statusCode).toBe(200);
+    const statCalls = (
+      get.mock.calls as unknown as Array<[string, Record<string, unknown>]>
+    ).filter(([p]) => p === '/stat/v1/data');
+    expect(statCalls).toHaveLength(10); // 1 visits + 9 чанков — число запросов не изменилось
+    const body = res.json();
+    expect(body.goals).toHaveLength(25);
+    expect(body.goals[0]).toMatchObject({
+      id: 100,
+      reaches: expect.any(Number),
+      goalVisits: expect.any(Number),
+      conversionRate: expect.any(Number),
+      previousReaches: expect.any(Number),
+      reaches14: expect.any(Number),
+      reaches90: expect.any(Number),
+    });
+    await app.close();
+  });
+
+  it('429 по квоте после успеха → /live/goals отдаёт прошлые данные (stale-cache), а не 503', async () => {
+    let ok = true;
+    const cache = new TtlCache(0); // ttl 0 → каждый запрос перечитывает источник
+    const makeErr = () => {
+      const e = new Error('Metrika 429: quota_requests_by_uid') as Error & { status: number };
+      e.status = 429;
+      e.name = 'MetrikaHttpError';
+      return e;
+    };
+    const app = Fastify({ logger: false });
+    await app.register(liveRoutes, {
+      prefix: '/live-t',
+      token: () => 'tok',
+      counterId: () => 123,
+      cache,
+      clientFactory: () =>
+        ({
+          get: async (path: string) => {
+            if (path.includes('/goals')) return { goals: [goal({ id: 11 })] };
+            if (!ok) throw makeErr();
+            return { totals: [7], data: [] };
+          },
+        }) as unknown as MetrikaClient,
+    });
+    await app.ready();
+    const url = '/live-t/live/goals?from=2025-06-01&to=2025-06-07';
+    const ok1 = await app.inject({ method: 'GET', url });
+    expect(ok1.statusCode).toBe(200);
+    const reachesBefore = (ok1.json() as { goals: Array<{ reaches: number }> }).goals.map(
+      (g) => g.reaches,
+    );
+    ok = false; // дальше Метрика отвечает 429 по квоте
+    const ok2 = await app.inject({ method: 'GET', url });
+    expect(ok2.statusCode).toBe(200); // stale-cache, а не 503 METRIKA_QUOTA
+    const reachesAfter = (ok2.json() as { goals: Array<{ reaches: number }> }).goals.map(
+      (g) => g.reaches,
+    );
+    expect(reachesAfter).toEqual(reachesBefore);
     await app.close();
   });
 });

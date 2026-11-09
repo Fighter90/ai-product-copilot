@@ -207,7 +207,38 @@ export function previousPeriod(from: string, to: string): { from: string; to: st
   return { from: shiftDays(from, -len), to: shiftDays(from, -1) };
 }
 
-/** Small TTL cache so live mode never hammers Metrika quotas (default 60 s). */
+/**
+ * ANA-125: TTL кэша живого периода по умолчанию. Поднят с 60 c до 4 минут: страницу /app/goals
+ * разглядывают дольше минуты (каждое перечитывание — десятки запросов к Stat API), а при сбоях
+ * Метрики stale-on-error (v3.4.1) и так отдаёт последние сохранённые данные. Длиннее TTL —
+ * реже запросы, меньше расход суточной квоты API.
+ */
+export const LIVE_CACHE_TTL_MS = 4 * 60_000;
+
+/**
+ * Семафор: выполняет `fn` не более чем в `limit` экземплярах одновременно (FIFO).
+ * ANA-125: чанки reach() внутри периода уходят параллельно, но все запросы к Метрике
+ * идут через один общий семафор — суммарный параллелизм не превышает прежний
+ * меж-периодный (4 одновременных запроса), лимиты API не наращиваются.
+ */
+function createLimiter(limit: number) {
+  let active = 0;
+  const waiting: Array<() => void> = [];
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    if (active >= limit) await new Promise<void>((resume) => waiting.push(resume));
+    else active += 1;
+    try {
+      return await fn();
+    } finally {
+      const resume = waiting.shift();
+      if (resume)
+        resume(); // слот переходит следующему из очереди
+      else active -= 1;
+    }
+  };
+}
+
+/** Small TTL cache so live mode never hammers Metrika quotas (default LIVE_CACHE_TTL_MS). */
 export class TtlCache {
   private readonly m = new Map<string, { at: number; v: unknown }>();
   constructor(
@@ -260,7 +291,7 @@ const dimName = (d: Record<string, unknown>): string => String(d.name ?? d.id ??
 
 /** Live Reporting API routes (real-time mode + data grids + goal drill-down). */
 export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<void> {
-  const cache = deps.cache ?? new TtlCache(60_000);
+  const cache = deps.cache ?? new TtlCache(LIVE_CACHE_TTL_MS);
   const today =
     deps.today ??
     (() => new Date().toLocaleDateString('sv-SE', { timeZone: deps.tz ?? 'Europe/Moscow' }));
@@ -410,28 +441,36 @@ export async function liveRoutes(app: FastifyInstance, deps: LiveDeps): Promise<
     const dupes = duplicateGroups(list);
     // Metrika allows 20 metrics per request: the current period asks reaches + converted visits
     // (10 goals/request), comparison periods only reaches (20 goals/request).
+    // ANA-125: чанки одного периода больше не ждут друг друга по очереди — уходят параллельно,
+    // но каждый запрос проходит через общий на все 4 периода семафор (≤4 в полёте, как при
+    // прежнем меж-периодном Promise.all). При 123 целях текущий период — 13 чанков: было
+    // ~13 последовательных ходов, стало ceil(33/4) ≈ 9 при полном отсутствии простоев слотов.
+    const limitMetrika = createLimiter(4);
     const reach = async (d1: string, d2: string, withVisits: boolean, ttl?: number) => {
       const out = new Map<number, { reaches: number; goalVisits: number }>();
       const per = withVisits ? 10 : 20;
-      for (let i = 0; i < list.length; i += per) {
-        const chunk = list.slice(i, i + per);
-        const metrics = chunk
-          .flatMap((g) =>
-            withVisits
-              ? [`ym:s:goal${g.id}reaches`, `ym:s:goal${g.id}visits`]
-              : [`ym:s:goal${g.id}reaches`],
-          )
-          .join(',');
-        const r = await stat({ metrics, date1: d1, date2: d2, filters }, ttl);
-        const t = r.value.totals ?? r.value.data[0]?.metrics ?? [];
-        const w = withVisits ? 2 : 1;
-        chunk.forEach((g, j) =>
-          out.set(g.id, {
-            reaches: t[j * w] ?? 0,
-            goalVisits: withVisits ? (t[j * w + 1] ?? 0) : 0,
-          }),
-        );
-      }
+      const chunks: LiveGoal[][] = [];
+      for (let i = 0; i < list.length; i += per) chunks.push(list.slice(i, i + per));
+      await Promise.all(
+        chunks.map(async (chunk) => {
+          const metrics = chunk
+            .flatMap((g) =>
+              withVisits
+                ? [`ym:s:goal${g.id}reaches`, `ym:s:goal${g.id}visits`]
+                : [`ym:s:goal${g.id}reaches`],
+            )
+            .join(',');
+          const r = await limitMetrika(() => stat({ metrics, date1: d1, date2: d2, filters }, ttl));
+          const t = r.value.totals ?? r.value.data[0]?.metrics ?? [];
+          const w = withVisits ? 2 : 1;
+          chunk.forEach((g, j) =>
+            out.set(g.id, {
+              reaches: t[j * w] ?? 0,
+              goalVisits: withVisits ? (t[j * w + 1] ?? 0) : 0,
+            }),
+          );
+        }),
+      );
       return out;
     };
     const end = today();
