@@ -39,6 +39,10 @@ const MAX_TASKS = num('--max', 1);
 const MAX_ROUNDS = num('--rounds', 3);
 const DRY = flag('--dry-run');
 const NO_RELEASE = flag('--no-release');
+const REQUEUE = (() => {
+  const i = args.indexOf('--requeue');
+  return i >= 0 ? args[i + 1] : null;
+})();
 
 const ROLES = {
   executor: readFileSync(resolve(SWARM, 'roles/executor.md'), 'utf8'),
@@ -231,6 +235,19 @@ async function main() {
   }
 
   try {
+    // Admin op via the clerk: return a stuck issue (e.g. after a crashed run) to the queue.
+    if (REQUEUE) {
+      log(`--requeue ${REQUEUE}`);
+      const out = await clerk(
+        `Operation: in workspace "analitics-platform", find issue ${REQUEUE} in team ANA, set its state to "Todo" and add comment: "♻️ Swarm requeue — returned to the queue by the operator."\nResult line: SWARM_REQUEUE::${REQUEUE}`,
+      );
+      log(
+        out.includes(`SWARM_REQUEUE::${REQUEUE}`)
+          ? `requeued: ${REQUEUE} → Todo`
+          : `requeue result unclear: ${short(out, 200)}`,
+      );
+      return;
+    }
     for (let n = 0; n < MAX_TASKS; n++) {
       logFile = resolve(LOGS, `cycle-${Date.now()}.log`);
       log(`=== task ${n + 1}/${MAX_TASKS} ===`);
