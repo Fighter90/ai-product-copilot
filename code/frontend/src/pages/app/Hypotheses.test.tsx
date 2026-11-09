@@ -193,7 +193,8 @@ describe('Hypotheses page', () => {
         expect.objectContaining({ subject: 'Подкаст', title: 'Тест' }),
       ),
     );
-  });
+    // Heavy multi-field form flow: ~19s standalone, >20s under parallel coverage load.
+  }, 45_000);
 
   it('БАГ-15: shows «Просрочена» as its own kanban column, separate from «Отклонена»', async () => {
     mockData({ list: [h({ id: 3, title: 'CCC просроченная', status: 'expired' })] });
