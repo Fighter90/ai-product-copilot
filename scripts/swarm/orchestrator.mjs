@@ -61,6 +61,11 @@ function run(cmd, args_, { timeoutMs = 600_000, cwd = ROOT } = {}) {
     const p = spawn(cmd, args_, { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '',
       err = '';
+    const finish = (code) => {
+      clearTimeout(t);
+      clearTimeout(t2);
+      res({ code, out, err, all: out + err });
+    };
     const t = setTimeout(() => {
       try {
         p.kill('SIGKILL');
@@ -68,6 +73,9 @@ function run(cmd, args_, { timeoutMs = 600_000, cwd = ROOT } = {}) {
         /* already dead */
       }
     }, timeoutMs);
+    // A SIGKILLed CLI may leave grandchildren holding stdio pipes — 'close' then hangs.
+    // Hard-cap the step: resolve 60s after the kill with whatever was captured.
+    const t2 = setTimeout(() => finish(null), timeoutMs + 60_000);
     p.stdout.on('data', (d) => {
       out += d;
     });
@@ -76,6 +84,7 @@ function run(cmd, args_, { timeoutMs = 600_000, cwd = ROOT } = {}) {
     });
     p.on('close', (code) => {
       clearTimeout(t);
+      clearTimeout(t2);
       res({ code, out, err, all: out + err });
     });
   });
@@ -86,7 +95,7 @@ const sh = async (cmd, opts) => {
   return r;
 };
 
-async function worker(role, vars, { timeoutMs = 25 * 60_000 } = {}) {
+async function worker(role, vars, { timeoutMs = 40 * 60_000 } = {}) {
   let prompt = ROLES[role];
   for (const [k, v] of Object.entries(vars)) prompt = prompt.replaceAll(`{{${k}}}`, v ?? '');
   log(`  [${role}] worker started (timeout ${Math.round(timeoutMs / 60000)}m)`);

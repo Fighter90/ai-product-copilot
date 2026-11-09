@@ -31,9 +31,13 @@ HARD RULES
    .env write validation), never introduce secrets.
 4. Keep the change SMALL and scoped to the issue. No drive-by refactors. Follow existing
    code style; user-visible strings go through i18n (ru AND en locales).
-5. Verify your work: run the narrowest relevant test file(s) until green, then
-   `pnpm --filter @pca/<pkg> test` for the touched package(s). Do NOT run Playwright e2e.
-6. Commit EVERYTHING on the current branch with a conventional message
+5. Verify your work: run the NARROWEST relevant test file(s) until green
+   (`pnpm --filter @pca/frontend test -- <file>`). NEVER run a whole package suite
+   (`pnpm --filter @pca/backend test` without a file), coverage, build, or e2e — the
+   deterministic gates run those after you, and your runtime is HARD-KILLED at the
+   timeout: anything uncommitted at that moment is lost forever.
+6. COMMIT EARLY: make a WIP commit (`wip: <what> — {{IDENTIFIER}}`) BEFORE running any
+   test command, and a final conventional commit when green
    (`fix(<scope>): <what> — {{IDENTIFIER}}`). Do NOT push. Do NOT create branches, PRs, tags.
 7. If you discover the issue is already implemented or not reproducible, make NO changes,
    commit nothing, and say so in your summary.
