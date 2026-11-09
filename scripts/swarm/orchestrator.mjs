@@ -361,10 +361,14 @@ async function main() {
           if (gates.code !== 0) {
             if (round + 1 < MAX_ROUNDS) {
               reviewNotes = `The test gate failed (lint/format/typecheck/coverage/build). Output tail:\n${short(gates.all.slice(-1500), 1500)}`;
-              log(`  gates FAILED — feeding output back to the executor`);
+              log(
+                `  gates FAILED — feeding output back to the executor; tail: ${short(gates.all.slice(-500), 350)}`,
+              );
               continue;
             }
-            throw new Error(`gates failed after ${MAX_ROUNDS} rounds`);
+            throw new Error(
+              `gates failed after ${MAX_ROUNDS} rounds; last tail: ${short(gates.all.slice(-600), 500)}`,
+            );
           }
           log(`  gates green`);
 

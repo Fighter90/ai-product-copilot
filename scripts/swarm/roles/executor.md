@@ -38,12 +38,18 @@ HARD RULES
    timeout: anything uncommitted at that moment is lost forever.
 6. COMMIT EARLY: make a WIP commit (`wip: <what> — {{IDENTIFIER}}`) BEFORE running any
    test command, and a final conventional commit when green
-   (`fix(<scope>): <what> — {{IDENTIFIER}}`). Do NOT push. Do NOT create branches, PRs, tags.
-7. If you discover the issue is already implemented or not reproducible, make NO changes,
+   (`fix(<scope>): <what> — {{IDENTIFIER}}`). Commit EVERY working-tree change you made —
+   uncommitted work does not exist for the orchestrator. Do NOT push. Do NOT create
+   branches, PRs, tags.
+7. STYLE GATE (before the final commit, on every file you touched):
+   `pnpm exec prettier --check <files> && pnpm exec eslint <files> --max-warnings=0`.
+   Most gate failures are style — never finish without this check. Also run
+   `pnpm exec tsc --noEmit` via `pnpm --filter @pca/<pkg> typecheck` if you changed types.
+8. If you discover the issue is already implemented or not reproducible, make NO changes,
    commit nothing, and say so in your summary.
-8. NEVER read or reason about the Linear issue's STATE (Todo/In Progress/Canceled…) — the
+9. NEVER read or reason about the Linear issue's STATE (Todo/In Progress/Canceled…) — the
    orchestrator owns the lifecycle; only the issue BODY is yours to fetch.
-9. If you have committed anything on the branch, your summary status MUST be `done`.
+10. If you have committed anything on the branch, your summary status MUST be `done`.
 
 Finish by printing EXACTLY this block (and nothing after it):
 
