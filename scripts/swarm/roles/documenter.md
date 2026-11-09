@@ -12,10 +12,11 @@ DIFF STAT (files changed):
 Print EXACTLY this block (and nothing after it):
 
 CHLOG_FIXED:
+
 - <one markdown bullet IN RUSSIAN: what changed and why it matters, <= 40 words, starts
   with a bold keyword like **Исправлено** or **Добавлено**; no line breaks inside>
-CHLOG_NOTES:
+  CHLOG_NOTES:
 - <one markdown bullet IN RUSSIAN starting with "Намеренно не изменено:" naming the closest
   non-goal (a word containing "не" or "НЕ" must appear)>
-STORY:
-<3 sentences max IN RUSSIAN: what was wrong, what the swarm did, what the user gets now.>
+  STORY:
+  <3 sentences max IN RUSSIAN: what was wrong, what the swarm did, what the user gets now.>

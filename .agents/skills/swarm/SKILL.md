@@ -1,6 +1,6 @@
 ---
 name: swarm
-description: "Launch the yandex-metrika-analyse-dashboard agent swarm: tasks from Linear (workspace analitics-platform, team ANA, state Todo + label `swarm`) are carried automatically through develop → gates → review → document → release (PR, CI, version, tag, GitHub Release) → Linear Done. Use when the user says «запусти рой», «запусти навык Рой», «run the swarm», «swarm run», «подхвати роем», or asks to process swarm-labeled Linear tasks."
+description: 'Launch the yandex-metrika-analyse-dashboard agent swarm: tasks from Linear (workspace analitics-platform, team ANA, state Todo + label `swarm`) are carried automatically through develop → gates → review → document → release (PR, CI, version, tag, GitHub Release) → Linear Done. Use when the user says «запусти рой», «запусти навык Рой», «run the swarm», «swarm run», «подхвати роем», or asks to process swarm-labeled Linear tasks.'
 ---
 
 # Swarm run

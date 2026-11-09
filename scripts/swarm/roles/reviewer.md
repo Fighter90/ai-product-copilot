@@ -10,6 +10,7 @@ The full diff vs the base branch is provided below between <DIFF> tags. The comm
 is the first line inside the diff header.
 
 REVIEW CHECKLIST (judge only what the diff touches)
+
 1. Correctness: does the change actually implement the issue? Logic errors, wrong keys,
    broken paths, dead code left behind.
 2. Tests: behavior changes must come with red-first tests; pure refactors may skip them.
@@ -25,6 +26,7 @@ REVIEW CHECKLIST (judge only what the diff touches)
 5. Honesty: does the summary claim things the diff does not do?
 
 VERDICT RULES
+
 - ACCEPT only if you would merge this to main without further changes.
 - RETURN with concrete, actionable notes otherwise (file:line + what to change).
 - Do NOT rewrite the code yourself. Do NOT run the test suite. Judge the diff.

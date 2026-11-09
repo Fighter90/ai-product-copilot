@@ -9,8 +9,14 @@ import assert from 'node:assert/strict';
 import { parsePickOutput } from './orchestrator.mjs';
 
 test('parses a real pick line', () => {
-  const issue = parsePickOutput('blah\nSWARM_PICK::uuid-1::ANA-123::Фикс воронки: агрегация URL\ntrailer');
-  assert.deepEqual(issue, { id: 'uuid-1', identifier: 'ANA-123', title: 'Фикс воронки: агрегация URL' });
+  const issue = parsePickOutput(
+    'blah\nSWARM_PICK::uuid-1::ANA-123::Фикс воронки: агрегация URL\ntrailer',
+  );
+  assert.deepEqual(issue, {
+    id: 'uuid-1',
+    identifier: 'ANA-123',
+    title: 'Фикс воронки: агрегация URL',
+  });
 });
 
 test('NONE means an empty queue', () => {
@@ -25,11 +31,20 @@ test('REFUSES the literal placeholder echo (the first-run regression)', () => {
 });
 
 test('REFUSES placeholder characters anywhere in the payload', () => {
-  assert.throws(() => parsePickOutput('SWARM_PICK::uuid::<ANA-1>::title'), /placeholder characters/);
-  assert.throws(() => parsePickOutput('SWARM_PICK::uuid::ANA-1::<title>'), /placeholder characters/);
+  assert.throws(
+    () => parsePickOutput('SWARM_PICK::uuid::<ANA-1>::title'),
+    /placeholder characters/,
+  );
+  assert.throws(
+    () => parsePickOutput('SWARM_PICK::uuid::ANA-1::<title>'),
+    /placeholder characters/,
+  );
 });
 
 test('REFUSES garbage that does not name an issue', () => {
-  assert.throws(() => parsePickOutput('SWARM_PICK::uuid::hello world::title'), /non-issue identifier/);
+  assert.throws(
+    () => parsePickOutput('SWARM_PICK::uuid::hello world::title'),
+    /non-issue identifier/,
+  );
   assert.throws(() => parsePickOutput('no marker at all'), /cannot parse/);
 });

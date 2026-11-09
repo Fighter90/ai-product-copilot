@@ -12,6 +12,7 @@ DESCRIPTION:
 This is development round {{ROUND}}.{{REVIEW_NOTES}}
 
 HARD RULES
+
 1. Red-first: if the issue changes behavior, add or extend a test FIRST, watch it fail,
    then fix. Frontend tests: vitest (`pnpm --filter @pca/frontend test`), backend: vitest
    (`pnpm --filter @pca/backend test`); run the narrowest file first
