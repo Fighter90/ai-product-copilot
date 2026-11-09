@@ -12,6 +12,7 @@
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
+    "test:ci": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm coverage && pnpm build && node --test scripts/swarm/orchestrator.test.mjs",
     "coverage": "pnpm -r --if-present coverage",
     "e2e": "playwright test",
     "seed": "pnpm --filter @pca/backend seed",
