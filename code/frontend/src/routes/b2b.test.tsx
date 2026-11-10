@@ -38,7 +38,7 @@ describe('B2bView', () => {
     );
   });
 
-  it('renders the page and the full table without Cyrillic in EN', () => {
+  it('renders the page and the full table without Cyrillic in EN', async () => {
     setTestLocale('en');
     const h = handlers();
     render(<B2bView deals={deals} {...h} />);
@@ -50,12 +50,40 @@ describe('B2bView', () => {
     expect(screen.getByText('B2B deals')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Stage SmallCo'), { target: { value: 'invoiced' } });
     expect(h.onStageChange).toHaveBeenCalledWith({ id: 2, stage: 'invoiced' });
-    // БАГ-03: удаление — с подтверждением.
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    // БАГ-03 + ANA-120: удаление — через styled ConfirmDialog, не window.confirm().
+    const confirmSpy = vi.spyOn(window, 'confirm');
     fireEvent.click(screen.getByRole('button', { name: 'Delete BigCorp' }));
-    expect(confirmSpy).toHaveBeenCalled();
+    // The styled dialog names the deal and its tickets; the native confirm is never called.
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('confirm-body')).toHaveTextContent(
+      'Delete the deal “BigCorp” (20 tickets)?',
+    );
+    // Accept removes the deal.
+    fireEvent.click(screen.getByTestId('confirm-accept'));
     expect(h.onRemove).toHaveBeenCalledWith(1);
     expectNoCyrillic(document.body);
+  });
+
+  it('ANA-120: deal removal asks via the styled ConfirmDialog (not window.confirm)', () => {
+    const h = handlers();
+    const confirmSpy = vi.spyOn(window, 'confirm');
+    render(<B2bView deals={deals} {...h} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть полную таблицу (2)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить BigCorp' }));
+    // The styled dialog names the deal and its tickets; the native confirm is never called.
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('confirm-body')).toHaveTextContent(
+      'Удалить сделку «BigCorp» (20 билетов)?',
+    );
+    // Cancel keeps the deal.
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
+    expect(h.onRemove).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('confirm-body')).not.toBeInTheDocument();
+    // Accept removes the deal.
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить BigCorp' }));
+    fireEvent.click(screen.getByTestId('confirm-accept'));
+    expect(h.onRemove).toHaveBeenCalledWith(1);
+    confirmSpy.mockRestore();
   });
 
   it('adds a deal with an amount and edits the amount inline (ANA-50)', () => {
