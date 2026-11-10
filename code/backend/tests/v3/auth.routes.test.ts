@@ -439,6 +439,80 @@ describe('admin users management', () => {
     ).toBe(404);
   });
 
+  it('DELETE /api/users/:id removes a user, revokes their sessions and audits; 404 unknown (ANA-123)', async () => {
+    ctx = await build();
+    const cookie = await adminCookie();
+    const analystId = ctx.repo.getByEmail('analyst@x.ru')!.id;
+    const token = ctx.repo.createSession(analystId, 7);
+
+    const res = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/users/${analystId}`,
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    expect(ctx.repo.getById(analystId)).toBeUndefined();
+    expect(ctx.repo.userBySession(token)).toBeUndefined(); // revoked
+    const audit = ctx.repo.listAudit(1)[0]!;
+    expect(audit.action).toBe('users.delete');
+    expect(audit.target).toBe('analyst@x.ru');
+
+    expect(
+      (
+        await ctx.app.inject({ method: 'DELETE', url: '/api/users/999', headers: { cookie } })
+      ).statusCode,
+    ).toBe(404);
+  });
+
+  it('DELETE /api/users/:id: analyst → 403; self-delete → 409 SELF_DELETE; last active admin → 409 LAST_ADMIN (ANA-123)', async () => {
+    ctx = await build();
+    const adminId = ctx.repo.getByEmail(ADMIN.email)!.id;
+    const adminCookieStr = await adminCookie();
+    const analystCookie = (
+      await login('analyst@x.ru', ANALYST_PASSWORD)
+    ).headers['set-cookie'] as string;
+
+    const forbidden = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/users/${adminId}`,
+      headers: { cookie: analystCookie },
+    });
+    expect(forbidden.statusCode).toBe(403);
+    expect(forbidden.json().code).toBe('ADMIN_ONLY');
+
+    const self = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/users/${adminId}`,
+      headers: { cookie: adminCookieStr },
+    });
+    expect(self.statusCode).toBe(409);
+    expect(self.json().code).toBe('SELF_DELETE');
+
+    // A single active admin cannot be deleted by another admin; with a second active admin it works.
+    const second = ctx.repo.create({
+      email: 'second@x.ru',
+      name: 'S',
+      role: 'admin',
+      password: 'second-pass-123',
+    });
+    const lastAdmin = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/users/${adminId}`,
+      headers: { cookie: adminCookieStr },
+    });
+    expect(lastAdmin.statusCode).toBe(409);
+    expect(lastAdmin.json().code).toBe('LAST_ADMIN');
+
+    const ok = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/users/${second.id}`,
+      headers: { cookie: adminCookieStr },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ctx.repo.getById(second.id)).toBeUndefined();
+  });
+
   it('GET /api/admin/audit returns entries; limit is clamped to [1, 1000]', async () => {
     ctx = await build();
     const cookie = await adminCookie();

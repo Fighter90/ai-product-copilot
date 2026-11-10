@@ -73,6 +73,17 @@ describe('UsersRepo', () => {
     expect(repo.userBySession(token)).toBeUndefined();
   });
 
+  it('remove hard-deletes the user; sessions cascade; unknown id → undefined (ANA-123)', () => {
+    const repo = new UsersRepo(freshDb());
+    const u = repo.create({ email: 'a@b.ru', name: 'A', role: 'analyst', password: 'password-123' });
+    const token = repo.createSession(u.id, 7);
+    expect(repo.remove(u.id)).toMatchObject({ id: u.id, email: 'a@b.ru' });
+    expect(repo.getById(u.id)).toBeUndefined();
+    expect(repo.authenticate('a@b.ru', 'password-123')).toBeUndefined();
+    expect(repo.userBySession(token)).toBeUndefined(); // FK ON DELETE CASCADE
+    expect(repo.remove(999)).toBeUndefined();
+  });
+
   it('authenticate: ok / wrong password / unknown user / inactive user (all return undefined safely)', () => {
     const repo = new UsersRepo(freshDb());
     const u = repo.create({
