@@ -9,6 +9,13 @@ You are launching the agent swarm of this repository. The machinery lives in
 `scripts/swarm/` (orchestrator + role prompts, architecture in `scripts/swarm/README.md`).
 Your job is to preflight, launch, babysit, and report — the orchestrator does the rest.
 
+> **ГДЕ ЗАПУСКАТЬ (v2.1):** рой работает из отдельного клона
+> `~/Projects/.swarm/yamd` — чистое окружение без `data/`/`.env`, из которого executor'ы
+> физически не могут задеть пользовательский чекаут. Создание клона один раз:
+> `git clone https://github.com/Fighter90/ai-product-copilot.git ~/Projects/.swarm/yamd`,
+> затем связать node_modules основного чекаута (симлинк в корень клона и в `code/*/node_modules`)
+> и НЕ активировать hooksPath. Все команды ниже — из КЛОНА, не из пользовательского чекаута.
+
 ## 1. Preflight (all must pass)
 
 ```bash
