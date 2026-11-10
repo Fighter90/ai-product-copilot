@@ -372,6 +372,29 @@ async function main() {
               log(
                 `  reflog rescue: found lost work ${sha.slice(0, 9)} for ${issue.identifier} — cherry-picking`,
               );
+              // Probe emptiness first: if the patch is already contained in origin/main
+              // (e.g. an executor pushed it directly — run 8), the cherry-pick would come
+              // up empty and the old code misread that as "blocked", killing the run.
+              const probe = await sh(`git -C ${JSON.stringify(WT)} cherry-pick --no-commit ${sha}`);
+              let emptyPatch = false;
+              if (probe.code === 0) {
+                const isem = await sh(`git -C ${JSON.stringify(WT)} diff --cached --quiet`);
+                if (isem.code === 0) {
+                  emptyPatch = true;
+                  await sh(`git -C ${JSON.stringify(WT)} reset -q --hard HEAD`);
+                } else {
+                  await sh(`git -C ${JSON.stringify(WT)} reset -q --hard HEAD`);
+                }
+              } else {
+                await sh(`git -C ${JSON.stringify(WT)} cherry-pick --abort`);
+              }
+              if (emptyPatch) {
+                const ev = `**Already merged to main** — the rescued commit ${sha.slice(0, 9)} is content-identical to what origin/main already ships. Nothing left to ship.`;
+                await doneIssue(issue, ev);
+                log(`  rescued patch is empty — work already in origin/main: issue closed as Done`);
+                mergedDone = true;
+                break;
+              }
               const cp = await sh(`git -C ${JSON.stringify(WT)} cherry-pick ${sha}`);
               const after2 = parseInt(
                 (
