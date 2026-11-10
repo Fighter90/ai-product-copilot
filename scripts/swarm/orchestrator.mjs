@@ -100,7 +100,10 @@ function run(cmd, args_, { timeoutMs = 600_000, cwd = ROOT } = {}) {
   });
 }
 const sh = async (cmd, opts) => {
-  const r = await run('bash', ['-lc', cmd], opts);
+  // NOT a login shell (-l): .bash_profile reorders PATH to a system node with a different
+  // V8 ABI than the nvm node that compiled better-sqlite3 — every DB test then fails in
+  // mass (runs 1-8: 326 instant failures). `-c` inherits the operator's environment.
+  const r = await run('bash', ['-c', cmd], opts);
   log(`  $ ${cmd.slice(0, 140)} → ${r.code}`);
   return r;
 };
