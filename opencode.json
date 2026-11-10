@@ -1,17 +1,33 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": ["CLAUDE.md", "scripts/swarm/README.md"],
+  "instructions": [
+    "CLAUDE.md",
+    "scripts/swarm/README.md"
+  ],
   "agents": {
     "executor": {
       "description": "Swarm executor: implements ONE Linear issue strictly inside its cwd (the swarm worktree). git push, tags and the user's main checkout are forbidden.",
       "permissions": [
         {
           "action": "shell",
+          "resource": "cd /Users/sergejemelanov/Projects/.swarm/yamd*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
           "resource": "cd /Users/sergejemelanov/Projects/yandex-metrika-analyse-dashboard*",
           "effect": "deny"
         },
-        { "action": "shell", "resource": "git *push*", "effect": "deny" },
-        { "action": "shell", "resource": "git tag*", "effect": "deny" },
+        {
+          "action": "shell",
+          "resource": "git *push*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "git tag*",
+          "effect": "deny"
+        },
         {
           "action": "shell",
           "resource": "git -C /Users/sergejemelanov/Projects/yandex-metrika-analyse-dashboard*",
@@ -27,11 +43,31 @@
           "resource": "/Users/sergejemelanov/Projects/yandex-metrika-analyse-dashboard",
           "effect": "deny"
         },
-        { "action": "shell", "resource": "git checkout main*", "effect": "deny" },
-        { "action": "shell", "resource": "git checkout * main", "effect": "deny" },
-        { "action": "shell", "resource": "git switch *main*", "effect": "deny" },
-        { "action": "shell", "resource": "git reset *main*", "effect": "deny" },
-        { "action": "shell", "resource": "git branch -f main*", "effect": "deny" }
+        {
+          "action": "shell",
+          "resource": "git checkout main*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "git checkout * main",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "git switch *main*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "git reset *main*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "git branch -f main*",
+          "effect": "deny"
+        }
       ]
     }
   }
