@@ -1,11 +1,33 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": ["CLAUDE.md", "scripts/swarm/README.md"],
-  "permissions": [
-    { "action": "shell", "resource": "git push *", "effect": "deny" },
-    { "action": "shell", "resource": "git tag *", "effect": "deny" },
-    { "action": "shell", "resource": "gh pr merge *", "effect": "deny" },
-    { "action": "shell", "resource": "gh release create*", "effect": "deny" },
-    { "action": "shell", "resource": "gh workflow run*", "effect": "deny" }
-  ]
+  "agents": {
+    "executor": {
+      "description": "Swarm executor: implements ONE Linear issue strictly inside its cwd (the swarm worktree). git push, tags and the user's main checkout are forbidden.",
+      "permissions": [
+        {
+          "action": "shell",
+          "resource": "cd /Users/sergejemelanov/Projects/yandex-metrika-analyse-dashboard*",
+          "effect": "deny"
+        },
+        { "action": "shell", "resource": "git *push*", "effect": "deny" },
+        { "action": "shell", "resource": "git tag*", "effect": "deny" },
+        {
+          "action": "shell",
+          "resource": "git -C /Users/sergejemelanov/Projects/yandex-metrika-analyse-dashboard*",
+          "effect": "deny"
+        },
+        {
+          "action": "edit",
+          "resource": "/Users/sergejemelanov/Projects/yandex-metrika-analyse-dashboard/*",
+          "effect": "deny"
+        },
+        {
+          "action": "edit",
+          "resource": "/Users/sergejemelanov/Projects/yandex-metrika-analyse-dashboard",
+          "effect": "deny"
+        }
+      ]
+    }
+  }
 }

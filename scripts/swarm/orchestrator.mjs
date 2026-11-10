@@ -114,7 +114,10 @@ async function worker(role, vars, { timeoutMs = 40 * 60_000, cwd = ROOT } = {}) 
   let prompt = ROLES[role];
   for (const [k, v] of Object.entries(vars)) prompt = prompt.replaceAll(`{{${k}}}`, v ?? '');
   log(`  [${role}] worker started (timeout ${Math.round(timeoutMs / 60000)}m)`);
-  const r = await run('opencode', ['run', '--auto', prompt], { timeoutMs, cwd });
+  const r = await run('opencode', ['run', '--auto', '--agent', 'executor', prompt], {
+    timeoutMs,
+    cwd,
+  });
   const tail = r.all.slice(-4000);
   log(`  [${role}] finished code=${r.code}`);
   log(`  [${role}] tail: ${short(tail, 600)}`);
@@ -411,7 +414,7 @@ async function main() {
               const { writeFileSync: wrf } = await import('node:fs');
               wrf(resolve(STATE, 'rescue.patch'), net.out);
               const ap = await sh(
-                `git -C ${JSON.stringify(WT)} apply --whitespace=nowarn ${JSON.stringify(STATE + '/rescue.patch')}`,
+                `git -C ${JSON.stringify(WT)} apply --index --whitespace=nowarn ${JSON.stringify(STATE + '/rescue.patch')}`,
               );
               if (ap.code !== 0) throw new Error(`rescue apply failed: ${short(ap.all)}`);
               const cm = await sh(
@@ -543,7 +546,6 @@ async function main() {
         const ver = await bumpVersion(WT);
         log(`-- release manager: v${ver} (CHANGELOG + sync-versions)`);
         prependChangelog(WT, ver, fixed, notes);
-        const relCommit = await sh(
         // Non-fast-forward-safe: an operator commit may advance origin/main mid-run —
         // rebase the release commit onto the freshest main and retry once.
         let relCommit = await sh(
@@ -552,11 +554,12 @@ async function main() {
         );
         if (relCommit.code !== 0) {
           log('  release push rejected — rebasing onto origin/main and retrying');
-          await sh(`git -C ${JSON.stringify(WT)} fetch origin -q && git -C ${JSON.stringify(WT)} rebase origin/main`);
-          relCommit = await sh(
-            `git -C ${JSON.stringify(WT)} push -q origin HEAD:main`,
-            { timeoutMs: 300_000 },
+          await sh(
+            `git -C ${JSON.stringify(WT)} fetch origin -q && git -C ${JSON.stringify(WT)} rebase origin/main`,
           );
+          relCommit = await sh(`git -C ${JSON.stringify(WT)} push -q origin HEAD:main`, {
+            timeoutMs: 300_000,
+          });
         }
         if (relCommit.code !== 0) throw new Error(`release commit failed: ${short(relCommit.all)}`);
 
