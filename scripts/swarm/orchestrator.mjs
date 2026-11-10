@@ -201,11 +201,13 @@ async function refreshWorktree() {
     timeoutMs: 120_000,
   });
   if (r.code !== 0) throw new Error(`cannot create swarm worktree: ${short(r.all)}`);
+  const g = await sh(`git -C ${JSON.stringify(WT)} status --porcelain`);
+  if (g.out.trim()) throw new Error(`swarm worktree is not clean — aborting: ${short(g.out, 200)}`);
+  // Symlinks AFTER the clean check: git's `node_modules/` rule does not match a symlink
+  // (not a directory), so the links would show as untracked and trip the check above.
   await sh(
     `ln -sfn ${JSON.stringify(ROOT + '/node_modules')} ${JSON.stringify(WT + '/node_modules')} && for p in backend frontend shared; do mkdir -p ${JSON.stringify(WT + '/code')} && ln -sfn ${JSON.stringify(ROOT + '/code/' + '$p/node_modules')} ${JSON.stringify(WT + '/code/$p/node_modules')}; done`,
   );
-  const g = await sh(`git -C ${JSON.stringify(WT)} status --porcelain`);
-  if (g.out.trim()) throw new Error(`swarm worktree is not clean — aborting: ${short(g.out, 200)}`);
 }
 
 // Release version bump without npm: patch the root package.json (single source of truth;
