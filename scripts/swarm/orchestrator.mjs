@@ -222,6 +222,11 @@ const extractVerdict = (tail) => {
 // Recreate the swarm worktree at origin/main. Fresh per cycle: cheap (~1s), and by
 // construction free of data/, .env and any stale build state.
 async function refreshWorktree() {
+  await sh('git fetch origin -q', { timeoutMs: 120_000 });
+  // Detach the clone's root checkout from `main`: executors that cd to the clone root
+  // and commit would otherwise move local `main` (runs 12-14 committed to it via the
+  // shared path). On a detached root their stray commits become orphans, not main.
+  await sh('git checkout -q --detach origin/main');
   await sh(`rm -rf ${JSON.stringify(WT)} && git worktree prune`);
   const r = await sh(`git worktree add --detach ${JSON.stringify(WT)} origin/main`, {
     timeoutMs: 120_000,
