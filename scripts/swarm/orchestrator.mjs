@@ -418,6 +418,22 @@ async function main() {
                 }
                 const { writeFileSync: wrf } = await import('node:fs');
                 wrf(resolve(STATE, 'rescue.patch'), net.out);
+                // Squash-merges (every swarm PR) never make the branch's original commits
+                // ancestors of main — ancestry-based "already merged" detection misses
+                // them (run 21). Canonical test: if the patch applies in REVERSE, its
+                // content is already on main.
+                const rev = await sh(
+                  `git -C ${JSON.stringify(WT)} apply --check --index --reverse --whitespace=nowarn ${JSON.stringify(STATE + '/rescue.patch')}`,
+                );
+                if (rev.code === 0) {
+                  const ev = `**Already merged to main** — branch tip ${tip.slice(0, 9)} reverse-applies cleanly: its content reached main via a squash-merged PR (e.g. #170) and shipped in a release. Nothing left to ship.`;
+                  await doneIssue(issue, ev);
+                  log(
+                    `  rescue patch reverse-applies — work already in origin/main: issue closed as Done`,
+                  );
+                  mergedDone = true;
+                  break;
+                }
                 const chk = await sh(
                   `git -C ${JSON.stringify(WT)} apply --check --index --whitespace=nowarn ${JSON.stringify(STATE + '/rescue.patch')}`,
                 );
