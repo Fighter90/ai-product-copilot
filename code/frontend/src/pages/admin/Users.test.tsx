@@ -8,6 +8,7 @@ vi.mock('../../lib/api-v3', () => ({
     createUser: vi.fn(),
     updateUser: vi.fn(),
     resetPassword: vi.fn(),
+    deleteUser: vi.fn(),
     adminCounters: vi.fn(),
     adminUserCounters: vi.fn(),
     setUserCounters: vi.fn(),
@@ -178,5 +179,58 @@ describe('Users → counter access (ANA-29)', () => {
     await waitFor(() =>
       expect(v3.createUser).toHaveBeenCalledWith({ email: 'n@x.ru', name: 'Н', role: 'admin' }),
     );
+  });
+});
+
+describe('Users → delete a user (ANA-123)', () => {
+  beforeEach(() => {
+    vi.mocked(v3.users).mockResolvedValue(users);
+    vi.mocked(v3.adminCounters).mockResolvedValue(counters);
+    vi.mocked(v3.adminUserCounters).mockResolvedValue({ 2: [COUNTER] });
+    vi.mocked(v3.deleteUser).mockResolvedValue({ ok: true });
+  });
+
+  it('own row has no delete button; other rows do', async () => {
+    renderWithProviders(<Users />);
+    await screen.findByText('an@x.ru');
+    const ownRow = screen.getByText('admin@x.ru').closest('tr')!;
+    const otherRow = screen.getByText('an@x.ru').closest('tr')!;
+    expect(within(ownRow).queryByRole('button', { name: 'Удалить' })).toBeNull();
+    expect(within(otherRow).getByRole('button', { name: 'Удалить' })).toBeInTheDocument();
+  });
+
+  it('delete opens a confirmation dialog; only confirming calls v3.deleteUser', async () => {
+    renderWithProviders(<Users />);
+    await screen.findByText('an@x.ru');
+    fireEvent.click(within(screen.getByText('an@x.ru').closest('tr')!).getByRole('button', {
+      name: 'Удалить',
+    }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('Ana');
+    expect(dialog).toHaveTextContent('an@x.ru');
+    expect(v3.deleteUser).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('confirm-accept'));
+    await waitFor(() => expect(v3.deleteUser).toHaveBeenCalledWith(2));
+  });
+
+  it('cancelling the dialog deletes nothing', async () => {
+    renderWithProviders(<Users />);
+    await screen.findByText('an@x.ru');
+    fireEvent.click(within(screen.getByText('an@x.ru').closest('tr')!).getByRole('button', {
+      name: 'Удалить',
+    }));
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(v3.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('successful deletion shows a notice with the user name', async () => {
+    renderWithProviders(<Users />);
+    await screen.findByText('an@x.ru');
+    fireEvent.click(within(screen.getByText('an@x.ru').closest('tr')!).getByRole('button', {
+      name: 'Удалить',
+    }));
+    fireEvent.click(screen.getByTestId('confirm-accept'));
+    expect(await screen.findByRole('status')).toHaveTextContent('Ana');
   });
 });
