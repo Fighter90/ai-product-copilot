@@ -105,6 +105,8 @@ const sh = async (cmd, opts) => {
   // mass (runs 1-8: 326 instant failures). `-c` inherits the operator's environment.
   const r = await run('bash', ['-c', cmd], opts);
   log(`  $ ${cmd.slice(0, 140)} → ${r.code}`);
+  // A failing git/gh/pnpm step must never die silently — its stderr is the diagnosis.
+  if (r.code !== 0) log(`  ! ${short(r.all, 300)}`);
   return r;
 };
 
@@ -367,67 +369,58 @@ async function main() {
               `git -C ${JSON.stringify(WT)} log --all --grep="${issue.identifier}" --pretty=%H -5`,
               { timeoutMs: 60_000 },
             );
-            let sha = '',
-              mergedSha = '';
+            let mergedSha = '';
+            const freshTips = [];
             for (const cand of found.out.trim().split('\n')) {
               if (!/^[0-9a-f]{7,40}$/.test(cand)) continue;
               const anc = await sh(
                 `git -C ${JSON.stringify(WT)} merge-base --is-ancestor ${cand} origin/main && echo ancestor || echo fresh`,
               );
               if (anc.out.includes('fresh')) {
-                sha = cand;
-                break;
-              } // newest non-merged match
-              if (!mergedSha) mergedSha = cand; // newest already-merged match
+                freshTips.push(cand); // newest-first (--all order)
+              } else if (!mergedSha) {
+                mergedSha = cand; // newest already-merged match
+              }
             }
-            if (!sha && mergedSha) {
+            if (!freshTips.length && mergedSha) {
               const ev = `**Already merged to main** — the executor's work is commit ${mergedSha.slice(0, 9)} (an ancestor of origin/main; CI green on the containing run). Nothing left to ship.`;
               await doneIssue(issue, ev);
               log(`already merged: ${mergedSha.slice(0, 9)} — issue closed as Done`);
               mergedDone = true;
               break;
             }
-            if (sha) {
+            if (freshTips.length) {
+              // Restore the branch's NET diff (all its commits at once). Cherry-picking
+              // only the newest commit conflicts against main whenever the branch had
+              // wip→final commits (run 12: ANA-123 — the final commit assumed the wip
+              // content as its base).
+              const tip = freshTips[0];
               log(
-                `  reflog rescue: found lost work ${sha.slice(0, 9)} for ${issue.identifier} — cherry-picking`,
+                `  reflog rescue: restoring branch work for ${issue.identifier} — ${freshTips.length} commit(s), tip ${tip.slice(0, 9)}`,
               );
-              // Probe emptiness first: if the patch is already contained in origin/main
-              // (e.g. an executor pushed it directly — run 8), the cherry-pick would come
-              // up empty and the old code misread that as "blocked", killing the run.
-              const probe = await sh(`git -C ${JSON.stringify(WT)} cherry-pick --no-commit ${sha}`);
-              let emptyPatch = false;
-              if (probe.code === 0) {
-                const isem = await sh(`git -C ${JSON.stringify(WT)} diff --cached --quiet`);
-                if (isem.code === 0) {
-                  emptyPatch = true;
-                  await sh(`git -C ${JSON.stringify(WT)} reset -q --hard HEAD`);
-                } else {
-                  await sh(`git -C ${JSON.stringify(WT)} reset -q --hard HEAD`);
-                }
-              } else {
-                await sh(`git -C ${JSON.stringify(WT)} cherry-pick --abort`);
-              }
-              if (emptyPatch) {
-                const ev = `**Already merged to main** — the rescued commit ${sha.slice(0, 9)} is content-identical to what origin/main already ships. Nothing left to ship.`;
+              const net = await sh(`git -C ${JSON.stringify(WT)} diff origin/main...${tip}`);
+              if (!net.out.trim()) {
+                const ev = `**Already merged to main** — branch tip ${tip.slice(0, 9)} is content-identical to origin/main. Nothing left to ship.`;
                 await doneIssue(issue, ev);
-                log(`  rescued patch is empty — work already in origin/main: issue closed as Done`);
+                log(
+                  `  rescue net-diff is empty — work already in origin/main: issue closed as Done`,
+                );
                 mergedDone = true;
                 break;
               }
-              const cp = await sh(`git -C ${JSON.stringify(WT)} cherry-pick ${sha}`);
-              const after2 = parseInt(
-                (
-                  await sh(`git -C ${JSON.stringify(WT)} rev-list --count origin/main..HEAD`)
-                ).out.trim() || '0',
-                10,
+              const { writeFileSync: wrf } = await import('node:fs');
+              wrf(resolve(STATE, 'rescue.patch'), net.out);
+              const ap = await sh(
+                `git -C ${JSON.stringify(WT)} apply --whitespace=nowarn ${JSON.stringify(STATE + '/rescue.patch')}`,
               );
-              if (cp.code === 0 && after2 > 0) {
-                devStatus = 'done';
-                devSummary = `(rescued from lost branch commit ${sha.slice(0, 9)}) ${devSummary}`;
-                log(`  rescued: ${after2} commit(s) on the branch — proceeding to gates`);
-              } else {
-                await sh(`git -C ${JSON.stringify(WT)} cherry-pick --abort`);
-              }
+              if (ap.code !== 0) throw new Error(`rescue apply failed: ${short(ap.all)}`);
+              const cm = await sh(
+                `git -C ${JSON.stringify(WT)} commit -q -m "restore: branch work for ${issue.identifier} (net diff of ${freshTips.length} commit(s), tip ${tip.slice(0, 9)})"`,
+              );
+              if (cm.code !== 0) throw new Error(`rescue commit failed: ${short(cm.all)}`);
+              devStatus = 'done';
+              devSummary = `(rescued branch work: ${freshTips.length} commit(s), tip ${tip.slice(0, 9)}) ${devSummary}`;
+              log(`  rescued: branch restored — proceeding to gates`);
             }
           }
           if (devStatus !== 'done') break;
