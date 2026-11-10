@@ -544,9 +544,20 @@ async function main() {
         log(`-- release manager: v${ver} (CHANGELOG + sync-versions)`);
         prependChangelog(WT, ver, fixed, notes);
         const relCommit = await sh(
+        // Non-fast-forward-safe: an operator commit may advance origin/main mid-run —
+        // rebase the release commit onto the freshest main and retry once.
+        let relCommit = await sh(
           `git -C ${JSON.stringify(WT)} add -A && git -C ${JSON.stringify(WT)} commit -q -m "release: v${ver} (swarm ${issue.identifier})" && git -C ${JSON.stringify(WT)} push -q origin HEAD:main`,
           { timeoutMs: 300_000 },
         );
+        if (relCommit.code !== 0) {
+          log('  release push rejected — rebasing onto origin/main and retrying');
+          await sh(`git -C ${JSON.stringify(WT)} fetch origin -q && git -C ${JSON.stringify(WT)} rebase origin/main`);
+          relCommit = await sh(
+            `git -C ${JSON.stringify(WT)} push -q origin HEAD:main`,
+            { timeoutMs: 300_000 },
+          );
+        }
         if (relCommit.code !== 0) throw new Error(`release commit failed: ${short(relCommit.all)}`);
 
         log('-- release manager: watch CI + E2E on main');
