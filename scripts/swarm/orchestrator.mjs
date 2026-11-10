@@ -401,34 +401,58 @@ async function main() {
               // Restore the branch's NET diff (all its commits at once). Cherry-picking
               // only the newest commit conflicts against main whenever the branch had
               // wip→final commits (run 12: ANA-123 — the final commit assumed the wip
-              // content as its base).
-              const tip = freshTips[0];
-              log(
-                `  reflog rescue: restoring branch work for ${issue.identifier} — ${freshTips.length} commit(s), tip ${tip.slice(0, 9)}`,
-              );
-              const net = await sh(`git -C ${JSON.stringify(WT)} diff origin/main...${tip}`);
-              if (!net.out.trim()) {
-                const ev = `**Already merged to main** — branch tip ${tip.slice(0, 9)} is content-identical to origin/main. Nothing left to ship.`;
-                await doneIssue(issue, ev);
-                log(
-                  `  rescue net-diff is empty — work already in origin/main: issue closed as Done`,
+              // content as its base). Stale tips from older runs may no longer apply —
+              // so try every fresh tip and take the first whose patch applies cleanly
+              // (run 20: a 3-commit stale tip conflicted while the older tip applied).
+              let rescued = false;
+              for (const tip of freshTips) {
+                const net = await sh(`git -C ${JSON.stringify(WT)} diff origin/main...${tip}`);
+                if (!net.out.trim()) {
+                  const ev = `**Already merged to main** — branch tip ${tip.slice(0, 9)} is content-identical to origin/main. Nothing left to ship.`;
+                  await doneIssue(issue, ev);
+                  log(
+                    `  rescue net-diff is empty — work already in origin/main: issue closed as Done`,
+                  );
+                  mergedDone = true;
+                  break;
+                }
+                const { writeFileSync: wrf } = await import('node:fs');
+                wrf(resolve(STATE, 'rescue.patch'), net.out);
+                const chk = await sh(
+                  `git -C ${JSON.stringify(WT)} apply --check --index --whitespace=nowarn ${JSON.stringify(STATE + '/rescue.patch')}`,
                 );
-                mergedDone = true;
+                if (chk.code !== 0) {
+                  log(
+                    `  tip ${tip.slice(0, 9)} net-diff does not apply to current main — trying next candidate`,
+                  );
+                  continue;
+                }
+                const ap = await sh(
+                  `git -C ${JSON.stringify(WT)} apply --index --whitespace=nowarn ${JSON.stringify(STATE + '/rescue.patch')}`,
+                );
+                if (ap.code !== 0) throw new Error(`rescue apply failed: ${short(ap.all)}`);
+                const cm = await sh(
+                  `git -C ${JSON.stringify(WT)} commit -q -m "restore: branch work for ${issue.identifier} (net diff, tip ${tip.slice(0, 9)})"`,
+                );
+                if (cm.code !== 0) throw new Error(`rescue commit failed: ${short(cm.all)}`);
+                devStatus = 'done';
+                devSummary = `(rescued branch work, tip ${tip.slice(0, 9)}) ${devSummary}`;
+                log(`  rescued: branch restored from tip ${tip.slice(0, 9)} — proceeding to gates`);
+                rescued = true;
                 break;
               }
-              const { writeFileSync: wrf } = await import('node:fs');
-              wrf(resolve(STATE, 'rescue.patch'), net.out);
-              const ap = await sh(
-                `git -C ${JSON.stringify(WT)} apply --index --whitespace=nowarn ${JSON.stringify(STATE + '/rescue.patch')}`,
-              );
-              if (ap.code !== 0) throw new Error(`rescue apply failed: ${short(ap.all)}`);
-              const cm = await sh(
-                `git -C ${JSON.stringify(WT)} commit -q -m "restore: branch work for ${issue.identifier} (net diff of ${freshTips.length} commit(s), tip ${tip.slice(0, 9)})"`,
-              );
-              if (cm.code !== 0) throw new Error(`rescue commit failed: ${short(cm.all)}`);
-              devStatus = 'done';
-              devSummary = `(rescued branch work: ${freshTips.length} commit(s), tip ${tip.slice(0, 9)}) ${devSummary}`;
-              log(`  rescued: branch restored — proceeding to gates`);
+              if (mergedDone || rescued) {
+                if (mergedDone) break;
+              } else {
+                await failIssue(
+                  issue,
+                  'rescue',
+                  `none of ${freshTips.length} orphaned branch tip(s) apply cleanly onto current main — manual merge needed`,
+                );
+                throw new Error(
+                  `rescue: none of the ${freshTips.length} orphaned tip(s) apply cleanly (see .task-board/gates-last.log / rescue.patch)`,
+                );
+              }
             }
           }
           if (devStatus !== 'done') break;
