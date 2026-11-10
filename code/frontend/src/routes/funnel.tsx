@@ -46,7 +46,9 @@ function channelCrOption(channels: ChannelStat[], t: TFn, locale: Locale): objec
         return `${p.name}<br/>CR: ${formatPercent(p.value)}`;
       },
     },
-    grid: { left: 120, right: 16, top: 32, bottom: 28 },
+    // ANA-124: containLabel reserves the y-axis gutter from the actual channel names —
+    // the fixed left: 120 clipped long RU channel names (pattern from lib/traffic.ts).
+    grid: { left: 8, right: 16, top: 32, bottom: 8, containLabel: true },
     xAxis: { type: 'value', axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%` } },
     yAxis: { type: 'category', data: rows.map((r) => channelName(r.channel, locale)) },
     series: [

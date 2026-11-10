@@ -129,7 +129,8 @@ export function hasFunnelData(stages: readonly FunnelStage[]): boolean {
  * is guarded to ≥1 (an all-zero funnel would otherwise produce NaN sizes — the «empty white
  * block»), `minSize` keeps stages that are 100× smaller visible instead of collapsing them to 0,
  * and `sort: 'none'` preserves the logical stage order. Each label carries the absolute value and
- * the share of the previous stage.
+ * the share of the previous stage, wrapped at a fixed width so narrow stages keep the text
+ * readable (ANA-124).
  */
 // i18n: ignore — legacy default; every production call site passes t('an.fn.funnel.prevShort').
 export function funnelOption(stages: FunnelStage[], prevLabel = 'от пред.'): object {
@@ -161,6 +162,10 @@ export function funnelOption(stages: FunnelStage[], prevLabel = 'от пред.'
           color: '#ffffff',
           textBorderColor: 'transparent',
           lineHeight: 16,
+          // ANA-124: three stacked lines overflow a narrow stage — break long lines
+          // at `width` px instead of clipping them (overflow only works with a width).
+          overflow: 'break',
+          width: 128,
         },
         data: stages.map((s, i) => ({
           name: s.label,
