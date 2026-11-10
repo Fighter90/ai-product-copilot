@@ -4,10 +4,19 @@
 // prompt templates (scripts/swarm/roles/*.md); every git/gh/pnpm step is deterministic
 // code. See scripts/swarm/README.md (ru) for the architecture.
 //
-// Usage:  node scripts/swarm/orchestrator.mjs [--max N] [--dry-run] [--no-release] [--rounds N]
+// ISOLATION (v2, lessons of runs 1-7): ALL cycle work happens in a dedicated git
+// worktree `.swarm-worktree` — never in the user's checkout. The user's tree keeps
+// their `data/` SQLite, `.env` tokens and possibly a live dev server; backend tests
+// against that state fail in mass regardless of code quality (runs 4-7: 326 instant
+// failures in 34 files; the same commits are 884/884 green in a clean checkout). The
+// worktree is clean by construction — exactly the conditions where gates are honest.
+// It also means operator commits to main can't be hijacked by the swarm's branch
+// checkouts (run 7: the -B reset orphaned an operator commit and turned pushes of
+// main into silent no-ops).
+//
+// Usage:  node scripts/swarm/orchestrator.mjs [--max N] [--dry-run] [--no-release] [--rounds N] [--requeue ANA-xxx]
 // Safety: claims only Linear issues labeled `swarm` in Todo (team Analitics-platform/ANA);
-//         refuses a dirty tree; single-instance lock in .task-board/; failures comment on
-//         the issue. Adapted from the career-ops-ui swarm (scripts/swarm in that repo).
+//         single-instance lock in .task-board/; failures comment on the issue.
 
 import { spawn } from 'node:child_process';
 import {
@@ -27,6 +36,7 @@ const ROOT = process.cwd();
 const SWARM = resolve(ROOT, 'scripts/swarm');
 const STATE = resolve(ROOT, '.task-board');
 const LOGS = resolve(STATE, 'log');
+const WT = resolve(ROOT, '.swarm-worktree'); // the ONLY place the swarm touches
 const LABEL = 'swarm';
 
 const args = process.argv.slice(2);
@@ -86,24 +96,20 @@ function run(cmd, args_, { timeoutMs = 600_000, cwd = ROOT } = {}) {
     p.stderr.on('data', (d) => {
       err += d;
     });
-    p.on('close', (code) => {
-      clearTimeout(t);
-      clearTimeout(t2);
-      res({ code, out, err, all: out + err });
-    });
+    p.on('close', (code) => finish(code));
   });
 }
 const sh = async (cmd, opts) => {
   const r = await run('bash', ['-lc', cmd], opts);
-  log(`  $ ${cmd.slice(0, 120)} → ${r.code}`);
+  log(`  $ ${cmd.slice(0, 140)} → ${r.code}`);
   return r;
 };
 
-async function worker(role, vars, { timeoutMs = 40 * 60_000 } = {}) {
+async function worker(role, vars, { timeoutMs = 40 * 60_000, cwd = ROOT } = {}) {
   let prompt = ROLES[role];
   for (const [k, v] of Object.entries(vars)) prompt = prompt.replaceAll(`{{${k}}}`, v ?? '');
   log(`  [${role}] worker started (timeout ${Math.round(timeoutMs / 60000)}m)`);
-  const r = await run('opencode', ['run', '--auto', prompt], { timeoutMs });
+  const r = await run('opencode', ['run', '--auto', prompt], { timeoutMs, cwd });
   const tail = r.all.slice(-4000);
   log(`  [${role}] finished code=${r.code}`);
   log(`  [${role}] tail: ${short(tail, 600)}`);
@@ -186,10 +192,26 @@ const extractVerdict = (tail) => {
   return { verdict: 'RETURN', notes: 'reviewer produced no verdict — treat as RETURN' };
 };
 
+// Recreate the swarm worktree at origin/main. Fresh per cycle: cheap (~1s), and by
+// construction free of data/, .env and any stale build state.
+async function refreshWorktree() {
+  await sh('git worktree prune');
+  await sh(`rm -rf ${JSON.stringify(WT)}`);
+  const r = await sh(`git worktree add --detach ${JSON.stringify(WT)} origin/main`, {
+    timeoutMs: 120_000,
+  });
+  if (r.code !== 0) throw new Error(`cannot create swarm worktree: ${short(r.all)}`);
+  await sh(
+    `ln -sfn ${JSON.stringify(ROOT + '/node_modules')} ${JSON.stringify(WT + '/node_modules')} && for p in backend frontend shared; do mkdir -p ${JSON.stringify(WT + '/code')} && ln -sfn ${JSON.stringify(ROOT + '/code/' + '$p/node_modules')} ${JSON.stringify(WT + '/code/$p/node_modules')}; done`,
+  );
+  const g = await sh(`git -C ${JSON.stringify(WT)} status --porcelain`);
+  if (g.out.trim()) throw new Error(`swarm worktree is not clean — aborting: ${short(g.out, 200)}`);
+}
+
 // Release version bump without npm: patch the root package.json (single source of truth;
 // workspace packages are 0.0.0 and ignored), then propagate version markers into docs.
-async function bumpVersion() {
-  const pkgPath = resolve(ROOT, 'package.json');
+async function bumpVersion(base) {
+  const pkgPath = resolve(base, 'package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
   const [maj, min, pat] = String(pkg.version)
     .split('.')
@@ -197,16 +219,16 @@ async function bumpVersion() {
   const ver = `${maj}.${min}.${pat + 1}`;
   pkg.version = ver;
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-  const sync = await sh('pnpm sync-versions', { timeoutMs: 120_000 });
+  const sync = await sh(`cd ${JSON.stringify(base)} && pnpm sync-versions`, { timeoutMs: 120_000 });
   if (sync.code !== 0) throw new Error(`sync-versions failed: ${short(sync.all)}`);
   return ver;
 }
 
 // Insert the release entry after the `## [Unreleased]` block (Keep-a-Changelog, RU).
-function prependChangelog(ver, fixed, notes) {
+function prependChangelog(base, ver, fixed, notes) {
   const today = new Date().toISOString().slice(0, 10);
   const entry = `\n## [${ver}] - ${today}\n\n### Fixed\n\n${fixed}\n\n### Notes\n\n${notes}\n`;
-  const path = resolve(ROOT, 'CHANGELOG.md');
+  const path = resolve(base, 'CHANGELOG.md');
   const text = readFileSync(path, 'utf8');
   const marker = '## [Unreleased]';
   const i = text.indexOf(marker);
@@ -252,9 +274,8 @@ async function main() {
       logFile = resolve(LOGS, `cycle-${Date.now()}.log`);
       log(`=== task ${n + 1}/${MAX_TASKS} ===`);
 
-      const clean = await sh('git status --porcelain');
-      if (clean.out.trim()) throw new Error('working tree is not clean — aborting before pick');
-      await sh('git fetch origin -q && git checkout -q main && git reset --hard origin/main');
+      await sh('git fetch origin -q', { timeoutMs: 120_000 });
+      await refreshWorktree();
 
       const issue = await pickIssue();
       if (!issue) {
@@ -286,19 +307,25 @@ async function main() {
         let round = 0;
         for (; round < MAX_ROUNDS; round++) {
           log(`-- round ${round + 1}/${MAX_ROUNDS}: develop`);
-          await sh(`git checkout -q -B ${branch} origin/main`);
-          const dev = await worker('executor', {
-            IDENTIFIER: issue.identifier,
-            TITLE: issue.title,
-            ROUND: String(round + 1),
-            DESCRIPTION:
-              '(fetch the full issue BODY via the Linear MCP if needed; never read or judge the issue STATE — the orchestrator owns the lifecycle)',
-            REVIEW_NOTES: reviewNotes
-              ? `\nREVIEWER RETURNED THIS CHANGE WITH NOTES — address every point:\n${reviewNotes}`
-              : '',
-          });
+          await sh(`git -C ${JSON.stringify(WT)} checkout -q -B ${branch} origin/main`);
+          const dev = await worker(
+            'executor',
+            {
+              IDENTIFIER: issue.identifier,
+              TITLE: issue.title,
+              ROUND: String(round + 1),
+              DESCRIPTION:
+                '(fetch the full issue BODY via the Linear MCP if needed; never read or judge the issue STATE — the orchestrator owns the lifecycle)',
+              REVIEW_NOTES: reviewNotes
+                ? `\nREVIEWER RETURNED THIS CHANGE WITH NOTES — address every point:\n${reviewNotes}`
+                : '',
+            },
+            { cwd: WT },
+          );
           const commits = parseInt(
-            (await sh('git rev-list --count origin/main..HEAD')).out.trim() || '0',
+            (
+              await sh(`git -C ${JSON.stringify(WT)} rev-list --count origin/main..HEAD`)
+            ).out.trim() || '0',
             10,
           );
           const dev1 = extractDev(dev.tail);
@@ -313,15 +340,16 @@ async function main() {
           // have FOUND its own lost work — the branch was recreated with -B and the commit
           // survived only in the reflog. Rescue it instead of canceling.
           if (devStatus !== 'done' && dev1.status !== 'not-reproducible') {
-            const found = await sh(`git log --all --grep="${issue.identifier}" --pretty=%H -5`, {
-              timeoutMs: 60_000,
-            });
+            const found = await sh(
+              `git -C ${JSON.stringify(WT)} log --all --grep="${issue.identifier}" --pretty=%H -5`,
+              { timeoutMs: 60_000 },
+            );
             let sha = '',
               mergedSha = '';
             for (const cand of found.out.trim().split('\n')) {
               if (!/^[0-9a-f]{7,40}$/.test(cand)) continue;
               const anc = await sh(
-                `git merge-base --is-ancestor ${cand} origin/main && echo ancestor || echo fresh`,
+                `git -C ${JSON.stringify(WT)} merge-base --is-ancestor ${cand} origin/main && echo ancestor || echo fresh`,
               );
               if (anc.out.includes('fresh')) {
                 sha = cand;
@@ -340,9 +368,11 @@ async function main() {
               log(
                 `  reflog rescue: found lost work ${sha.slice(0, 9)} for ${issue.identifier} — cherry-picking`,
               );
-              const cp = await sh(`git cherry-pick ${sha}`);
+              const cp = await sh(`git -C ${JSON.stringify(WT)} cherry-pick ${sha}`);
               const after2 = parseInt(
-                (await sh('git rev-list --count origin/main..HEAD')).out.trim() || '0',
+                (
+                  await sh(`git -C ${JSON.stringify(WT)} rev-list --count origin/main..HEAD`)
+                ).out.trim() || '0',
                 10,
               );
               if (cp.code === 0 && after2 > 0) {
@@ -350,30 +380,33 @@ async function main() {
                 devSummary = `(rescued from lost branch commit ${sha.slice(0, 9)}) ${devSummary}`;
                 log(`  rescued: ${after2} commit(s) on the branch — proceeding to gates`);
               } else {
-                await sh('git cherry-pick --abort');
+                await sh(`git -C ${JSON.stringify(WT)} cherry-pick --abort`);
               }
             }
           }
           if (devStatus !== 'done') break;
 
-          log('-- tester: deterministic gates (pnpm test:ci)');
-          const gates = await sh('pnpm test:ci', { timeoutMs: 40 * 60_000 });
+          log('-- tester: deterministic gates (pnpm test:ci) in the clean swarm worktree');
+          const gates = await sh(
+            `cd ${JSON.stringify(WT)} && pnpm test:ci 2>&1 | tee ${JSON.stringify(STATE + '/gates-last.log')}; exit \${PIPESTATUS[0]}`,
+            { timeoutMs: 40 * 60_000 },
+          );
           if (gates.code !== 0) {
             if (round + 1 < MAX_ROUNDS) {
-              reviewNotes = `The test gate failed (lint/format/typecheck/coverage/build). Output tail:\n${short(gates.all.slice(-1500), 1500)}`;
+              reviewNotes = `The test gate failed (lint/format/typecheck/coverage/build). Full log: .task-board/gates-last.log. Output tail:\n${short(gates.all.slice(-1500), 1500)}`;
               log(
                 `  gates FAILED — feeding output back to the executor; tail: ${short(gates.all.slice(-500), 350)}`,
               );
               continue;
             }
             throw new Error(
-              `gates failed after ${MAX_ROUNDS} rounds; last tail: ${short(gates.all.slice(-600), 500)}`,
+              `gates failed after ${MAX_ROUNDS} rounds; full log: .task-board/gates-last.log; last tail: ${short(gates.all.slice(-600), 500)}`,
             );
           }
           log(`  gates green`);
 
           log(`-- round ${round + 1}: review`);
-          const diff = await sh(`git diff origin/main...HEAD`);
+          const diff = await sh(`git -C ${JSON.stringify(WT)} diff origin/main...HEAD`);
           const rev = await worker(
             'reviewer',
             {
@@ -422,7 +455,7 @@ async function main() {
 
         // ---- document
         log('-- documenter');
-        const stat = await sh(`git diff --stat origin/main...HEAD`);
+        const stat = await sh(`git -C ${JSON.stringify(WT)} diff --stat origin/main...HEAD`);
         const doc = await worker(
           'documenter',
           {
@@ -451,7 +484,7 @@ async function main() {
           120,
         );
         const pr = await sh(
-          `gh pr create --head ${branch} --title "${prTitle}" --body "${story.replace(/"/g, "'").slice(0, 400)}\\n\\nSwarm cycle: dev(${MAX_ROUNDS} rounds max) → gates → review(ACCEPT) → release. Closes ${issue.identifier}."`,
+          `cd ${JSON.stringify(WT)} && gh pr create --head ${branch} --title "${prTitle}" --body "${story.replace(/"/g, "'").slice(0, 400)}\\n\\nSwarm cycle: dev(${MAX_ROUNDS} rounds max) → gates → review(ACCEPT) → release. Closes ${issue.identifier}."`,
           { timeoutMs: 120_000 },
         );
         const prUrl = (pr.out.match(/https:\/\/github\.com\/\S+/) || [])[0];
@@ -464,13 +497,15 @@ async function main() {
         });
         log(`  merged: ${prUrl}`);
 
-        await sh('git checkout -q main && git pull -q');
-        const ver = await bumpVersion();
+        // Version + CHANGELOG on a temp branch straight off origin/main, pushed to main
+        // (the user's checkout holds `main` — worktrees may not check it out locally).
+        log('-- release manager: version bump + CHANGELOG (temp branch → origin/main)');
+        await sh(`git -C ${JSON.stringify(WT)} checkout -q -B swarm-release origin/main`);
+        const ver = await bumpVersion(WT);
         log(`-- release manager: v${ver} (CHANGELOG + sync-versions)`);
-        prependChangelog(ver, fixed, notes);
-
+        prependChangelog(WT, ver, fixed, notes);
         const relCommit = await sh(
-          `git add -A && git commit -q -m "release: v${ver} (swarm ${issue.identifier})" && git push -q origin main`,
+          `git -C ${JSON.stringify(WT)} add -A && git -C ${JSON.stringify(WT)} commit -q -m "release: v${ver} (swarm ${issue.identifier})" && git -C ${JSON.stringify(WT)} push -q origin HEAD:main`,
           { timeoutMs: 300_000 },
         );
         if (relCommit.code !== 0) throw new Error(`release commit failed: ${short(relCommit.all)}`);
@@ -492,7 +527,9 @@ async function main() {
         await sh(`gh run watch ${e2eId} --exit-status`, { timeoutMs: 45 * 60_000 });
 
         log('-- release manager: tag → Release (publish)');
-        await sh(`git tag v${ver} && git push -q origin v${ver}`);
+        await sh(
+          `git -C ${JSON.stringify(WT)} tag -f v${ver} origin/main && git -C ${JSON.stringify(WT)} push -q -f origin v${ver}`,
+        );
         await sh('sleep 15');
         const relId = (
           await sh(
@@ -504,7 +541,7 @@ async function main() {
         const today = new Date().toISOString().slice(0, 10);
         const evidence = `**Shipped by the agent swarm in v${ver}** (${today})\n\n- Issue: ${issue.identifier} — ${issue.title}\n- PR: ${prUrl} (squash-merged, PR checks ✓)\n- Release chain: main CI ✓ + E2E ✓ → tag v${ver} → release.yml verify+publish ✓\n- Story: ${short(story, 300)}`;
         await doneIssue(issue, evidence);
-        await sh(`git branch -D ${branch}`);
+        await sh(`git -C ${JSON.stringify(WT)} branch -D ${branch}`);
         log(`=== DONE: ${issue.identifier} shipped as v${ver} ===`);
       } catch (e) {
         await failIssue(issue, 'pipeline', String(e));
