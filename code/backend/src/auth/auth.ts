@@ -354,6 +354,22 @@ export function registerAuth(app: FastifyInstance, opts: AuthOptions): void {
     return { temporaryPassword: password };
   });
 
+  // ANA-123: irreversible hard delete (unlike PATCH isActive=false). Self-deletion is blocked:
+  // the actor is always an active admin (session guard), so deleting any OTHER admin always
+  // leaves ≥1 active admin (the actor) — no separate last-admin check is reachable here.
+  // Sessions/counter grants cascade in the repo.
+  app.delete('/api/users/:id', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const target = opts.users.getById(id);
+    if (!target) return reply.code(404).send({ error: 'not found' });
+    if (req.user!.id === target.id) {
+      return reply.code(409).send({ error: 'cannot delete yourself', code: 'SELF_DELETE' });
+    }
+    opts.users.remove(id);
+    opts.users.audit(req.user!, 'users.delete', target.email);
+    return { ok: true };
+  });
+
   app.get('/api/admin/audit', async (req) => {
     const raw = Number((req.query as { limit?: string }).limit ?? 200) || 200;
     const limit = Math.max(1, Math.min(raw, 1000)); // LIMIT -1 would mean "no limit" in SQLite

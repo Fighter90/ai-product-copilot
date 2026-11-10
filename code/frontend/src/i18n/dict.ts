@@ -204,6 +204,12 @@ export const ru = {
   'admin.users.tempPassword': 'Временный пароль (показывается один раз)',
   'admin.users.lastAdmin': 'Нельзя отключить или понизить последнего администратора',
   'admin.users.emailExists': 'Такой email уже существует',
+  'admin.users.delete': 'Удалить',
+  'admin.users.deleteTitle': 'Удалить пользователя?',
+  'admin.users.deleteBody':
+    'Аккаунт «{name}» ({email}) будет удалён безвозвратно: вход в кабинет и доступ к счётчикам будут отозваны. Действие нельзя отменить.',
+  'admin.users.deleted': 'Пользователь {name} удалён',
+  'admin.users.selfDelete': 'Нельзя удалить свой собственный аккаунт',
 
   'uc.column': 'Счётчики',
   'uc.title': 'Счётчики Метрики',
@@ -1527,6 +1533,12 @@ export const en: Record<DictKey, string> = {
   'admin.users.tempPassword': 'Temporary password (shown once)',
   'admin.users.lastAdmin': 'The last administrator cannot be disabled or demoted',
   'admin.users.emailExists': 'This email already exists',
+  'admin.users.delete': 'Delete',
+  'admin.users.deleteTitle': 'Delete user?',
+  'admin.users.deleteBody':
+    'The account “{name}” ({email}) will be permanently deleted: cabinet sign-in and counter access are revoked. This cannot be undone.',
+  'admin.users.deleted': 'User {name} deleted',
+  'admin.users.selfDelete': 'You cannot delete your own account',
 
   'uc.column': 'Counters',
   'uc.title': 'Metrika counter access',

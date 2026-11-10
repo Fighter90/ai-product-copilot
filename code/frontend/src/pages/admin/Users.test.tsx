@@ -184,6 +184,7 @@ describe('Users → counter access (ANA-29)', () => {
 
 describe('Users → delete a user (ANA-123)', () => {
   beforeEach(() => {
+    vi.clearAllMocks(); // call history would otherwise leak between the tests below
     vi.mocked(v3.users).mockResolvedValue(users);
     vi.mocked(v3.adminCounters).mockResolvedValue(counters);
     vi.mocked(v3.adminUserCounters).mockResolvedValue({ 2: [COUNTER] });
@@ -202,9 +203,11 @@ describe('Users → delete a user (ANA-123)', () => {
   it('delete opens a confirmation dialog; only confirming calls v3.deleteUser', async () => {
     renderWithProviders(<Users />);
     await screen.findByText('an@x.ru');
-    fireEvent.click(within(screen.getByText('an@x.ru').closest('tr')!).getByRole('button', {
-      name: 'Удалить',
-    }));
+    fireEvent.click(
+      within(screen.getByText('an@x.ru').closest('tr')!).getByRole('button', {
+        name: 'Удалить',
+      }),
+    );
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent('Ana');
     expect(dialog).toHaveTextContent('an@x.ru');
@@ -216,9 +219,11 @@ describe('Users → delete a user (ANA-123)', () => {
   it('cancelling the dialog deletes nothing', async () => {
     renderWithProviders(<Users />);
     await screen.findByText('an@x.ru');
-    fireEvent.click(within(screen.getByText('an@x.ru').closest('tr')!).getByRole('button', {
-      name: 'Удалить',
-    }));
+    fireEvent.click(
+      within(screen.getByText('an@x.ru').closest('tr')!).getByRole('button', {
+        name: 'Удалить',
+      }),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(v3.deleteUser).not.toHaveBeenCalled();
@@ -227,9 +232,11 @@ describe('Users → delete a user (ANA-123)', () => {
   it('successful deletion shows a notice with the user name', async () => {
     renderWithProviders(<Users />);
     await screen.findByText('an@x.ru');
-    fireEvent.click(within(screen.getByText('an@x.ru').closest('tr')!).getByRole('button', {
-      name: 'Удалить',
-    }));
+    fireEvent.click(
+      within(screen.getByText('an@x.ru').closest('tr')!).getByRole('button', {
+        name: 'Удалить',
+      }),
+    );
     fireEvent.click(screen.getByTestId('confirm-accept'));
     expect(await screen.findByRole('status')).toHaveTextContent('Ana');
   });

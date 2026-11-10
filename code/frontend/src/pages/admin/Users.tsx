@@ -1,9 +1,17 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, UserPlus } from 'lucide-react';
+import { KeyRound, Trash2, UserPlus } from 'lucide-react';
 import { v3, type CabinetUser, type CounterOption, type Role } from '../../lib/api-v3';
 import { useT, fmtDate } from '../../i18n';
-import { Card, ErrorBox, Modal, PageHeader, Pill, Skeleton } from '../../components/ui';
+import {
+  Card,
+  ConfirmDialog,
+  ErrorBox,
+  Modal,
+  PageHeader,
+  Pill,
+  Skeleton,
+} from '../../components/ui';
 import { ApiError } from '../../lib/api';
 import { useAuth } from '../../auth/AuthContext';
 
@@ -28,6 +36,8 @@ export function Users(): JSX.Element {
   const [secret, setSecret] = useState<{ email: string; password: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // ANA-123: hard delete is irreversible — it never fires without this dialog.
+  const [pendingDelete, setPendingDelete] = useState<CabinetUser | null>(null);
 
   /** Invite default for analysts: the configured counter (mirrors the backend default grant). */
   const defaultCounterIds =
@@ -84,6 +94,24 @@ export function Users(): JSX.Element {
     mutationFn: (u: CabinetUser) =>
       v3.resetPassword(u.id).then((r) => ({ email: u.email, password: r.temporaryPassword })),
     onSuccess: (r) => setSecret(r),
+  });
+  const remove = useMutation({
+    mutationFn: (u: CabinetUser) => v3.deleteUser(u.id).then(() => u),
+    onSuccess: (u) => {
+      setPendingDelete(null);
+      setError(null);
+      setNotice(t('admin.users.deleted', { name: u.name }));
+      void done();
+    },
+    onError: (e) => {
+      setPendingDelete(null);
+      setError(
+        // The only 409 this route returns is SELF_DELETE.
+        e instanceof ApiError && e.status === 409
+          ? t('admin.users.selfDelete')
+          : String((e as Error).message),
+      );
+    },
   });
 
   return (
@@ -230,6 +258,16 @@ export function Users(): JSX.Element {
                         >
                           {u.isActive ? t('admin.users.disable') : t('admin.users.enable')}
                         </button>
+                        {u.id !== me?.id && (
+                          <button
+                            type="button"
+                            className="btn-ghost px-2 py-1 text-xs text-red-600"
+                            aria-label={t('admin.users.delete')}
+                            onClick={() => setPendingDelete(u)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" /> {t('admin.users.delete')}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -239,6 +277,20 @@ export function Users(): JSX.Element {
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={t('admin.users.deleteTitle')}
+        body={t('admin.users.deleteBody', {
+          name: pendingDelete?.name ?? '',
+          email: pendingDelete?.email ?? '',
+        })}
+        confirmLabel={t('admin.users.delete')}
+        cancelLabel={t('common.cancel')}
+        busy={remove.isPending}
+        onConfirm={() => pendingDelete && remove.mutate(pendingDelete)}
+        onCancel={() => setPendingDelete(null)}
+      />
 
       <Modal open={open} title={t('admin.users.invite')} onClose={() => setOpen(false)}>
         <form

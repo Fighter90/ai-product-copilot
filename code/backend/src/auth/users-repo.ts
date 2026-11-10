@@ -129,6 +129,18 @@ export class UsersRepo {
     this.revokeSessions(id);
   }
 
+  /**
+   * ANA-123: hard-delete a user. Returns the removed user, or undefined for an unknown id.
+   * Sessions and counter grants go with the row (FK ON DELETE CASCADE, pragma foreign_keys=ON),
+   * so a deleted account cannot keep a live session.
+   */
+  remove(id: number): User | undefined {
+    const cur = this.getById(id);
+    if (!cur) return undefined;
+    this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    return cur;
+  }
+
   /** Verified once at boot: unknown users cost the same scrypt time (anti-enumeration). */
   private readonly dummyHash: string = hashPassword('timing-equalizer');
 

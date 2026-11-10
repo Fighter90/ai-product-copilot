@@ -75,7 +75,12 @@ describe('UsersRepo', () => {
 
   it('remove hard-deletes the user; sessions cascade; unknown id → undefined (ANA-123)', () => {
     const repo = new UsersRepo(freshDb());
-    const u = repo.create({ email: 'a@b.ru', name: 'A', role: 'analyst', password: 'password-123' });
+    const u = repo.create({
+      email: 'a@b.ru',
+      name: 'A',
+      role: 'analyst',
+      password: 'password-123',
+    });
     const token = repo.createSession(u.id, 7);
     expect(repo.remove(u.id)).toMatchObject({ id: u.id, email: 'a@b.ru' });
     expect(repo.getById(u.id)).toBeUndefined();

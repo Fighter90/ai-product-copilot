@@ -459,19 +459,18 @@ describe('admin users management', () => {
     expect(audit.target).toBe('analyst@x.ru');
 
     expect(
-      (
-        await ctx.app.inject({ method: 'DELETE', url: '/api/users/999', headers: { cookie } })
-      ).statusCode,
+      (await ctx.app.inject({ method: 'DELETE', url: '/api/users/999', headers: { cookie } }))
+        .statusCode,
     ).toBe(404);
   });
 
-  it('DELETE /api/users/:id: analyst → 403; self-delete → 409 SELF_DELETE; last active admin → 409 LAST_ADMIN (ANA-123)', async () => {
+  it('DELETE /api/users/:id: analyst → 403; self-delete → 409 SELF_DELETE; another admin is deletable (ANA-123)', async () => {
     ctx = await build();
     const adminId = ctx.repo.getByEmail(ADMIN.email)!.id;
     const adminCookieStr = await adminCookie();
-    const analystCookie = (
-      await login('analyst@x.ru', ANALYST_PASSWORD)
-    ).headers['set-cookie'] as string;
+    const analystCookie = (await login('analyst@x.ru', ANALYST_PASSWORD)).headers[
+      'set-cookie'
+    ] as string;
 
     const forbidden = await ctx.app.inject({
       method: 'DELETE',
@@ -488,22 +487,16 @@ describe('admin users management', () => {
     });
     expect(self.statusCode).toBe(409);
     expect(self.json().code).toBe('SELF_DELETE');
+    expect(ctx.repo.getById(adminId)).toBeDefined();
 
-    // A single active admin cannot be deleted by another admin; with a second active admin it works.
+    // The actor is an active admin, so deleting ANOTHER active admin is always safe
+    // (it cannot leave zero active admins).
     const second = ctx.repo.create({
       email: 'second@x.ru',
       name: 'S',
       role: 'admin',
       password: 'second-pass-123',
     });
-    const lastAdmin = await ctx.app.inject({
-      method: 'DELETE',
-      url: `/api/users/${adminId}`,
-      headers: { cookie: adminCookieStr },
-    });
-    expect(lastAdmin.statusCode).toBe(409);
-    expect(lastAdmin.json().code).toBe('LAST_ADMIN');
-
     const ok = await ctx.app.inject({
       method: 'DELETE',
       url: `/api/users/${second.id}`,
@@ -511,6 +504,7 @@ describe('admin users management', () => {
     });
     expect(ok.statusCode).toBe(200);
     expect(ctx.repo.getById(second.id)).toBeUndefined();
+    expect(ctx.repo.countActiveAdmins()).toBe(1);
   });
 
   it('GET /api/admin/audit returns entries; limit is clamped to [1, 1000]', async () => {

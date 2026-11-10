@@ -257,6 +257,8 @@ export const v3 = {
       method: 'POST',
       ...json({}),
     }),
+  /** ANA-123: irreversible hard delete (the UI must confirm first). */
+  deleteUser: (id: number) => http<{ ok: true }>(`/users/${id}`, { method: 'DELETE' }),
   audit: (limit = 200) => http<AuditEntry[]>(`/admin/audit?limit=${limit}`),
 
   /** ANA-29: counters an admin can assign to analysts. */
