@@ -62,6 +62,49 @@ describe('mdToHtml', () => {
     expect(html).toContain('<code>code</code>');
   });
 
+  describe('underscore italic (_text_)', () => {
+    it('converts whole-line captions (start/end of line boundaries)', () => {
+      // Real case: help-article screenshot captions (docs/help/ru/07-explore.md).
+      const html = mdToHtml('_Пресет «Источники»: таблица с сортировкой._');
+      expect(html).toContain('<p><em>Пресет «Источники»: таблица с сортировкой.</em></p>');
+    });
+
+    it('converts mid-sentence italic with punctuation around the pair', () => {
+      expect(mdToHtml('см. _что-то новое_, ниже')).toContain('<em>что-то новое</em>');
+      expect(mdToHtml('«_курсив в кавычках_»')).toContain('<em>курсив в кавычках</em>');
+    });
+
+    it('converts a list label like «- _Новый аналитик:_»', () => {
+      expect(mdToHtml('- _Новый аналитик:_ добавьте пользователя')).toContain(
+        '<li><em>Новый аналитик:</em> добавьте пользователя</li>',
+      );
+    });
+
+    it('keeps snake_case identifiers literal (raw_responses, foo_bar_baz)', () => {
+      const html = mdToHtml('каждый ответ сохраняется в raw_responses, см. foo_bar_baz');
+      expect(html).toContain('<p>каждый ответ сохраняется в raw_responses, см. foo_bar_baz</p>');
+      expect(html).not.toContain('<em>');
+    });
+
+    it('keeps intraword underscores literal incl. Cyrillic (каналы_по_источникам)', () => {
+      const html = mdToHtml('разрез каналы_по_источникам и a_b_c');
+      expect(html).toContain('<p>разрез каналы_по_источникам и a_b_c</p>');
+      expect(html).not.toContain('<em>');
+    });
+
+    it('keeps unbalanced underscore runs literal (_B2B / _CORP in a table cell)', () => {
+      const html = mdToHtml('| Scope |\n|---|\n| GIGACHAT_API_PERS / _B2B / _CORP |');
+      expect(html).toContain('<td>GIGACHAT_API_PERS / _B2B / _CORP</td>');
+      expect(html).not.toContain('<em>');
+    });
+
+    it('keeps code spans intact while converting italic outside them', () => {
+      const html = mdToHtml('поля `raw_responses` и _курсив_');
+      expect(html).toContain('<code>raw_responses</code>');
+      expect(html).toContain('<em>курсив</em>');
+    });
+  });
+
   it('renders plain paragraphs', () => {
     expect(mdToHtml('plain text line')).toContain('<p>plain text line</p>');
   });
