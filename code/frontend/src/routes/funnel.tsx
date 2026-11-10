@@ -18,7 +18,14 @@ import { ChartCaption } from '../components/charts/ChartCaption';
 import { EmptyState } from '../components/EmptyState';
 import { channelRows } from '../lib/traffic';
 import { funnelByChannelOption } from '../lib/funnel-by-channel';
-import { CR_CRITICAL_TARGET, CR_GOOD_TARGET } from '../lib/insight-thresholds';
+import {
+  BOUNCE_HIGH,
+  CR_CRITICAL_TARGET,
+  CR_GOOD_TARGET,
+  CR_LOW_PAGE_TARGET,
+  MIN_PAGE_VISITS,
+  MIN_PAGE_VISITS_CR_LOW,
+} from '../lib/insight-thresholds';
 import { byCountry, audienceBarOption } from '../lib/audience';
 import { localizeChart } from '../lib/chart-i18n';
 import { InsightBadge } from '../components/InsightBadge';
@@ -58,8 +65,13 @@ function channelCrOption(channels: ChannelStat[], t: TFn, locale: Locale): objec
         data: rows.map((r) => ({
           value: r.conversionRate,
           itemStyle: {
+            // ANA-118: color bands read the shared thresholds (goal > 2%, critical < 1%).
             color:
-              r.conversionRate > 0.02 ? '#22c55e' : r.conversionRate > 0.01 ? '#f59e0b' : '#ef4444',
+              r.conversionRate > CR_GOOD_TARGET
+                ? '#22c55e'
+                : r.conversionRate > CR_CRITICAL_TARGET
+                  ? '#f59e0b'
+                  : '#ef4444',
           },
         })),
         label: {
@@ -180,8 +192,15 @@ export function FunnelView({
     ...p,
     page: pageKey(p.page),
   }));
-  const highBouncePages = normalizedPages.filter((p) => p.bounceRate > 0.4 && p.visits > 30);
-  const lowCrPages = normalizedPages.filter((p) => p.conversionRate < 0.005 && p.visits > 50);
+  // ANA-118 (хвост БАГ-09): problem pages are judged by the same shared thresholds the
+  // Behavior page uses — an inline 0.4 here called «критический» what Behavior showed as
+  // ordinary bounce (BOUNCE_HIGH = 0.5), and the visit gates mirror behavior.tsx.
+  const highBouncePages = normalizedPages.filter(
+    (p) => p.bounceRate > BOUNCE_HIGH && p.visits > MIN_PAGE_VISITS,
+  );
+  const lowCrPages = normalizedPages.filter(
+    (p) => p.conversionRate < CR_LOW_PAGE_TARGET && p.visits > MIN_PAGE_VISITS_CR_LOW,
+  );
   // ANA-21: per-issue pc-goals funnel (Визиты → reg_open → cart_open → reg_step1 → Оплата) when
   // the live funnel is available; «Оплата» falls back to manually entered B2B deals paid in the
   // period. Without live data the chart falls back to the cached SQLite totals.

@@ -203,9 +203,11 @@ describe('FunnelView — problem pages (БАГ-07)', () => {
     const dup = (over: Partial<PageStat>): PageStat => ({
       date: '2025-01-01',
       page: 'https://productcamp.ru/',
+      // ANA-118: above the unified BOUNCE_HIGH (0.5) so the page stays «критический» —
+      // exactly 0.5 is no longer flagged anywhere (Behavior uses the same constant).
       visits: 100,
       users: 90,
-      bounceRate: 0.5,
+      bounceRate: 0.6,
       goalReaches: 5,
       conversionRate: 0.05,
       ...over,
@@ -225,8 +227,36 @@ describe('FunnelView — problem pages (БАГ-07)', () => {
       />,
     );
     // …and is listed once, with summed visits (300), under the normalized key.
-    expect(screen.getAllByText('https://productcamp.ru — 50.0% при 300 визитах')).toHaveLength(1);
+    expect(screen.getAllByText('https://productcamp.ru — 60.0% при 300 визитах')).toHaveLength(1);
     expect(screen.queryByText(/при 100 визитах/)).not.toBeInTheDocument();
+  });
+});
+
+describe('FunnelView — unified problem-page thresholds (ANA-118 / БАГ-09)', () => {
+  it('judges problem-page bounce by the shared BOUNCE_HIGH, not an inline 0.4 (ANA-118 / БАГ-09)', () => {
+    // 100 visits at 45% bounce: Behavior (BOUNCE_HIGH = 0.5) shows nothing for the same page,
+    // so the funnel «Проблемные страницы» must not call it критический either.
+    render(
+      <FunnelView
+        status="success"
+        stats={stats}
+        deals={deals}
+        geoDevice={[]}
+        pages={[
+          {
+            date: '2025-01-01',
+            page: '/mid-bounce',
+            visits: 100,
+            users: 90,
+            bounceRate: 0.45,
+            goalReaches: 2,
+            conversionRate: 0.02,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/Нет страниц с критическим bounce/)).toBeInTheDocument();
+    expect(screen.queryByText(/mid-bounce/)).not.toBeInTheDocument();
   });
 });
 
