@@ -521,6 +521,10 @@ async function main() {
 
         // ---- release manager: PR → checks → squash → version+changelog on main → CI/E2E → tag → Release
         log('-- release manager: PR');
+        // The branch exists only locally (executors may not push) — the release manager
+        // pushes it to origin BEFORE gh pr create (run 17: PR create failed with
+        // "No commits between main and swarm/ana-119" — no branch on origin).
+        await sh(`git -C ${JSON.stringify(WT)} push -q origin ${branch}`, { timeoutMs: 120_000 });
         // Backticks/$ in story/title must never reach bash substitution: body goes
         // through --body-file, the title is POSIX single-quoted (run 16: markdown
         // backticks in the story executed as subcommands and killed gh pr create).
