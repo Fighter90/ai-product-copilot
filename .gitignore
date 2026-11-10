@@ -51,3 +51,6 @@ code/backend/data/
 # Generated report exports (not source)
 outputs/
 .playwright-cli/
+
+# node_modules symlink (swarm worktrees create symlinks, not directories)
+node_modules
