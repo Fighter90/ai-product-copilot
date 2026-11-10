@@ -195,8 +195,7 @@ const extractVerdict = (tail) => {
 // Recreate the swarm worktree at origin/main. Fresh per cycle: cheap (~1s), and by
 // construction free of data/, .env and any stale build state.
 async function refreshWorktree() {
-  await sh('git worktree prune');
-  await sh(`rm -rf ${JSON.stringify(WT)}`);
+  await sh(`rm -rf ${JSON.stringify(WT)} && git worktree prune`);
   const r = await sh(`git worktree add --detach ${JSON.stringify(WT)} origin/main`, {
     timeoutMs: 120_000,
   });
