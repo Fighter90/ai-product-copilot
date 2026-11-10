@@ -12,6 +12,16 @@ vi.mock('../lib/api', () => ({
     pages: vi.fn().mockResolvedValue([]),
   },
 }));
+// ANA-124: capture the chart options the route hands to EChart so option-level guards
+// (grid.containLabel) are unit-testable without a canvas. The testid matches the real
+// EChart markup so existing waitFor assertions keep working.
+const { chartOptions } = vi.hoisted(() => ({ chartOptions: [] as object[] }));
+vi.mock('../components/charts/EChart', () => ({
+  EChart: ({ option }: { option: object }) => {
+    chartOptions.push(option);
+    return <div data-testid="echart" />;
+  },
+}));
 import { api } from '../lib/api';
 import type { LiveFunnel } from '../lib/api-v3';
 import { FunnelView, Funnel } from './funnel';
@@ -384,5 +394,23 @@ describe('FunnelView — ANA-75 БАГ-10 (aligned visits, split B2C/B2B losses)
     // deals: 30 tickets, all paid → 0 B2B pipeline losses; the 900 B2C visits are not counted here.
     expect(screen.getByText('B2B-пайплайн: сделки, не дошедшие до оплаты:')).toBeInTheDocument();
     expect(screen.getByText('0 сделок (0.0%)')).toBeInTheDocument();
+  });
+});
+
+describe('FunnelView — chart option guards (ANA-124)', () => {
+  it('channel CR chart reserves room for long channel names: grid.containLabel', async () => {
+    // Fixed left: 120 clipped long RU channel names («Рекомендации», e-mail campaigns…);
+    // containLabel sizes the y-axis gutter from the actual labels (lib/traffic.ts pattern).
+    chartOptions.length = 0;
+    render(<FunnelView status="success" stats={stats} deals={deals} geoDevice={[]} pages={[]} />);
+    // funnel + channel CR + funnel-by-channel charts all mount on this data.
+    await waitFor(() => expect(chartOptions.length).toBeGreaterThanOrEqual(3));
+    const crChart = chartOptions.find(
+      (o) =>
+        Array.isArray((o as { series?: unknown[] }).series) &&
+        (o as { series: Array<{ name?: string }> }).series[0]?.name === 'CR',
+    ) as { grid: { containLabel?: boolean } } | undefined;
+    expect(crChart).toBeDefined();
+    expect(crChart?.grid.containLabel).toBe(true);
   });
 });

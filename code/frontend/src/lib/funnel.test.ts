@@ -171,4 +171,14 @@ describe('funnelOption', () => {
     );
     expect(option.series[0]?.label.fontWeight).toBeGreaterThanOrEqual(500);
   });
+
+  it('wraps label lines instead of clipping them on narrow stages (ANA-124)', () => {
+    // position:'inside' with three lines overflows a narrow stage — overflow:'break' + width
+    // makes ECharts break long lines instead of cutting them off.
+    const option = funnelOption(buildFunnel({ visits: 10 })) as {
+      series: Array<{ label: { overflow: string; width: number } }>;
+    };
+    expect(option.series[0]?.label.overflow).toBe('break');
+    expect(option.series[0]?.label.width).toBeGreaterThan(0);
+  });
 });
