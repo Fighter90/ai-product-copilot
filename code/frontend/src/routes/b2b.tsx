@@ -5,6 +5,7 @@ import type { B2bDeal, B2bStage, NewB2bDeal } from '@pca/shared';
 import { api } from '../lib/api';
 import { formatInt } from '../lib/format';
 import { B2B_STAGES, pipelineSummary } from '../lib/b2b';
+import { ConfirmDialog } from '../components/ui';
 import { useT, type DictKey } from '../i18n';
 
 const STAGE_KEYS: Record<B2bStage, DictKey> = {
@@ -40,6 +41,8 @@ export function B2bView({
   const [tableOpen, setTableOpen] = useState(false);
   // БАГ-03: явная ошибка формы вместо молчаливого игнора.
   const [formError, setFormError] = useState('');
+  // ANA-120 (хвост БАГ-15): удаление сделки — через styled ConfirmDialog, не window.confirm().
+  const [pendingDelete, setPendingDelete] = useState<B2bDeal | null>(null);
 
   // Per-stage totals for the kanban — every stage shown (0 if empty).
   const byStage = B2B_STAGES.map((s) => {
@@ -230,11 +233,7 @@ export function B2bView({
                       <button
                         type="button"
                         aria-label={t('b2b.removeOf', { company: d.company })}
-                        onClick={() => {
-                          // БАГ-03: удаление сделки — с подтверждением (как у гипотез).
-                          if (window.confirm(t('b2b.confirmRemove', { company: d.company })))
-                            onRemove(d.id);
-                        }}
+                        onClick={() => setPendingDelete(d)}
                         className="text-red-700"
                       >
                         ✕
@@ -244,6 +243,30 @@ export function B2bView({
                 ))}
               </tbody>
             </table>
+
+            {/* БАГ-03 / ANA-120: styled confirmation instead of the native window.confirm()
+                — the same dialog chrome as the hypotheses kanban (БАГ-15). Rendered inside
+                the table Dialog so headlessui's outside-aria-hidden doesn't hide it. */}
+            <ConfirmDialog
+              open={pendingDelete !== null}
+              title={t('b2b.removeTitle')}
+              body={
+                pendingDelete === null
+                  ? ''
+                  : t('b2b.confirmRemove', {
+                      company: pendingDelete.company,
+                      tickets: t('b2b.ticketsN', { n: formatInt(pendingDelete.tickets) }),
+                    })
+              }
+              confirmLabel={t('b2b.remove')}
+              cancelLabel={t('common.cancel')}
+              onConfirm={() => {
+                if (pendingDelete === null) return;
+                onRemove(pendingDelete.id);
+                setPendingDelete(null);
+              }}
+              onCancel={() => setPendingDelete(null)}
+            />
           </Dialog.Panel>
         </div>
       </Dialog>
