@@ -16,6 +16,8 @@ vi.mock('../lib/api-v3', () => ({
 }));
 
 // Сессия: аналитик (админ-раздел сайдбара скрыт), logout — spy.
+// ANA-122: isAdmin сделан переключаемым per-test, чтобы проверить админ-секцию сайдбара.
+const session = vi.hoisted(() => ({ isAdmin: false }));
 const logout = vi.fn(async () => undefined);
 vi.mock('../auth/AuthContext', () => ({
   useAuth: () => ({
@@ -30,7 +32,7 @@ vi.mock('../auth/AuthContext', () => ({
       lastLoginAt: null,
     },
     loading: false,
-    isAdmin: false,
+    isAdmin: session.isAdmin,
     login: vi.fn(),
     logout,
     refresh: vi.fn(),
@@ -145,6 +147,31 @@ describe('CabinetLayout', () => {
     // Соседний пункт не активен.
     const overview = within(drawerNav).getByRole('link', { name: 'Обзор' });
     expect(overview).not.toHaveAttribute('aria-current');
+  });
+
+  it('ANA-122: admin section header is accent-highlighted, regular sections stay muted', () => {
+    session.isAdmin = true;
+    try {
+      renderCabinet();
+      // Заголовок админ-секции виден админу в обоих сайдбарах (десктоп + drawer)
+      // и выделен акцентом, читаемым в обеих темах (rose-500 / dark:rose-400).
+      const adminHeaders = screen.getAllByText('Администрирование');
+      expect(adminHeaders.length).toBeGreaterThan(0);
+      for (const header of adminHeaders) {
+        expect(header.className).toContain('text-rose-500');
+        expect(header.className).toContain('dark:text-rose-400');
+        expect(header.className).not.toContain('text-muted');
+      }
+      // Обычные секции не изменились — остались приглушёнными, без акцента.
+      const monitorHeaders = screen.getAllByText('Мониторинг');
+      expect(monitorHeaders.length).toBeGreaterThan(0);
+      for (const header of monitorHeaders) {
+        expect(header.className).toContain('text-muted');
+        expect(header.className).not.toContain('text-rose-500');
+      }
+    } finally {
+      session.isAdmin = false;
+    }
   });
 
   it('mounts the role tour (opens on the first visit) and the header help link', () => {
