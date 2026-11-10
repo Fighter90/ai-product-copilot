@@ -214,6 +214,15 @@ export function mdToHtml(md: string): string {
 
 /** Bold / italic / stray-marker cleanup on already-escaped text without protected slots. */
 function emphasis(text: string): string {
+  // Italic (underscores): _text_ — added BEFORE the *-rules. CommonMark intraword restrictions:
+  // the pair matches only at a boundary (start/whitespace/punctuation before, end/whitespace/
+  // punctuation after, non-letter/digit neighbours checked Unicode-aware incl. Cyrillic), and the
+  // inner text must start/end with a non-space, so snake_case identifiers (raw_responses,
+  // foo_bar_baz, каналы_по_источникам) and unbalanced runs (_B2B / _CORP) stay literal.
+  text = text.replace(
+    /(^|[^\p{L}\p{N}_])_([^_\s](?:[^_]*[^_\s])?)_(?![\p{L}\p{N}_])/gu,
+    (_m, pre: string, inner: string) => `${pre}<em>${inner}</em>`,
+  );
   // Bold+italic: ***text***
   text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
   // Bold: **text**
