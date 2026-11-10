@@ -282,7 +282,14 @@ function SideNav({
       {NAV.filter((s) => !s.admin || isAdmin).map((s) => (
         <div key={s.section}>
           {!collapsed && (
-            <div className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
+            <div
+              className={
+                s.admin
+                  ? // ANA-122: админ-секция выделена акцентом, читаемым в обеих темах.
+                    'mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-rose-500 dark:text-rose-400'
+                  : 'mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted'
+              }
+            >
               {t(s.section)}
             </div>
           )}
