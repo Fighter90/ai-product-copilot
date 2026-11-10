@@ -556,6 +556,9 @@ async function main() {
         const ver = await bumpVersion(WT);
         log(`-- release manager: v${ver} (CHANGELOG + sync-versions)`);
         prependChangelog(WT, ver, fixed, notes);
+        // The changelog edit happens AFTER gates — format it before pushing, or
+        // release.yml's format:check fails on the tag (run 19: v3.4.3).
+        await sh(`cd ${JSON.stringify(WT)} && pnpm exec prettier --write CHANGELOG.md`);
         // Non-fast-forward-safe: an operator commit may advance origin/main mid-run —
         // rebase the release commit onto the freshest main and retry once.
         let relCommit = await sh(
