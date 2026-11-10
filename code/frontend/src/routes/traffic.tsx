@@ -14,6 +14,7 @@ import {
   channelBarOption,
   channelVisitsVsReachesOption,
   channelRows,
+  LOW_UTM_COVERAGE_RATIO,
   utmCoverage,
   utmRows,
 } from '../lib/traffic';
@@ -26,6 +27,13 @@ import { EmptyState } from '../components/EmptyState';
 import { filterBySegment, filterUtmBySegment } from '../lib/segment-filter';
 import { applyTestTrafficFilter, isTestChannelRow } from '../lib/test-traffic';
 import { buildHypothesisUrl } from '../lib/hypothesis-prefill';
+import {
+  CR_EXCELLENT_TARGET,
+  CR_GOOD_TARGET,
+  CR_HIGH_VS_AVG,
+  CR_LOW_VS_AVG,
+  MIN_CHANNEL_VISITS,
+} from '../lib/insight-thresholds';
 
 type TFn = ReturnType<typeof useT>['t'];
 
@@ -38,8 +46,14 @@ function computeChannelInsights(stats: ChannelStat[], t: TFn, locale: Locale): J
 
   for (const r of rows) {
     const channel = channelName(r.channel, locale);
-    // High CR - good
-    if (r.conversionRate > overallCR * 1.5 && r.visits > 30) {
+    // БАГ-09 (ANA-118): the praise gate mirrors overview.tsx — absolute CR target + relative
+    // vs average + unified sample size, all from lib/insight-thresholds.ts, so Traffic never
+    // praises a CR that the overall verdict calls «низкий».
+    if (
+      r.conversionRate >= CR_GOOD_TARGET &&
+      r.conversionRate > overallCR * CR_HIGH_VS_AVG &&
+      r.visits > MIN_CHANNEL_VISITS
+    ) {
       insights.push(
         <InsightBadge
           key={`cr-good-${r.channel}`}
@@ -53,7 +67,7 @@ function computeChannelInsights(stats: ChannelStat[], t: TFn, locale: Locale): J
       );
     }
     // Low CR with high traffic - problem
-    else if (r.conversionRate < overallCR * 0.5 && r.visits > 50) {
+    else if (r.conversionRate < overallCR * CR_LOW_VS_AVG && r.visits > MIN_CHANNEL_VISITS) {
       insights.push(
         <span key={`cr-bad-${r.channel}`} className="inline-flex items-center gap-1">
           <InsightBadge
@@ -90,7 +104,7 @@ function computeUtmInsights(utm: UtmStat[], stats: ChannelStat[], t: TFn): JSX.E
   const insights: JSX.Element[] = [];
   const cov = utmCoverage(stats, utm);
 
-  if (cov.ratio >= 0.7) {
+  if (cov.ratio >= LOW_UTM_COVERAGE_RATIO) {
     insights.push(
       <InsightBadge
         key="utm-good"
@@ -112,7 +126,9 @@ function computeUtmInsights(utm: UtmStat[], stats: ChannelStat[], t: TFn): JSX.E
   const utmWithSource = utm.filter((u) => u.utmSource && u.utmSource !== '(none)');
   if (utmWithSource.length > 0) {
     const topCR = utmWithSource.sort((a, b) => b.conversionRate - a.conversionRate)[0];
-    if (topCR && topCR.conversionRate > 0.05 && topCR.visits > 30) {
+    // ANA-118: same thresholds as the channel insights — CR above the shared «хороший»
+    // target and enough traffic for the verdict to mean anything.
+    if (topCR && topCR.conversionRate > CR_EXCELLENT_TARGET && topCR.visits > MIN_CHANNEL_VISITS) {
       insights.push(
         <InsightBadge
           key="utm-top"

@@ -85,6 +85,52 @@ describe('TrafficView', () => {
     );
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
+
+  it('never praises a channel whose CR beats the average but stays under the CR target (ANA-118 / БАГ-09)', () => {
+    // Overall CR = 0.6% is «низкий»; «Ad traffic» converts at 1.6% — 1.5× the average but
+    // below the shared 2% CR target, so praising it here would contradict the Overview
+    // verdict next to it (overview.tsx pattern). The low-CR channel renders a hypothesis
+    // <Link>, hence the Router wrapper.
+    renderWithProviders(
+      <TrafficView
+        status="success"
+        stats={[
+          stat({ channel: 'Ad traffic', visits: 250, goalReaches: 4 }),
+          stat({ channel: 'podcast', visits: 750, goalReaches: 2 }),
+        ]}
+        utm={[]}
+      />,
+    );
+    expect(screen.queryByText(/выше среднего/)).not.toBeInTheDocument();
+  });
+
+  it('praises a channel CR only past the unified MIN_CHANNEL_VISITS sample gate (ANA-118 / БАГ-09)', () => {
+    // 40 visits at CR 30% beat 1.5× the overall 1.2% — but Overview judges channels from
+    // 50 visits on, so Traffic must not praise this one either.
+    renderWithProviders(
+      <TrafficView
+        status="success"
+        stats={[
+          stat({ channel: 'Ad traffic', visits: 40, goalReaches: 12 }),
+          stat({ channel: 'podcast', visits: 960, goalReaches: 0 }),
+        ]}
+        utm={[]}
+      />,
+    );
+    expect(screen.queryByText(/выше среднего/)).not.toBeInTheDocument();
+  });
+
+  it('shows the top-campaign badge only past the unified MIN_CHANNEL_VISITS gate (ANA-118 / БАГ-09)', () => {
+    // CR 20% > 5% target but only 40 visits — the same sample gate as the channel insights.
+    render(
+      <TrafficView
+        status="success"
+        stats={[stat({ utmSource: null, visits: 100 })]}
+        utm={[utmStat({ utmSource: 'vk', visits: 40, goalReaches: 8, conversionRate: 0.2 })]}
+      />,
+    );
+    expect(screen.queryByText(/Лучшая кампания/)).not.toBeInTheDocument();
+  });
 });
 
 describe('Traffic (data wrapper)', () => {
