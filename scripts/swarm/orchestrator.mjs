@@ -521,12 +521,18 @@ async function main() {
 
         // ---- release manager: PR → checks → squash → version+changelog on main → CI/E2E → tag → Release
         log('-- release manager: PR');
-        const prTitle = `fix: ${issue.identifier} — ${issue.title.replace(/"/g, "'")}`.slice(
-          0,
-          120,
+        // Backticks/$ in story/title must never reach bash substitution: body goes
+        // through --body-file, the title is POSIX single-quoted (run 16: markdown
+        // backticks in the story executed as subcommands and killed gh pr create).
+        const sq = (s) => `'` + String(s).replace(/'/g, `'\\''`) + `'`;
+        const prTitle = sq(`fix: ${issue.identifier} — ${issue.title}`.slice(0, 120));
+        const prBodyFile = resolve(STATE, 'pr-body.md');
+        writeFileSync(
+          prBodyFile,
+          `${story.slice(0, 400)}\n\nSwarm cycle: dev(${MAX_ROUNDS} rounds max) → gates → review(ACCEPT) → release. Closes ${issue.identifier}.\n`,
         );
         const pr = await sh(
-          `cd ${JSON.stringify(WT)} && gh pr create --head ${branch} --title "${prTitle}" --body "${story.replace(/"/g, "'").slice(0, 400)}\\n\\nSwarm cycle: dev(${MAX_ROUNDS} rounds max) → gates → review(ACCEPT) → release. Closes ${issue.identifier}."`,
+          `cd ${JSON.stringify(WT)} && gh pr create --head ${branch} --title ${prTitle} --body-file ${JSON.stringify(prBodyFile)}`,
           { timeoutMs: 120_000 },
         );
         const prUrl = (pr.out.match(/https:\/\/github\.com\/\S+/) || [])[0];
