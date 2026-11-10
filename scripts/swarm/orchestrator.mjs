@@ -157,6 +157,25 @@ async function pickIssue() {
   );
   return parsePickOutput(out);
 }
+
+// Pairing guard (run 8): the pick line once paired ANA-124's title with ANA-126's uuid —
+// claim and Done would then have hit the WRONG issue. Verify uuid→identifier via the
+// clerk before accepting the pick; on mismatch, re-pick.
+async function pickIssueVerified() {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const issue = await pickIssue();
+    if (!issue) return null;
+    const check = await clerk(
+      `Read-only. In workspace "analitics-platform", get_issue by id ${issue.id}. Print EXACTLY one line at the end (and nothing after it):\nSWARM_CHECK::<REAL identifier like ANA-123>`,
+    );
+    const cid = (check.match(/SWARM_CHECK::([A-Z][A-Z0-9]*-\d+)/) || [])[1];
+    if (cid === issue.identifier) return issue;
+    log(
+      `  pick pairing mismatch (attempt ${attempt}/3): uuid ${issue.id.slice(0, 8)} resolves to ${cid || 'unknown'}, expected ${issue.identifier} — re-picking`,
+    );
+  }
+  throw new Error('pick pairing mismatch persisted after 3 attempts — aborting the run');
+}
 const claimIssue = (i) =>
   clerk(
     `Operation: in workspace "analitics-platform", team ANA, for issue ${i.identifier} (id ${i.id}) set state to "In Progress" and add comment: "🎯 Swarm claimed this issue — orchestrator starting (dev → gates → review → release)."\nResult line: SWARM_CLAIM::<identifier>`,
@@ -281,7 +300,7 @@ async function main() {
       await sh('git fetch origin -q', { timeoutMs: 120_000 });
       await refreshWorktree();
 
-      const issue = await pickIssue();
+      const issue = await pickIssueVerified();
       if (!issue) {
         log('queue empty — no Todo issues labeled `swarm` in ANA.');
         break;
