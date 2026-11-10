@@ -129,3 +129,63 @@ describe('B2bView', () => {
     expect(h.onAmountChange).toHaveBeenCalledWith({ id: 2, amountRub: null });
   });
 });
+
+/**
+ * ANA-119 (регресс 28.10, БАГ-03): прямые кейсы валидации формы B2B — отклоняются пустая
+ * компания и билеты ≤ 0 (и не-целые): ошибка формы видна (role=alert), сохранение не уходит.
+ */
+describe('B2bView — БАГ-03: отклонение невалидной сделки', () => {
+  afterEach(() => setTestLocale('ru'));
+
+  it('rejects a blank company — alert is shown, the save is not sent', () => {
+    const h = handlers();
+    render(<B2bView deals={deals} {...h} />);
+    fireEvent.change(screen.getByLabelText('Компания'), { target: { value: '   ' } });
+    fireEvent.change(screen.getByLabelText('Билеты'), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Укажите компанию');
+    expect(h.onAdd).not.toHaveBeenCalled();
+  });
+
+  it.each(['0', '-5', '2.5'])(
+    'rejects tickets = %s — alert is shown, the save is not sent',
+    (raw) => {
+      const h = handlers();
+      render(<B2bView deals={deals} {...h} />);
+      fireEvent.change(screen.getByLabelText('Компания'), { target: { value: 'NewCo' } });
+      fireEvent.change(screen.getByLabelText('Билеты'), { target: { value: raw } });
+      fireEvent.click(screen.getByRole('button', { name: 'Добавить' }));
+      expect(screen.getByRole('alert')).toHaveTextContent('Билетов: целое число не меньше 1');
+      expect(h.onAdd).not.toHaveBeenCalled();
+    },
+  );
+
+  it('shows the validation alert through i18n in EN too', () => {
+    setTestLocale('en');
+    const h = handlers();
+    render(<B2bView deals={deals} {...h} />);
+    fireEvent.change(screen.getByLabelText('Company'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Tickets'), { target: { value: '-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    // First visible error is the company one (checked before tickets).
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter the company name');
+    expect(h.onAdd).not.toHaveBeenCalled();
+  });
+
+  it('after a rejected submit a valid submit goes through and clears the alert', () => {
+    const h = handlers();
+    render(<B2bView deals={deals} {...h} />);
+    fireEvent.change(screen.getByLabelText('Компания'), { target: { value: 'NewCo' } });
+    fireEvent.change(screen.getByLabelText('Билеты'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить' }));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(h.onAdd).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Билеты'), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить' }));
+    expect(h.onAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ company: 'NewCo', tickets: 3, stage: 'lead' }),
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
