@@ -1353,6 +1353,31 @@ export const ru = {
   'dec.conf.medium': 'Средняя',
   'dec.conf.low': 'Низкая',
   'dec.err.evidence': 'Нужно минимум одно доказательство (цитата + источник)',
+  // ANA-138: autonomy model — badges and the «Матрица автономии» block on /app/decisions.
+  'dec.autonomy.type.data-analysis': 'Анализ данных',
+  'dec.autonomy.type.hypothesis-draft': 'Черновик гипотезы',
+  'dec.autonomy.type.experiment-launch': 'Запуск эксперимента',
+  'dec.autonomy.type.pricing': 'Ценообразование',
+  'dec.autonomy.type.budget': 'Бюджет',
+  'dec.autonomy.type.public-comms': 'Публичные коммуникации',
+  'dec.autonomy.type.strategic': 'Стратегия',
+  'dec.autonomy.type.legal': 'Юридическое решение',
+  'dec.autonomy.level.A0': 'ИИ только предлагает — решает PM',
+  'dec.autonomy.level.A1': 'ИИ действует по шаблону — PM ревьюит постфактум',
+  'dec.autonomy.level.A2': 'ИИ автономно в лимитах (в MVP не исполняется)',
+  'dec.autonomy.escalation': '⚠️ Требует PM-эскалации',
+  'dec.autonomy.reason.autonomy-exceeded':
+    'Требуемый уровень ИИ выше максимума для этого типа — решение за PM',
+  'dec.autonomy.reason.unclassified-type':
+    'Тип решения не распознан — трактуется консервативно как «стратегия» (A0)',
+  'dec.autonomy.matrix.title': 'Матрица автономии ИИ',
+  'dec.autonomy.matrix.subtitle':
+    'Модель распределения решений ИИ↔PM: какой тип решения ИИ может доводить до какого уровня. Сейчас все AI-решения исполняются на уровне {required}; выше максимума типа решение принимает PM.',
+  'dec.autonomy.matrix.col.type': 'Тип решения',
+  'dec.autonomy.matrix.col.max': 'Макс. автономия',
+  'dec.autonomy.matrix.col.rule': 'Правило эскалации',
+  'dec.autonomy.matrix.rule.escalate': '⚠️ Эскалация к PM',
+  'dec.autonomy.matrix.rule.ok': 'Без эскалации',
 } as const;
 
 export type DictKey = keyof typeof ru;
@@ -2704,6 +2729,31 @@ export const en: Record<DictKey, string> = {
   'dec.conf.medium': 'Medium',
   'dec.conf.low': 'Low',
   'dec.err.evidence': 'Need at least one evidence item (quote + source)',
+  // ANA-138: autonomy model — badges and the autonomy-matrix block on /app/decisions.
+  'dec.autonomy.type.data-analysis': 'Data analysis',
+  'dec.autonomy.type.hypothesis-draft': 'Hypothesis draft',
+  'dec.autonomy.type.experiment-launch': 'Experiment launch',
+  'dec.autonomy.type.pricing': 'Pricing',
+  'dec.autonomy.type.budget': 'Budget',
+  'dec.autonomy.type.public-comms': 'Public communications',
+  'dec.autonomy.type.strategic': 'Strategic',
+  'dec.autonomy.type.legal': 'Legal decision',
+  'dec.autonomy.level.A0': 'AI only proposes — a PM decides',
+  'dec.autonomy.level.A1': 'AI acts by template — the PM reviews post-factum',
+  'dec.autonomy.level.A2': 'AI autonomous within limits (not executed in MVP)',
+  'dec.autonomy.escalation': '⚠️ Needs PM escalation',
+  'dec.autonomy.reason.autonomy-exceeded':
+    'The required AI level exceeds the maximum for this type — a PM decides',
+  'dec.autonomy.reason.unclassified-type':
+    'Decision type not recognised — read conservatively as «strategic» (A0)',
+  'dec.autonomy.matrix.title': 'AI autonomy matrix',
+  'dec.autonomy.matrix.subtitle':
+    "The AI↔PM decision distribution model: how far AI may take each decision type. Every AI decision currently runs at {required}; above a type's maximum the PM decides.",
+  'dec.autonomy.matrix.col.type': 'Decision type',
+  'dec.autonomy.matrix.col.max': 'Max autonomy',
+  'dec.autonomy.matrix.col.rule': 'Escalation rule',
+  'dec.autonomy.matrix.rule.escalate': '⚠️ Escalates to PM',
+  'dec.autonomy.matrix.rule.ok': 'No escalation',
 };
 
 /** Metrika traffic-source names (API returns English for some, Russian for others). */

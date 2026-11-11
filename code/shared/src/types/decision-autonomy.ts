@@ -148,6 +148,20 @@ export function assessDecisionAutonomy(input: {
   };
 }
 
+/**
+ * ANA-138: body of GET /api/decisions/autonomy-matrix — the read-only static contract the
+ * UI renders as the «Матрица автономии» block. The raw escalation-reason codes stay
+ * machine-readable; the UI maps them to localized text.
+ */
+export interface AutonomyMatrixResponse {
+  /** The autonomy level every AI decision actually runs at in MVP. */
+  readonly required: AutonomyLevel;
+  /** Human-readable labels of the levels A0–A2 (code-level RU defaults). */
+  readonly levels: Readonly<Record<AutonomyLevel, string>>;
+  /** Static matrix «decision type → maximum autonomy» (code, not DB). */
+  readonly matrix: Readonly<Record<DecisionType, AutonomyMatrixEntry>>;
+}
+
 /** Type guard for a stored `decision_type` value (legacy/garbage rows map to undefined). */
 export function isDecisionType(value: string | null | undefined): value is DecisionType {
   return DECISION_TYPES.some((t) => t === value);

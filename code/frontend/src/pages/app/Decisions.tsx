@@ -2,6 +2,10 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import {
+  AUTONOMY_LEVEL_RANK,
+  DECISION_TYPES,
+  type AutonomyAssessment,
+  type AutonomyMatrixResponse,
   type DecisionFinding,
   type DecisionMethod,
   type DecisionOutcome,
@@ -17,6 +21,7 @@ import { Modal } from '../../components/ui';
 import {
   CONFIDENCE_KEY,
   DECISION_METHOD_KEY,
+  DECISION_TYPE_KEY,
   OUTCOME_KEY,
 } from '../../components/hypotheses/labels';
 import { decisionsApi, hypothesesApi } from '../../lib/hypotheses-api';
@@ -45,6 +50,76 @@ type FindingRow = DecisionFinding;
 interface EvidenceRow {
   quote: string;
   source: string;
+}
+
+/**
+ * ANA-138: autonomy badges of an AI decision — the assessed type, the level the decision
+ * runs at (tooltip = the level's meaning) and, when the verdict escalates, the
+ * «требует PM-эскалации» badge with the localized reason (the API returns the raw code).
+ */
+function AutonomyBadges({ autonomy }: { autonomy: AutonomyAssessment }): JSX.Element | null {
+  const { t } = useT();
+  const reason = autonomy.escalation.reason;
+  return (
+    <>
+      <Pill tone="neutral">{t(DECISION_TYPE_KEY[autonomy.type])}</Pill>
+      <Pill tone="accent" title={t(`dec.autonomy.level.${autonomy.required}`)}>
+        {autonomy.required}
+      </Pill>
+      {reason && (
+        <Pill tone="amber" title={t(`dec.autonomy.reason.${reason}`)}>
+          {t('dec.autonomy.escalation')}
+        </Pill>
+      )}
+    </>
+  );
+}
+
+/**
+ * ANA-138: the «Матрица автономии» block — the static contract served by
+ * GET /api/decisions/autonomy-matrix, rendered as a compact type → max-level table with
+ * the derived escalation rule. The table sits in an overflow-x-auto wrapper so a 390px
+ * viewport never scrolls the page horizontally (ANA-135 pattern).
+ */
+function AutonomyMatrixCard({ data }: { data: AutonomyMatrixResponse }): JSX.Element {
+  const { t } = useT();
+  const requiredRank = AUTONOMY_LEVEL_RANK[data.required];
+  return (
+    <Card>
+      <h2 className="text-sm font-bold">{t('dec.autonomy.matrix.title')}</h2>
+      <p className="mt-1 text-xs text-muted">
+        {t('dec.autonomy.matrix.subtitle', { required: data.required })}
+      </p>
+      <div className="mt-3 overflow-x-auto">
+        <table data-testid="autonomy-matrix" className="w-full text-left text-xs">
+          <thead>
+            <tr className="text-xs uppercase tracking-wide text-muted">
+              <th className="py-1.5 pr-3 font-medium">{t('dec.autonomy.matrix.col.type')}</th>
+              <th className="py-1.5 pr-3 font-medium">{t('dec.autonomy.matrix.col.max')}</th>
+              <th className="py-1.5 font-medium">{t('dec.autonomy.matrix.col.rule')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {DECISION_TYPES.map((type) => {
+              const max = data.matrix[type].maxAutonomy;
+              const escalates = AUTONOMY_LEVEL_RANK[max] < requiredRank;
+              return (
+                <tr key={type} className="border-t border-line">
+                  <td className="py-1.5 pr-3">{t(DECISION_TYPE_KEY[type])}</td>
+                  <td className="py-1.5 pr-3 font-mono">{max}</td>
+                  <td className="py-1.5">
+                    {escalates
+                      ? t('dec.autonomy.matrix.rule.escalate')
+                      : t('dec.autonomy.matrix.rule.ok')}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
 }
 
 function DecisionEditor({
@@ -417,6 +492,12 @@ export function Decisions(): JSX.Element {
 
   const decisions = useQuery({ queryKey: ['decisions'], queryFn: decisionsApi.list });
   const hypotheses = useQuery({ queryKey: ['hypotheses'], queryFn: hypothesesApi.list });
+  // ANA-138: the read-only autonomy contract — when it fails the page still works, the
+  // matrix block just stays hidden.
+  const matrix = useQuery({
+    queryKey: ['decisions-autonomy-matrix'],
+    queryFn: decisionsApi.autonomyMatrix,
+  });
 
   const createMut = useMutation({
     mutationFn: (d: NewDecision) => decisionsApi.create(d),
@@ -469,6 +550,8 @@ export function Decisions(): JSX.Element {
                   <span className="font-mono text-xs font-bold text-accent">{d.number}</span>
                   {/* ANA-128: auto-populated AI proposals carry the «AI» provenance badge. */}
                   <SourceBadge source={d.source} />
+                  {/* ANA-138: type / level / escalation badges on AI decisions only. */}
+                  {d.source === 'ai' && d.autonomy && <AutonomyBadges autonomy={d.autonomy} />}
                   <Pill
                     tone={
                       d.outcome === 'green' ? 'green' : d.outcome === 'yellow' ? 'amber' : 'red'
@@ -491,6 +574,8 @@ export function Decisions(): JSX.Element {
           </ul>
         )}
       </Card>
+
+      {matrix.data && <AutonomyMatrixCard data={matrix.data} />}
 
       {creating && (
         <DecisionEditor
