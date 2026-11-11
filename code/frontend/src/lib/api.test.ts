@@ -70,10 +70,8 @@ describe('api client', () => {
     const seen: RequestInit[] = [];
     mockFetch((url, init) => {
       if (init) seen.push(init);
-      // ANA-133: insights POST returns a jobId and the client polls the job endpoint.
+      // ANA-133: the AI endpoints only start the background job (202 {jobId}).
       if (url.endsWith('/report/insights')) return ok({ jobId: 'job-1' }, 202);
-      if (url.includes('/report/ai-jobs/'))
-        return ok({ id: 'job-1', kind: 'insights', status: 'done', result: { narrative: 'n' } });
       return ok({ id: 1 });
     });
     await api.createHypothesis({ title: 'x' } as never);
@@ -171,78 +169,32 @@ describe('readableError', () => {
   });
 });
 
-describe('AI background jobs (ANA-133)', () => {
-  afterEach(() => {
-    window.localStorage.removeItem('pca.locale');
-    vi.useRealTimers();
+describe('AI background jobs transport (ANA-133)', () => {
+  it('generateInsights/generateHypotheses only start the job (202 {jobId}) — polling lives in ai-jobs.ts', async () => {
+    const calls: Array<{ url: string; method?: string }> = [];
+    mockFetch((url, init) => {
+      calls.push({ url, method: init?.method });
+      return ok({ jobId: 'job-7' }, 202);
+    });
+    await expect(api.generateInsights('snap-1', 'yandexgpt')).resolves.toEqual({
+      jobId: 'job-7',
+    });
+    await expect(api.generateHypotheses('snap-2')).resolves.toEqual({ jobId: 'job-7' });
+    expect(calls).toEqual([
+      { url: '/api/report/insights', method: 'POST' },
+      { url: '/api/report/hypotheses', method: 'POST' },
+    ]);
   });
 
-  it('generateInsights polls the background job until it is done', async () => {
-    vi.useFakeTimers();
+  it('getAiJob GETs the poll-facing job view', async () => {
     const calls: string[] = [];
-    mockFetch((url, init) => {
-      calls.push(`${init?.method ?? 'GET'} ${url}`);
-      if (init?.method === 'POST') return ok({ jobId: 'job-7' }, 202);
-      if (calls.filter((c) => c.includes('/report/ai-jobs/')).length === 1)
-        return ok({ id: 'job-7', kind: 'insights', status: 'running' });
-      return ok({
-        id: 'job-7',
-        kind: 'insights',
-        status: 'done',
-        result: {
-          narrative: 'готово',
-          generatedBy: { provider: 'yandexgpt', providerName: 'YandexGPT', model: 'm', at: 'T' },
-        },
-      });
+    mockFetch((url) => {
+      calls.push(url);
+      return ok({ id: 'job-9', kind: 'insights', status: 'running' });
     });
-    const pending = api.generateInsights('snap-1', 'yandexgpt');
-    await vi.advanceTimersByTimeAsync(2000);
-    const res = await pending;
-    expect(res.narrative).toBe('готово');
-    expect(res.generatedBy?.provider).toBe('yandexgpt');
-    expect(calls[0]).toBe('POST /api/report/insights');
-    expect(calls[1]).toBe('GET /api/report/ai-jobs/job-7');
-    expect(calls[2]).toBe('GET /api/report/ai-jobs/job-7');
-  });
-
-  it('a failed job surfaces its message instead of hanging the caller', async () => {
-    mockFetch((url, init) => {
-      if (init?.method === 'POST') return ok({ jobId: 'job-8' }, 202);
-      return ok({ id: 'job-8', kind: 'insights', status: 'failed', error: 'no key' });
-    });
-    await expect(api.generateInsights('snap-1')).rejects.toThrow('no key');
-  });
-
-  it('a failed job without an error text falls back to a localized message', async () => {
-    window.localStorage.setItem('pca.locale', 'ru');
-    mockFetch((url, init) => {
-      if (init?.method === 'POST') return ok({ jobId: 'job-8' }, 202);
-      return ok({ id: 'job-8', kind: 'insights', status: 'failed' });
-    });
-    await expect(api.generateInsights('snap-1')).rejects.toThrow(/AI-генерация/);
-  });
-
-  it('an unknown job id (lost after a server restart) reports honest failure', async () => {
-    window.localStorage.setItem('pca.locale', 'ru');
-    mockFetch((url, init) => {
-      if (init?.method === 'POST') return ok({ jobId: 'job-9' }, 202);
-      return { ok: false, status: 404, json: async () => ({}), text: async () => 'not found' };
-    });
-    await expect(api.generateInsights('snap-1')).rejects.toThrow(/прервана/);
-  });
-
-  it('a job that never finishes hits the poll cap with a localized timeout message', async () => {
-    vi.useFakeTimers();
-    window.localStorage.setItem('pca.locale', 'ru');
-    mockFetch((url, init) => {
-      if (init?.method === 'POST') return ok({ jobId: 'job-10' }, 202);
-      return ok({ id: 'job-10', kind: 'insights', status: 'running' });
-    });
-    const pending = api.generateInsights('snap-1');
-    const expectation = expect(pending).rejects.toThrow(/не завершилась/);
-    // The cap (~400 polls × 2s) is comfortably above the documented 5–10 min generation.
-    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
-    await expectation;
+    const view = await api.getAiJob('job-9');
+    expect(view.status).toBe('running');
+    expect(calls).toEqual(['/api/report/ai-jobs/job-9']);
   });
 
   it('a 429 busy start propagates as ApiError without any polling', async () => {
@@ -255,15 +207,5 @@ describe('AI background jobs (ANA-133)', () => {
     const err = await api.generateInsights('snap-1').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(429);
-  });
-
-  it('generateHypotheses only starts the background job — no polling (the snapshot poll renders it)', async () => {
-    const calls: string[] = [];
-    mockFetch((url, init) => {
-      calls.push(`${init?.method ?? 'GET'} ${url}`);
-      return ok({ jobId: 'job-11' }, 202);
-    });
-    await api.generateHypotheses('snap-2', 'gigachat');
-    expect(calls).toEqual(['POST /api/report/hypotheses']);
   });
 });

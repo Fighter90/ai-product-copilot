@@ -5,7 +5,6 @@ import type {
   ChannelStat,
   Decision,
   DemoStatus,
-  GeneratedHypotheses,
   Goal,
   Hypothesis,
   MarketingCell,
@@ -21,7 +20,6 @@ import type {
   GeoDeviceStat,
   PageStat,
   RawResponse,
-  AiGenerationInfo,
 } from '@pca/shared';
 import { translate } from '../i18n';
 import type { Locale } from '../store/prefs';
@@ -61,6 +59,17 @@ export interface SnapshotSummary {
   dateTo: string;
   /** ANA-39: who built the snapshot (user email in cabinet mode; null in legacy mode). */
   author?: string | null;
+}
+
+/** ANA-133: poll-facing view of one background AI generation job (mirrors the backend). */
+export interface AiJobView {
+  readonly id: string;
+  readonly kind: 'insights' | 'hypotheses';
+  readonly status: 'running' | 'done' | 'failed';
+  /** Set when status is 'done' — the generation payload ({narrative} / {hypotheses}). */
+  readonly result?: unknown;
+  /** Set when status is 'failed' — the extracted error message. */
+  readonly error?: string;
 }
 
 export interface SettingsStatus {
@@ -229,22 +238,30 @@ export const api = {
   getSnapshot: (id: string) => http<ReportSnapshot>(`/report/snapshot/${id}`),
   generateReport: (body: { snapshotId: string; format: 'docx' | 'pdf' }) =>
     http<{ filePath: string }>('/report/generate', { method: 'POST', body: JSON.stringify(body) }),
+  /**
+   * ANA-133: AI generation runs in the backend's single-slot background queue — the POST
+   * answers 202 {jobId} right away; the narrative/hypotheses arrive via `getAiJob` polling
+   * (see lib/ai-jobs.ts). A busy slot surfaces as a 429 ApiError.
+   */
   generateInsights: (snapshotId: string, providerId?: string) =>
-    http<{ narrative: string; generatedBy?: AiGenerationInfo }>('/report/insights', {
+    http<{ jobId: string }>('/report/insights', {
       method: 'POST',
       body: JSON.stringify({
         snapshotId,
         ...(providerId && providerId !== 'auto' ? { providerId } : {}),
       }),
     }),
+  /** ANA-133: only starts the background job (202 {jobId}) — the snapshot poll renders it. */
   generateHypotheses: (snapshotId: string, providerId?: string) =>
-    http<{ hypotheses: GeneratedHypotheses }>('/report/hypotheses', {
+    http<{ jobId: string }>('/report/hypotheses', {
       method: 'POST',
       body: JSON.stringify({
         snapshotId,
         ...(providerId && providerId !== 'auto' ? { providerId } : {}),
       }),
     }),
+  /** ANA-133: poll one background AI job (404 when lost, e.g. after a server restart). */
+  getAiJob: (jobId: string) => http<AiJobView>(`/report/ai-jobs/${encodeURIComponent(jobId)}`),
   sync: (body: { from: string; to: string; goalId?: number }) =>
     http<SyncSummary>('/sync', { method: 'POST', body: JSON.stringify(body) }),
   /** List all report snapshots (for the History page). */

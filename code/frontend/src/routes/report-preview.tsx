@@ -13,6 +13,7 @@ import {
   type ReportSnapshot,
 } from '@pca/shared';
 import { api } from '../lib/api';
+import { isBusyError, trackAiJob } from '../lib/ai-jobs';
 import { v3 } from '../lib/api-v3';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
@@ -612,6 +613,7 @@ export function ReportPreview(): JSX.Element {
   const { from, to } = useFilters();
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useT();
   const buildMut = useMutation({ mutationFn: api.buildSnapshot });
 
   // ANA-33: usable AI providers (enabled + key set) — analysts read them from /ai/available.
@@ -636,14 +638,32 @@ export function ReportPreview(): JSX.Element {
   // БАГ-21: «Сгенерировать AI-анализ» пополнял только narrative — строка «AI-гипотез: не
   // сгенерированы» могла висеть вечно, когда fire-and-forget автогенерация на бэке терялась
   // (параллельные AI-вызовы, тихий .catch). Досыпаем гипотезы тем же провайдером: бэкенд
-  // возвращает уже готовые, а существующий поллинг среза сам подхватит результат.
+  // ставит задачу в ту же фоновую очередь (ANA-133), а существующий поллинг среза сам
+  // подхватит результат.
   const insightsMut = useMutation({
     mutationFn: async (input: { snapshotId: string; providerId: string }) => {
-      const res = await api.generateInsights(input.snapshotId, input.providerId);
+      // ANA-133: генерация ушла в фоновую однослотную очередь бэка — POST сразу отвечает
+      // 202 {jobId}, результат дотягиваем поллингом /report/ai-jobs/:jobId (индикатор
+      // прогресса внизу остаётся, пока mutation pending).
+      let result: { narrative: string; generatedBy?: AiGenerationInfo };
+      try {
+        const { jobId } = await api.generateInsights(input.snapshotId, input.providerId);
+        result = await trackAiJob<{ narrative: string; generatedBy?: AiGenerationInfo }>(
+          jobId,
+          api.getAiJob,
+        );
+      } catch (err) {
+        // 429 = слот занят другой генерацией — показываем локализованную подсказку
+        // вместо сырого JSON-тела прокси.
+        if (isBusyError(err)) throw new Error(t('rep.ai.busy'));
+        throw err;
+      }
       if (!snapshot?.generatedHypotheses) {
+        // Слот освободился — гипотезы досыпаем тем же провайдером (ответ не нужен:
+        // существующий поллинг среза сам подхватит сохранённый результат).
         void api.generateHypotheses(input.snapshotId, input.providerId).catch(() => undefined);
       }
-      return res;
+      return result;
     },
   });
   // БАГ-21: AI-гипотезы дорисовываются на бэке после сборки среза (fire-and-forget), поэтому

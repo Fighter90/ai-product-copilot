@@ -133,10 +133,13 @@ sequenceDiagram
   SB->>DB: метрики + b2b_manual + цели
   SB-->>API: immutable snapshot (payload JSON)
   API->>DB: INSERT report_snapshots (ulid)
-  opt AI-анализ (кнопка «AI-инсайты/гипотезы»)
+  opt AI-анализ (кнопка «Сгенерировать AI-анализ»)
     U->>API: POST /report/insights | /report/hypotheses {snapshotId}
-    API->>LLM: snapshot-факты через chainAsAnthropicFetch
+    API-->>U: 202 {jobId} — генерация ушла в фоновую однослотную очередь (ANA-133); слот занят → 429 Retry-After
+    API->>LLM: фоновый воркер (setImmediate, вне HTTP-контекста), snapshot-факты через chainAsAnthropicFetch
     LLM-->>API: текст анализа (в payload снапшота, не в render)
+    U->>API: GET /report/ai-jobs/:jobId (поллинг)
+    API-->>U: running | done {result} | failed {error} (после рестарта API — 404)
   end
   U->>API: POST /report/generate {snapshotId, format}
   API->>DB: чтение snapshot (тот же ulid)

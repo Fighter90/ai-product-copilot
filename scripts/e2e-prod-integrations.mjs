@@ -359,12 +359,37 @@ export async function runIntegrationChecks({ base, email, password, analystPassw
   }
 
   if (ai && snapshotId) {
+    // ANA-133: AI generation runs in the backend's single-slot background queue — POST
+    // answers 202 {jobId} and the result arrives by polling GET /report/ai-jobs/:jobId
+    // until status done/failed (429 = another generation holds the slot).
+    const pollAiJob = async (jobId) => {
+      const deadline = Date.now() + AI_TIMEOUT_MS;
+      for (;;) {
+        if (Date.now() > deadline) return { status: 504, json: null, ms: AI_TIMEOUT_MS };
+        const r = await get(`/api/report/ai-jobs/${encodeURIComponent(jobId)}`, {
+          timeoutMs: 30_000,
+        });
+        const j = r.json ?? {};
+        if (r.status === 404) return { status: 410, json: { status: 'failed', error: 'job lost' } };
+        if (r.status !== 200) return r;
+        if (j.status === 'done' || j.status === 'failed') return r;
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+      }
+    };
+    const startAiJob = async (path, snapshotIdForJob) => {
+      const started = await post(path, { snapshotId: snapshotIdForJob }, { timeoutMs: 30_000 });
+      if (started.status === 429) return { status: 429, json: null, ms: started.ms };
+      if (started.status !== 202) return started;
+      return pollAiJob(started.json?.jobId);
+    };
     {
-      const r = await post('/api/report/insights', { snapshotId }, { timeoutMs: AI_TIMEOUT_MS });
-      const text = String(r.json?.narrative ?? '');
+      const r = await startAiJob('/api/report/insights', snapshotId);
+      const text = String(r.json?.result?.narrative ?? '');
       const sections = (text.match(/^## /gm) ?? []).length;
       const errs = [];
-      if (r.status !== 200) errs.push(`${brief(r)} after ${Math.round(r.ms / 1000)}s`);
+      if (r.status === 429) errs.push(`busy (429) after ${Math.round(r.ms / 1000)}s`);
+      else if (r.status !== 200 || r.json?.status !== 'done')
+        errs.push(`${brief(r)} after ${Math.round(r.ms / 1000)}s`);
       else {
         if (sections < 5) errs.push(`sections=${sections} (need ≥5)`);
         if (text.includes('[Ошибка генерации')) errs.push('contains [Ошибка генерации');
@@ -373,10 +398,12 @@ export async function runIntegrationChecks({ base, email, password, analystPassw
       else ok('ai:insights', text.length, `sections=${sections} ${Math.round(r.ms / 1000)}s`);
     }
     {
-      const r = await post('/api/report/hypotheses', { snapshotId }, { timeoutMs: AI_TIMEOUT_MS });
-      const h = r.json?.hypotheses;
+      const r = await startAiJob('/api/report/hypotheses', snapshotId);
+      const h = r.json?.result?.hypotheses;
       const errs = [];
-      if (r.status !== 200 || !h) errs.push(`${brief(r)} after ${Math.round(r.ms / 1000)}s`);
+      if (r.status === 429) errs.push(`busy (429) after ${Math.round(r.ms / 1000)}s`);
+      else if (r.status !== 200 || r.json?.status !== 'done' || !h)
+        errs.push(`${brief(r)} after ${Math.round(r.ms / 1000)}s`);
       else {
         const p = h.problems?.length ?? 0;
         const s = h.solutions?.length ?? 0;
@@ -391,7 +418,7 @@ export async function runIntegrationChecks({ base, email, password, analystPassw
       else
         ok(
           'ai:hypotheses',
-          r.buf.length,
+          r.buf?.length ?? 0,
           `problems=${h.problems.length} solutions=${h.solutions.length} ${Math.round(r.ms / 1000)}s`,
         );
     }

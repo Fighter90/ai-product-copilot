@@ -4,26 +4,15 @@ import type { ReportSnapshot } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
-vi.mock('../lib/api', () => {
-  class ApiError extends Error {
-    constructor(
-      public readonly status: number,
-      message: string,
-    ) {
-      super(message);
-      this.name = 'ApiError';
-    }
-  }
-  return {
-    ApiError,
-    api: {
-      buildSnapshot: vi.fn(),
-      generateInsights: vi.fn(),
-      generateHypotheses: vi.fn(),
-      getSnapshot: vi.fn(),
-    },
-  };
-});
+vi.mock('../lib/api', () => ({
+  api: {
+    buildSnapshot: vi.fn(),
+    generateInsights: vi.fn(),
+    generateHypotheses: vi.fn(),
+    getSnapshot: vi.fn(),
+    getAiJob: vi.fn(),
+  },
+}));
 vi.mock('../lib/api-v3', () => ({
   // A provider is configured by default so the wrapper's AI button is enabled; the empty case
   // (disabled + hint) is covered at the View level.
@@ -40,7 +29,7 @@ vi.mock('../lib/download', () => ({
   downloadFileViaFetch: vi.fn().mockResolvedValue(undefined),
   reportDownloadUrl: (id: string, format: string) => `/api/report/download/${id}/${format}`,
 }));
-import { api, ApiError } from '../lib/api';
+import { api } from '../lib/api';
 import { downloadFileViaFetch } from '../lib/download';
 import { ReportPreviewView, ReportPreview, ReportFullView } from './report-preview';
 
@@ -357,7 +346,14 @@ describe('ReportPreview (wrapper)', () => {
   });
 
   it('generates an AI narrative for the snapshot', async () => {
-    vi.mocked(api.generateInsights).mockResolvedValue({ narrative: 'AI: рост заявок' });
+    // ANA-133: the POST returns a jobId, the narrative arrives via the job poll.
+    vi.mocked(api.generateInsights).mockResolvedValue({ jobId: 'job-1' });
+    vi.mocked(api.getAiJob).mockResolvedValue({
+      id: 'job-1',
+      kind: 'insights',
+      status: 'done',
+      result: { narrative: 'AI: рост заявок' },
+    });
     renderWithProviders(<ReportPreview />);
     fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
     expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
@@ -366,10 +362,17 @@ describe('ReportPreview (wrapper)', () => {
     expect(await screen.findByText(/AI: рост заявок/)).toBeInTheDocument();
     // ANA-33: «Авто» is the default choice — no providerId is pinned in the request.
     expect(vi.mocked(api.generateInsights).mock.calls[0]?.slice(0, 2)).toEqual(['snap-1', 'auto']);
+    expect(vi.mocked(api.getAiJob)).toHaveBeenCalledWith('job-1');
   });
 
   it('БАГ-21: after the narrative, hypotheses are backfilled — «не сгенерированы» не зависает', async () => {
-    vi.mocked(api.generateInsights).mockResolvedValue({ narrative: 'AI: рост заявок' });
+    vi.mocked(api.generateInsights).mockResolvedValue({ jobId: 'job-1' });
+    vi.mocked(api.getAiJob).mockResolvedValue({
+      id: 'job-1',
+      kind: 'insights',
+      status: 'done',
+      result: { narrative: 'AI: рост заявок' },
+    });
     vi.mocked(api.generateHypotheses).mockResolvedValue({
       hypotheses: { problems: [{ title: 'p1' }], solutions: [{ title: 's1' }] },
     } as never);
@@ -382,7 +385,8 @@ describe('ReportPreview (wrapper)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
     await screen.findByText(/AI: рост заявок/);
     // The narrative alone used to leave «AI-гипотез: не сгенерированы» forever when the backend's
-    // fire-and-forget auto-generation was lost — now the same provider backfills the hypotheses.
+    // fire-and-forget auto-generation was lost — now the same provider backfills the hypotheses
+    // once the single AI slot is free again (ANA-133).
     await waitFor(() =>
       expect(vi.mocked(api.generateHypotheses)).toHaveBeenCalledWith('snap-1', 'auto'),
     );
@@ -391,14 +395,14 @@ describe('ReportPreview (wrapper)', () => {
 
   it('ANA-133: a busy AI slot (429) shows the localized hint instead of the raw proxy JSON', async () => {
     vi.mocked(api.generateInsights).mockRejectedValue(
-      new ApiError(429, '{"error":"AI-генерация уже выполняется","code":"AI_BUSY"}'),
+      Object.assign(new Error('{"error":"другая генерация","code":"AI_BUSY"}'), { status: 429 }),
     );
     renderWithProviders(<ReportPreview />);
     fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
     expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
-    await screen.findByText(/AI-генерация уже выполняется/);
+    await screen.findByText(/уже выполняется/);
     // The raw JSON body of the 429 never reaches the UI.
     expect(screen.queryByText(/AI_BUSY/)).not.toBeInTheDocument();
   });

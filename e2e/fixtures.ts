@@ -332,58 +332,72 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
       201,
     ),
   );
-  await page.route('**/api/report/insights*', (r) =>
-    json(r, { narrative: 'AI-анализ: визиты растут, конверсия стабильна.' }),
-  );
-  await page.route('**/api/report/hypotheses*', (r) =>
-    json(r, {
-      hypotheses: {
-        problems: [
-          {
-            id: 'P01',
-            segment: 'мобильный посетитель',
-            trouble: 'не завершает оплату',
-            action: 'покупке билета',
-            barrier: 'форма оплаты не адаптирована',
-            evidence: '68% мобильного трафика, CR 1.2%',
-          },
-        ],
-        solutions: [
-          {
-            id: 'S01',
-            problemId: 'P01',
-            action: 'заменим форму оплаты',
-            userBenefit: 'оплатить в 2 клика',
-            businessResult: 'росту CR +150%',
-            successCriteria: 'CR mobile ≥ 3% через 14 дней',
-            risks: [
-              { kind: 'value', note: 'Пользователи не ценят скорость' },
-              { kind: 'usability', note: 'Новая форма может путать' },
-              { kind: 'feasibility', note: 'Интеграция шлюза' },
-              { kind: 'business', note: 'Нужен бюджет' },
-              { kind: 'legal', note: '152-ФЗ' },
+  // ANA-133: AI generation runs in the backend's background queue — the POST answers
+  // 202 {jobId} and the client polls /report/ai-jobs/:jobId for the result.
+  await page.route('**/api/report/insights*', (r) => json(r, { jobId: 'job-insights' }, 202));
+  await page.route('**/api/report/hypotheses*', (r) => json(r, { jobId: 'job-hypotheses' }, 202));
+  await page.route('**/api/report/ai-jobs/*', (r) => {
+    const jobId = r.request().url().split('/').pop() ?? '';
+    if (jobId === 'job-hypotheses')
+      return json(r, {
+        id: jobId,
+        kind: 'hypotheses',
+        status: 'done',
+        result: {
+          hypotheses: {
+            problems: [
+              {
+                id: 'P01',
+                segment: 'мобильный посетитель',
+                trouble: 'не завершает оплату',
+                action: 'покупке билета',
+                barrier: 'форма оплаты не адаптирована',
+                evidence: '68% мобильного трафика, CR 1.2%',
+              },
             ],
-            validation: {
-              whatToVerify: 'Готовность к новой форме',
-              methods: ['интервью', 'A/B тест'],
-              audience: 'мобильные посетители',
-              channel: 'email',
-              successCriteria: '≥60% подтверждают удобство',
-            },
-            ice: {
-              impact: 9,
-              confidence: 7,
-              ease: 6,
-              impactRationale: 'Крупнейший сегмент',
-              confidenceRationale: 'Данные убедительны',
-              easeRationale: 'Готовая библиотека',
-              score: 378,
-            },
+            solutions: [
+              {
+                id: 'S01',
+                problemId: 'P01',
+                action: 'заменим форму оплаты',
+                userBenefit: 'оплатить в 2 клика',
+                businessResult: 'росту CR +150%',
+                successCriteria: 'CR mobile ≥ 3% через 14 дней',
+                risks: [
+                  { kind: 'value', note: 'Пользователи не ценят скорость' },
+                  { kind: 'usability', note: 'Новая форма может путать' },
+                  { kind: 'feasibility', note: 'Интеграция шлюза' },
+                  { kind: 'business', note: 'Нужен бюджет' },
+                  { kind: 'legal', note: '152-ФЗ' },
+                ],
+                validation: {
+                  whatToVerify: 'Готовность к новой форме',
+                  methods: ['интервью', 'A/B тест'],
+                  audience: 'мобильные посетители',
+                  channel: 'email',
+                  successCriteria: '≥60% подтверждают удобство',
+                },
+                ice: {
+                  impact: 9,
+                  confidence: 7,
+                  ease: 6,
+                  impactRationale: 'Крупнейший сегмент',
+                  confidenceRationale: 'Данные убедительны',
+                  easeRationale: 'Готовая библиотека',
+                  score: 378,
+                },
+              },
+            ],
           },
-        ],
-      },
-    }),
-  );
+        },
+      });
+    return json(r, {
+      id: 'job-insights',
+      kind: 'insights',
+      status: 'done',
+      result: { narrative: 'AI-анализ: визиты растут, конверсия стабильна.' },
+    });
+  });
   await page.route('**/api/report/generate*', (r) => {
     const body = JSON.parse(r.request().postData() ?? '{}') as { format?: string };
     const ext = body.format === 'pdf' ? 'pdf' : 'docx';

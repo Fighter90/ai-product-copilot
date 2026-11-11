@@ -1,0 +1,72 @@
+import { translate } from '../i18n';
+import type { AiJobView } from './api';
+import type { Locale } from '../store/prefs';
+
+/**
+ * ANA-133: the backend runs AI generation in a single-slot background queue — POST answers
+ * 202 {jobId} immediately and the client polls GET /report/ai-jobs/:jobId. This helper turns
+ * that polling into one promise for the api client: it resolves with the job result and
+ * throws with a ready-to-display (localized) message on failure, a lost job (404 — e.g. the
+ * server restarted and the in-memory queue is gone) or the overall timeout.
+ */
+
+/** Poll interval — a generation takes minutes, there is nothing to gain by hammering. */
+export const AI_JOB_POLL_MS = 2000;
+/**
+ * Poll budget: 400 × 2s ≈ 13 minutes — comfortably above the documented 5–10 minutes
+ * a report AI analysis may take (rep.ai.pendingNote), so a healthy run is never cut off.
+ */
+export const AI_JOB_MAX_POLLS = 400;
+
+/** The HTTP status carried by ApiError — status-only checks keep this module import-cycle-free. */
+function errStatus(err: unknown): number | undefined {
+  return (err as { status?: number } | undefined)?.status;
+}
+
+/** True when the error is the backend's 429 «another generation already holds the slot». */
+export function isBusyError(err: unknown): boolean {
+  return errStatus(err) === 429;
+}
+
+/** Same locale resolution as readableError (api.ts): the visitor's persisted choice. */
+function currentLocale(): Locale {
+  return typeof window !== 'undefined' && window.localStorage?.getItem('pca.locale') === 'en'
+    ? 'en'
+    : 'ru';
+}
+
+const defaultDelay = (ms: number): Promise<void> =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Poll a background AI job until it settles. Resolves with the job's `result` payload
+ * (cast to `T` by the caller, which knows the kind it started). Throws an Error whose
+ * message is user-displayable: the server's failure message or the localized
+ * «job lost» / «timed out» note.
+ */
+export async function trackAiJob<T>(
+  jobId: string,
+  getJob: (id: string) => Promise<AiJobView>,
+  opts: { delay?: (ms: number) => Promise<void>; polls?: number } = {},
+): Promise<T> {
+  const wait = opts.delay ?? defaultDelay;
+  const maxPolls = opts.polls ?? AI_JOB_MAX_POLLS;
+  const locale = currentLocale();
+  for (let poll = 0; ; poll++) {
+    let job: AiJobView;
+    try {
+      job = await getJob(jobId);
+    } catch (err) {
+      // 404 = the job is unknown: never started, pruned or lost to a server restart —
+      // the honest «generation failed, retry» contract of the in-memory queue (ANA-133).
+      if (errStatus(err) === 404) throw new Error(translate(locale, 'rep.ai.jobLost'));
+      throw err;
+    }
+    if (job.status === 'done') return job.result as T;
+    if (job.status === 'failed') {
+      throw new Error(job.error || translate(locale, 'rep.ai.jobFailed'));
+    }
+    if (poll >= maxPolls) throw new Error(translate(locale, 'rep.ai.jobTimeout'));
+    await wait(AI_JOB_POLL_MS);
+  }
+}
