@@ -768,7 +768,6 @@ async function main() {
       }
     }
   } finally {
-    lockAlive = false;
     try {
       unlinkSync(resolve(STATE, 'lock'));
     } catch {
