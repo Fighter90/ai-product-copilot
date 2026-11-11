@@ -12,6 +12,7 @@ import {
 import { useT, fmtDate } from '../../i18n';
 import { Card, ErrorBox, PageHeader, Pill, Skeleton } from '../../components/ui';
 import { EmptyState } from '../../components/EmptyState';
+import { SourceBadge } from '../../components/hypotheses/SourceBadge';
 import { Modal } from '../../components/ui';
 import {
   CONFIDENCE_KEY,
@@ -466,6 +467,8 @@ export function Decisions(): JSX.Element {
               <li key={d.id} className="rounded-lg border border-line p-3 text-sm animate-fade-up">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-xs font-bold text-accent">{d.number}</span>
+                  {/* ANA-128: auto-populated AI proposals carry the «AI» provenance badge. */}
+                  <SourceBadge source={d.source} />
                   <Pill
                     tone={
                       d.outcome === 'green' ? 'green' : d.outcome === 'yellow' ? 'amber' : 'red'

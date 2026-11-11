@@ -119,6 +119,26 @@ describe('ReportPreviewView', () => {
     expect(onExport).toHaveBeenCalledWith('snap-1', 'pdf');
   });
 
+  it('reports the ANA-128 auto-population result next to the data summary', () => {
+    render(
+      <ReportPreviewView
+        {...baseProps}
+        snapshot={{
+          ...snapshot,
+          autoPopulate: { hypotheses: 7, decisions: 3, skipped: 2 },
+        }}
+      />,
+    );
+    const line = screen.getByTestId('rep-autopopulate');
+    expect(line).toHaveTextContent('Автопополнение: 7 гипотез и 3 решений перенесено в разделы');
+    expect(line).toHaveTextContent('(дубликатов пропущено: 2)');
+  });
+
+  it('hides the auto-population line while AI analysis has not populated anything', () => {
+    render(<ReportPreviewView {...baseProps} snapshot={snapshot} />);
+    expect(screen.queryByText(/Автопополнение/)).not.toBeInTheDocument();
+  });
+
   it('KPI label follows the snapshot goalLabel (Заявок for a purchase goal — БАГ-02: заявки, не «заказы»)', () => {
     const paidSnapshot = {
       ...snapshot,

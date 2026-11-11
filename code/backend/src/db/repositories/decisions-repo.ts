@@ -30,6 +30,7 @@ interface DecRow {
   participants: string | null;
   exported_md_path: string | null;
   is_demo: number;
+  source: 'manual' | 'ai';
   created_at: string;
   updated_at: string;
 }
@@ -58,6 +59,7 @@ function toDecision(r: DecRow): Decision {
     participants: r.participants ?? undefined,
     exportedMdPath: r.exported_md_path ?? undefined,
     isDemo: r.is_demo ? true : undefined,
+    source: r.source === 'ai' ? 'ai' : 'manual',
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -76,6 +78,23 @@ export class DecisionsRepo {
    * outcome (green/yellow/red). Evidence is required — the loop is not closed without it.
    */
   create(input: NewDecision): Decision {
+    return this.insertDecision(input, 'manual', true);
+  }
+
+  /**
+   * ANA-128: stores an AI-proposed decision (report AI path) as a draft. Evidence is required
+   * like the manual path, but the linked hypothesis status is NOT touched — an AI proposal is
+   * not a human decision, the draft stays a draft until a person takes it into work.
+   */
+  createAiDraft(input: NewDecision): Decision {
+    return this.insertDecision(input, 'ai', false);
+  }
+
+  private insertDecision(
+    input: NewDecision,
+    source: 'manual' | 'ai',
+    applyOutcomeToHypothesis: boolean,
+  ): Decision {
     if (input.evidence.length === 0) {
       throw new DecisionValidationError('Decision requires at least one evidence item');
     }
@@ -86,12 +105,12 @@ export class DecisionsRepo {
          number, hypothesis_id, date, method, scope, period_days, findings, evidence,
          outcome, outcome_rationale, next_step, responsible, next_deadline,
          previous_decision_id, spawned_hypothesis_ids, decided_by, participants,
-         is_demo, created_at, updated_at
+         is_demo, source, created_at, updated_at
        ) VALUES (
          @number, @hypothesis_id, @date, @method, @scope, @period_days, @findings, @evidence,
          @outcome, @outcome_rationale, @next_step, @responsible, @next_deadline,
          @previous_decision_id, @spawned_hypothesis_ids, @decided_by, @participants,
-         @is_demo, @created_at, @updated_at
+         @is_demo, @source, @created_at, @updated_at
        ) RETURNING *`,
     );
     const updateStatus = this.db.prepare(
@@ -120,10 +139,13 @@ export class DecisionsRepo {
         decided_by: d.decidedBy,
         participants: d.participants ?? null,
         is_demo: d.isDemo ? 1 : 0,
+        source,
         created_at: now,
         updated_at: now,
       }) as DecRow;
-      updateStatus.run({ status: d.outcome, u: now, id: d.hypothesisId });
+      if (applyOutcomeToHypothesis) {
+        updateStatus.run({ status: d.outcome, u: now, id: d.hypothesisId });
+      }
       return row;
     })(input);
 

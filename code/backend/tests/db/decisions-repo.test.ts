@@ -81,6 +81,29 @@ describe('DecisionsRepo.create', () => {
   });
 });
 
+describe('DecisionsRepo.createAiDraft (ANA-128)', () => {
+  it('stores an AI-source draft without flipping the linked hypothesis status', () => {
+    const h = hyps.create(validHypothesis());
+    const d = decisions.createAiDraft(decisionFor(h.id, { outcome: 'green' }));
+    expect(d.number).toBe('DL-001');
+    expect(d.source).toBe('ai');
+    // An AI proposal is not a human decision — the hypothesis stays a draft.
+    expect(hyps.getById(h.id)?.status).toBe('draft');
+    // The manual sibling keeps numbering and the manual source (and applies its outcome).
+    const manual = decisions.create(decisionFor(h.id, { outcome: 'green' }));
+    expect(manual.number).toBe('DL-002');
+    expect(manual.source).toBe('manual');
+    expect(hyps.getById(h.id)?.status).toBe('green');
+  });
+
+  it('requires evidence like the manual path', () => {
+    const h = hyps.create(validHypothesis());
+    expect(() => decisions.createAiDraft(decisionFor(h.id, { evidence: [] }))).toThrowError(
+      DecisionValidationError,
+    );
+  });
+});
+
 describe('DecisionsRepo reads', () => {
   it('getById, list and listByHypothesis', () => {
     const h = hyps.create(validHypothesis());

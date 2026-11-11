@@ -32,6 +32,7 @@ describe('migrate', () => {
       '017_ana19_b2c_payments.sql',
       '018_marketing_weekly.sql',
       '018_snapshot_author.sql',
+      '019_decisions_source.sql',
     ]);
   });
 

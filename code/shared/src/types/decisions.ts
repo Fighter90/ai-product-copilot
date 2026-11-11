@@ -1,5 +1,7 @@
 /** Decision Log types (skill-decision-log.md), shared across backend and frontend. */
 
+import type { HypothesisSource } from './hypotheses';
+
 export type DecisionMethod = 'synthetic' | 'live' | 'quantitative' | 'market' | 'mixed';
 export type DecisionOutcome = 'green' | 'yellow' | 'red';
 export type FindingConfidence = 'high' | 'medium' | 'low';
@@ -39,6 +41,11 @@ export interface NewDecision {
 export interface Decision extends NewDecision {
   readonly id: number;
   readonly number: string;
+  /**
+   * ANA-128: provenance — `ai` marks an auto-populated AI proposal (report AI path),
+   * `manual` a human-created entry. Absent in legacy rows before migration 019.
+   */
+  readonly source?: HypothesisSource;
   readonly exportedMdPath?: string;
   readonly createdAt: string;
   readonly updatedAt: string;

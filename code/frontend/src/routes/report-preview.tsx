@@ -494,6 +494,18 @@ export function ReportPreviewView({
               })}
             </li>
             <li>{t('rep.data.decisions', { n: snapshot.decisions.length })}</li>
+            {/* ANA-128: how many AI drafts reached «Гипотезы» / «Решения» after the analysis. */}
+            {snapshot.autoPopulate && (
+              <li data-testid="rep-autopopulate">
+                {t('rep.data.autoPopulate', {
+                  hypotheses: snapshot.autoPopulate.hypotheses,
+                  decisions: snapshot.autoPopulate.decisions,
+                })}
+                {snapshot.autoPopulate.skipped > 0
+                  ? ` ${t('rep.data.autoPopulateSkipped', { n: snapshot.autoPopulate.skipped })}`
+                  : ''}
+              </li>
+            )}
           </ul>
 
           {/* ANA-39: one main action — "Build report" creates a fresh snapshot in place
