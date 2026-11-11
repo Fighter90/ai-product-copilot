@@ -175,7 +175,9 @@ export function parsePickOutput(out) {
   const issue = { id: m[1].trim(), identifier: m[2].trim(), title: m[3].trim() };
   // Guard against the clerk echoing the format template with literal placeholders
   // (career-ops-ui run 1: it printed SWARM_PICK::<issueId>::<identifier>::<title> verbatim).
-  if (/[<>]/.test(issue.id + issue.identifier + issue.title)) {
+  // Template echoes like <issueId> or <REAL identifier> are placeholders; a bare '>' in a
+  // real title (e.g. "scrollWidth 398>390") is legitimate — only reject bracketed tokens.
+  if (/<[a-zA-Z0-9\s-]{1,60}>/.test(issue.id + issue.identifier + issue.title)) {
     throw new Error('clerk output contains placeholder characters — refusing');
   }
   if (!/^[A-Z][A-Z0-9]*-\d+$/.test(issue.identifier)) {
