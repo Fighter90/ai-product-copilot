@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { AI_JOB_MAX_POLLS, AI_JOB_POLL_MS, isBusyError, trackAiJob } from './ai-jobs';
+import { AI_JOB_MAX_POLLS, AI_JOB_POLL_MS, isBusyError, jobErrorHint, trackAiJob } from './ai-jobs';
 import { ApiError, type AiJobView } from './api';
 
 /** ANA-133: client-side polling of the backend's single-slot background AI jobs. */
@@ -83,5 +83,42 @@ describe('trackAiJob (ANA-133)', () => {
     expect(isBusyError(new Error('plain'))).toBe(false);
     expect(isBusyError(undefined)).toBe(false);
     expect(isBusyError('string')).toBe(false);
+  });
+});
+
+describe('jobErrorHint (ANA-132)', () => {
+  const BUSY = 'Другая AI-генерация уже выполняется';
+  const UNREADABLE = 'AI-генерация не удалась — попробуйте ещё раз.';
+
+  it('maps the busy 429 signal to the localized busy note', () => {
+    expect(
+      jobErrorHint(
+        Object.assign(new Error('{"code":"AI_BUSY"}'), { status: 429 }),
+        BUSY,
+        UNREADABLE,
+      ),
+    ).toBe(BUSY);
+  });
+
+  it('passes a readable server message through unchanged', () => {
+    expect(jobErrorHint(new Error('AI returned invalid JSON'), BUSY, UNREADABLE)).toBe(
+      'AI returned invalid JSON',
+    );
+  });
+
+  it('maps a raw-JSON job.error (proxy/provider body) to the localized failure note', () => {
+    expect(
+      jobErrorHint(
+        new Error('{"error":{"code":429,"message":"quota exceeded"}}'),
+        BUSY,
+        UNREADABLE,
+      ),
+    ).toBe(UNREADABLE);
+    expect(jobErrorHint(new Error('["rate limited"]'), BUSY, UNREADABLE)).toBe(UNREADABLE);
+  });
+
+  it('maps a missing message to the localized failure note', () => {
+    expect(jobErrorHint(undefined, BUSY, UNREADABLE)).toBe(UNREADABLE);
+    expect(jobErrorHint(new Error(), BUSY, UNREADABLE)).toBe(UNREADABLE);
   });
 });

@@ -560,6 +560,8 @@ export const ru = {
   'rep.ai.jobLost': 'Фоновая генерация прервана (сервер был перезапущен) — запустите её ещё раз.',
   'rep.ai.jobFailed': 'AI-генерация не удалась — попробуйте ещё раз.',
   'rep.ai.jobTimeout': 'AI-генерация не завершилась за 10 минут — проверьте срез позже.',
+  'rep.ai.hypothesesFailed':
+    'Гипотезы не сгенерированы: {error} — запустите «Сгенерировать AI-анализ» ещё раз.',
   'rep.stage.prepare': 'Подготовка данных',
   'rep.stage.summary': 'Генерация: Итог',
   'rep.stage.channels': 'Генерация: Каналы, UTM и Аудитория',
@@ -1910,6 +1912,8 @@ export const en: Record<DictKey, string> = {
   'rep.ai.jobFailed': 'The AI generation failed — please try again.',
   'rep.ai.jobTimeout':
     'The AI generation did not finish within 10 minutes — check the snapshot later.',
+  'rep.ai.hypothesesFailed':
+    'Hypotheses were not generated: {error} — run «Generate AI analysis» again.',
   'rep.stage.prepare': 'Preparing data',
   'rep.stage.summary': 'Generating: Summary',
   'rep.stage.channels': 'Generating: Channels, UTM and Audience',

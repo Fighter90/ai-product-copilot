@@ -1,5 +1,6 @@
 import { translate } from '../i18n';
 import type { AiJobView } from './api';
+import { errorMessage } from './error-message';
 import type { Locale } from '../store/prefs';
 
 /**
@@ -26,6 +27,20 @@ function errStatus(err: unknown): number | undefined {
 /** True when the error is the backend's 429 «another generation already holds the slot». */
 export function isBusyError(err: unknown): boolean {
   return errStatus(err) === 429;
+}
+
+/**
+ * ANA-132: ready-to-display hint for a failed background AI job. The busy case (429 —
+ * another generation holds the slot) gets the localized busy note; a job whose `error` is
+ * machine JSON (the raw proxy/provider body — the ANA-133 precedent) gives an analyst
+ * nothing actionable and is mapped to the localized generic failure note; any other
+ * readable server message passes through unchanged.
+ */
+export function jobErrorHint(err: unknown, busyText: string, unreadableText: string): string {
+  if (isBusyError(err)) return busyText;
+  const message = errorMessage(err);
+  if (!message || /^\s*[[{]/.test(message)) return unreadableText;
+  return message;
 }
 
 /** Same locale resolution as readableError (api.ts): the visitor's persisted choice. */

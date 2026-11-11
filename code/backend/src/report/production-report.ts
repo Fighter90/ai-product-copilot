@@ -152,43 +152,62 @@ export function makeReportRunner(
       // auto-generation takes the SAME single AI slot as the user-triggered jobs — when a
       // generation is already running, start() returns null and the best-effort auto-fill
       // is skipped silently (the user can retry via POST /api/report/hypotheses).
+      // ANA-132: «silently» cost a prod morning — «0 AI-черновиков после запуска» had no
+      // trace at all. Both silent paths now log: the busy-skip and the job failure
+      // (the queue only records entry.error in memory, nobody reads it for this job).
       if (ai.available()) {
-        void reportAiJobs.start('hypotheses', async () => {
-          // ANA-33: remember which provider/model generated the auto-hypotheses.
-          let info: AiCallInfo = {};
-          const generatedHypotheses = await generateHypotheses(snapshot, {
-            fetch: sniffAiFetch(ai.fetchFor('report-hypotheses'), (i) => {
-              info = i;
-            }),
-            apiKey: config.ANTHROPIC_API_KEY,
-            model: config.ANTHROPIC_MODEL,
-          });
-          // Also propose Decision Log entries from the snapshot + hypotheses (best-effort).
-          const generatedDecisions = await generateDecisions(snapshot, generatedHypotheses, {
-            fetch: ai.fetchFor('report-decisions'),
-            apiKey: config.ANTHROPIC_API_KEY,
-            model: config.ANTHROPIC_MODEL,
-          }).catch(() => undefined);
-          const aiGeneratedBy =
-            info.provider || info.model ? { hypotheses: generationInfo(info, ai) } : undefined;
-          const payload = withAutoPopulate({
-            ...snapshot,
-            generatedHypotheses,
-            generatedDecisions,
-            ...(aiGeneratedBy ? { aiGeneratedBy } : {}),
-          });
-          snapshots.save({
-            id,
-            generatedAt,
-            dateFrom: from,
-            dateTo: to,
-            payload,
-            createdBy: by ?? null,
-            docxPath: undefined,
-            pdfPath: undefined,
-          });
-          return generatedHypotheses;
+        const jobId = reportAiJobs.start('hypotheses', async () => {
+          try {
+            // ANA-33: remember which provider/model generated the auto-hypotheses.
+            let info: AiCallInfo = {};
+            const generatedHypotheses = await generateHypotheses(snapshot, {
+              fetch: sniffAiFetch(ai.fetchFor('report-hypotheses'), (i) => {
+                info = i;
+              }),
+              apiKey: config.ANTHROPIC_API_KEY,
+              model: config.ANTHROPIC_MODEL,
+            });
+            // Also propose Decision Log entries from the snapshot + hypotheses (best-effort).
+            const generatedDecisions = await generateDecisions(snapshot, generatedHypotheses, {
+              fetch: ai.fetchFor('report-decisions'),
+              apiKey: config.ANTHROPIC_API_KEY,
+              model: config.ANTHROPIC_MODEL,
+            }).catch(() => undefined);
+            const aiGeneratedBy =
+              info.provider || info.model ? { hypotheses: generationInfo(info, ai) } : undefined;
+            const payload = withAutoPopulate({
+              ...snapshot,
+              generatedHypotheses,
+              generatedDecisions,
+              ...(aiGeneratedBy ? { aiGeneratedBy } : {}),
+            });
+            snapshots.save({
+              id,
+              generatedAt,
+              dateFrom: from,
+              dateTo: to,
+              payload,
+              createdBy: by ?? null,
+              docxPath: undefined,
+              pdfPath: undefined,
+            });
+            return generatedHypotheses;
+          } catch (err) {
+            // ANA-132: rethrown so the queue still marks the job failed — but the prod log
+            // now carries the reason the snapshot was left without AI drafts.
+            logger.warn(
+              { err, snapshotId: id },
+              'report AI auto-generation failed — snapshot left without AI drafts',
+            );
+            throw err;
+          }
         });
+        if (jobId === null) {
+          logger.warn(
+            { snapshotId: id },
+            'report AI auto-generation skipped — the AI slot is busy; retry via «Сгенерировать AI-анализ»',
+          );
+        }
       }
 
       return snapshot;
