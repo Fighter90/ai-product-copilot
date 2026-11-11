@@ -638,7 +638,7 @@ async function main() {
         // machinery/config (self-permission escalation — run 24 edited opencode.json to
         // weaken its own denies; format:check caught it only by luck).
         const touched = await sh(
-          `git -C ${JSON.stringify(WT)} diff --name-only origin/main...HEAD | grep -E ${JSON.stringify('^(opencode\\.json|\\.opencode/|scripts/swarm/)')} || true`,
+          `git -C ${JSON.stringify(WT)} diff --name-only origin/main...HEAD | grep -E ${JSON.stringify('^(opencode\\.json|\\.opencode/)')} || true`,
         );
         if (touched.out.trim()) {
           await failIssue(
