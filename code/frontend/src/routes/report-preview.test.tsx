@@ -4,14 +4,26 @@ import type { ReportSnapshot } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 
-vi.mock('../lib/api', () => ({
-  api: {
-    buildSnapshot: vi.fn(),
-    generateInsights: vi.fn(),
-    generateHypotheses: vi.fn(),
-    getSnapshot: vi.fn(),
-  },
-}));
+vi.mock('../lib/api', () => {
+  class ApiError extends Error {
+    constructor(
+      public readonly status: number,
+      message: string,
+    ) {
+      super(message);
+      this.name = 'ApiError';
+    }
+  }
+  return {
+    ApiError,
+    api: {
+      buildSnapshot: vi.fn(),
+      generateInsights: vi.fn(),
+      generateHypotheses: vi.fn(),
+      getSnapshot: vi.fn(),
+    },
+  };
+});
 vi.mock('../lib/api-v3', () => ({
   // A provider is configured by default so the wrapper's AI button is enabled; the empty case
   // (disabled + hint) is covered at the View level.
@@ -28,7 +40,7 @@ vi.mock('../lib/download', () => ({
   downloadFileViaFetch: vi.fn().mockResolvedValue(undefined),
   reportDownloadUrl: (id: string, format: string) => `/api/report/download/${id}/${format}`,
 }));
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { downloadFileViaFetch } from '../lib/download';
 import { ReportPreviewView, ReportPreview, ReportFullView } from './report-preview';
 
@@ -375,6 +387,20 @@ describe('ReportPreview (wrapper)', () => {
       expect(vi.mocked(api.generateHypotheses)).toHaveBeenCalledWith('snap-1', 'auto'),
     );
     expect(screen.getByText(/AI-гипотез: не сгенерированы/)).toBeInTheDocument();
+  });
+
+  it('ANA-133: a busy AI slot (429) shows the localized hint instead of the raw proxy JSON', async () => {
+    vi.mocked(api.generateInsights).mockRejectedValue(
+      new ApiError(429, '{"error":"AI-генерация уже выполняется","code":"AI_BUSY"}'),
+    );
+    renderWithProviders(<ReportPreview />);
+    fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
+    expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
+    await screen.findByText(/AI-генерация уже выполняется/);
+    // The raw JSON body of the 429 never reaches the UI.
+    expect(screen.queryByText(/AI_BUSY/)).not.toBeInTheDocument();
   });
 });
 

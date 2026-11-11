@@ -256,15 +256,17 @@ describe('report routes', () => {
       url: '/api/report/insights',
       payload: { snapshotId: 'ok', providerId: 'auto' },
     });
-    expect(runner.insights).toHaveBeenCalledWith('ok', 'auto');
     expect(auto.statusCode).toBe(202);
+    await settle();
+    expect(runner.insights).toHaveBeenCalledWith('ok', 'auto');
     const noProvider = await app.inject({
       method: 'POST',
       url: '/api/report/insights',
       payload: { snapshotId: 'ok' },
     });
-    expect(runner.insights).toHaveBeenLastCalledWith('ok', undefined);
     expect(noProvider.statusCode).toBe(202);
+    await settle();
+    expect(runner.insights).toHaveBeenLastCalledWith('ok', undefined);
     // Unknown provider → validation error, not a silent fallback.
     const badProvider = await app.inject({
       method: 'POST',
@@ -373,7 +375,7 @@ describe('report routes', () => {
     const fakeHypotheses: GeneratedHypotheses = { problems: [], solutions: [] };
     const runner: ReportRunner = {
       build: vi.fn(),
-      get: vi.fn((id: string) => (id === 'ok' ? snap : undefined)),
+      get: vi.fn((id: string) => (id === 'ok' || id === 'nokey' ? snap : undefined)),
       list: vi.fn(),
       generate: vi.fn(),
       remove: vi.fn(),

@@ -68,8 +68,12 @@ describe('api client', () => {
 
   it('POSTs create-hypothesis and sync with JSON bodies', async () => {
     const seen: RequestInit[] = [];
-    mockFetch((_url, init) => {
+    mockFetch((url, init) => {
       if (init) seen.push(init);
+      // ANA-133: insights POST returns a jobId and the client polls the job endpoint.
+      if (url.endsWith('/report/insights')) return ok({ jobId: 'job-1' }, 202);
+      if (url.includes('/report/ai-jobs/'))
+        return ok({ id: 'job-1', kind: 'insights', status: 'done', result: { narrative: 'n' } });
       return ok({ id: 1 });
     });
     await api.createHypothesis({ title: 'x' } as never);
@@ -164,5 +168,102 @@ describe('readableError', () => {
     expect(readableError(400, '{"error":"invalid body"}')).toBe('{"error":"invalid body"}');
     window.localStorage.setItem('pca.locale', 'en');
     expect(readableError(503, '<html/>')).toMatch(/temporarily unavailable \(503\)/);
+  });
+});
+
+describe('AI background jobs (ANA-133)', () => {
+  afterEach(() => {
+    window.localStorage.removeItem('pca.locale');
+    vi.useRealTimers();
+  });
+
+  it('generateInsights polls the background job until it is done', async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    mockFetch((url, init) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+      if (init?.method === 'POST') return ok({ jobId: 'job-7' }, 202);
+      if (calls.filter((c) => c.includes('/report/ai-jobs/')).length === 1)
+        return ok({ id: 'job-7', kind: 'insights', status: 'running' });
+      return ok({
+        id: 'job-7',
+        kind: 'insights',
+        status: 'done',
+        result: {
+          narrative: 'готово',
+          generatedBy: { provider: 'yandexgpt', providerName: 'YandexGPT', model: 'm', at: 'T' },
+        },
+      });
+    });
+    const pending = api.generateInsights('snap-1', 'yandexgpt');
+    await vi.advanceTimersByTimeAsync(2000);
+    const res = await pending;
+    expect(res.narrative).toBe('готово');
+    expect(res.generatedBy?.provider).toBe('yandexgpt');
+    expect(calls[0]).toBe('POST /api/report/insights');
+    expect(calls[1]).toBe('GET /api/report/ai-jobs/job-7');
+    expect(calls[2]).toBe('GET /api/report/ai-jobs/job-7');
+  });
+
+  it('a failed job surfaces its message instead of hanging the caller', async () => {
+    mockFetch((url, init) => {
+      if (init?.method === 'POST') return ok({ jobId: 'job-8' }, 202);
+      return ok({ id: 'job-8', kind: 'insights', status: 'failed', error: 'no key' });
+    });
+    await expect(api.generateInsights('snap-1')).rejects.toThrow('no key');
+  });
+
+  it('a failed job without an error text falls back to a localized message', async () => {
+    window.localStorage.setItem('pca.locale', 'ru');
+    mockFetch((url, init) => {
+      if (init?.method === 'POST') return ok({ jobId: 'job-8' }, 202);
+      return ok({ id: 'job-8', kind: 'insights', status: 'failed' });
+    });
+    await expect(api.generateInsights('snap-1')).rejects.toThrow(/AI-генерация/);
+  });
+
+  it('an unknown job id (lost after a server restart) reports honest failure', async () => {
+    window.localStorage.setItem('pca.locale', 'ru');
+    mockFetch((url, init) => {
+      if (init?.method === 'POST') return ok({ jobId: 'job-9' }, 202);
+      return { ok: false, status: 404, json: async () => ({}), text: async () => 'not found' };
+    });
+    await expect(api.generateInsights('snap-1')).rejects.toThrow(/прервана/);
+  });
+
+  it('a job that never finishes hits the poll cap with a localized timeout message', async () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem('pca.locale', 'ru');
+    mockFetch((url, init) => {
+      if (init?.method === 'POST') return ok({ jobId: 'job-10' }, 202);
+      return ok({ id: 'job-10', kind: 'insights', status: 'running' });
+    });
+    const pending = api.generateInsights('snap-1');
+    const expectation = expect(pending).rejects.toThrow(/не завершилась/);
+    // The cap (~400 polls × 2s) is comfortably above the documented 5–10 min generation.
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+    await expectation;
+  });
+
+  it('a 429 busy start propagates as ApiError without any polling', async () => {
+    mockFetch(() => ({
+      ok: false,
+      status: 429,
+      json: async () => ({ error: 'busy', code: 'AI_BUSY' }),
+      text: async () => '{"error":"busy"}',
+    }));
+    const err = await api.generateInsights('snap-1').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(429);
+  });
+
+  it('generateHypotheses only starts the background job — no polling (the snapshot poll renders it)', async () => {
+    const calls: string[] = [];
+    mockFetch((url, init) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+      return ok({ jobId: 'job-11' }, 202);
+    });
+    await api.generateHypotheses('snap-2', 'gigachat');
+    expect(calls).toEqual(['POST /api/report/hypotheses']);
   });
 });

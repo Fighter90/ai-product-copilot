@@ -72,15 +72,20 @@ describe('ai-job-queue', () => {
   it('finished jobs are pruned after the TTL; a running job is never pruned', async () => {
     let now = 1000;
     const queue = createAiJobQueue({ now: () => now, ttlMs: 500 });
-    const slow = queue.start('insights', () => new Promise<string>(() => undefined));
+    let release!: (v: string) => void;
+    const gate = new Promise<string>((resolve) => {
+      release = resolve;
+    });
+    const id = queue.start('insights', () => gate);
     now = 100_000; // way past the TTL, but the job is still running
-    expect(queue.get(slow!)).toMatchObject({ status: 'running' });
+    expect(queue.get(id!)).toMatchObject({ status: 'running' });
 
-    const fast = queue.start('insights', async () => 'x'); // busy → pruned nothing
-    expect(fast).toBeNull();
-    await settle();
-    now = 2000; // finished 1000ms ago (> ttlMs=500)
-    expect(queue.get(slow!)).toBeUndefined();
+    release('готово');
+    await settle(); // finishedAt = now() = 100_000
+    now = 100_400; // finished 400ms ago — still inside the TTL window
+    expect(queue.get(id!)).toMatchObject({ status: 'done' });
+    now = 100_600; // finished 600ms ago (> ttlMs) — pruned
+    expect(queue.get(id!)).toBeUndefined();
   });
 
   it('prunes stale finished jobs on start() too, so the Map cannot grow unbounded', async () => {
