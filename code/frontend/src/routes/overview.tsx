@@ -12,6 +12,7 @@ import { useAuth } from '../auth/AuthContext';
 import { formatInt, formatPercent } from '../lib/format';
 import { displayPath } from '../lib/url-path';
 import { EmptyState } from '../components/EmptyState';
+import { Skeleton } from '../components/ui';
 import {
   channelMixOption,
   summarizeChannels,
@@ -350,6 +351,89 @@ function useIsAdmin(): boolean {
   }
 }
 
+/** ANA-131: chart-card placeholder — real card = border + title + EChart (default height 300px). */
+function ChartCardSkeleton(): JSX.Element {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <Skeleton className="mb-2 h-6 w-1/3" />
+      <Skeleton className="h-[300px]" />
+    </div>
+  );
+}
+
+/** ANA-131: table-card placeholder (UTM / entry / exit / weak spots): title + fixed-height rows. */
+function TableCardSkeleton({ rows = 5 }: { rows?: number }): JSX.Element {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <Skeleton className="mb-2 h-6 w-1/3" />
+      <div className="space-y-2">
+        {Array.from({ length: rows }, (_, i) => (
+          <Skeleton key={i} className="h-8" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ANA-131: structure skeletons for the whole Overview load instead of a lone «Загрузка…» line —
+ * fullPage screenshots taken seconds after navigation used to catch an empty screen with a
+ * spinner. The placeholder mirrors the real page geometry: KPI hero + 2×2 tiles (same grid as
+ * KpiStrip), weekly digest, charts at the EChart default height (300px) and table cards.
+ * Every block has a fixed height, so the swap to real content does not jump the layout.
+ * role="status" + the localized label keep it screen-reader friendly (placeholders carry no text).
+ */
+function OverviewSkeleton(): JSX.Element {
+  const { t } = useT();
+  return (
+    <section
+      data-testid="overview-skeleton"
+      role="status"
+      aria-busy="true"
+      aria-label={t('ov.loading')}
+      className="space-y-6"
+    >
+      {/* KPI strip: hero card + 2×2 tiles — the same grid as KpiStrip. */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm lg:p-4">
+          <Skeleton className="h-20 w-20 shrink-0 rounded-full lg:h-24 lg:w-24" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-3 w-2/3" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton key={i} className="h-16" />
+          ))}
+        </div>
+      </div>
+      {/* Weekly digest: title + three columns. */}
+      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <Skeleton className="mb-3 h-6 w-1/4" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-16" />
+          ))}
+        </div>
+      </div>
+      {/* Charts: exact EChart default height (300px) — no layout shift when content arrives. */}
+      <ChartCardSkeleton />
+      <ChartCardSkeleton />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ChartCardSkeleton />
+        <ChartCardSkeleton />
+      </div>
+      {/* UTM / entry pages / exit pages / weak spots. */}
+      <TableCardSkeleton />
+      <TableCardSkeleton rows={3} />
+      <TableCardSkeleton rows={3} />
+      <TableCardSkeleton rows={2} />
+    </section>
+  );
+}
+
 /** Pure presentational Overview — testable across all states without the data layer. */
 export function OverviewView({
   status,
@@ -393,7 +477,9 @@ export function OverviewView({
   const { t, locale } = useT();
   const { segment } = useFilters();
   const isAdmin = useIsAdmin();
-  if (status === 'pending') return <p className="text-slate-500">{t('ov.loading')}</p>;
+  // ANA-131: structure skeletons instead of a lone spinner — fullPage screenshots catch the
+  // loading state, so the real page geometry is visible immediately (see OverviewSkeleton).
+  if (status === 'pending') return <OverviewSkeleton />;
   if (status === 'error')
     return (
       <p role="alert" className="text-red-700">

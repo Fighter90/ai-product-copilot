@@ -51,9 +51,32 @@ const geoSample: GeoDeviceStat = {
 };
 
 describe('OverviewView', () => {
-  it('renders the loading state', () => {
-    render(<OverviewView status="pending" stats={[]} />);
-    expect(screen.getByText('Загрузка…')).toBeInTheDocument();
+  it('ANA-131: renders structure skeletons on loading, not a bare spinner/text', () => {
+    const { container } = render(<OverviewView status="pending" stats={[]} />);
+    const skeleton = screen.getByTestId('overview-skeleton');
+    expect(skeleton).toBeInTheDocument();
+    expect(skeleton).toHaveAttribute('aria-busy', 'true');
+    // Плейсхолдеры структуры — много блоков, а не одна строка текста со спиннером.
+    expect(container.querySelectorAll('.skeleton').length).toBeGreaterThanOrEqual(8);
+    // График-плейсхолдеры: фиксированная высота реальных графиков (EChart default 300px),
+    // чтобы подмена скелетонов контентом не давала layout shift.
+    expect(container.querySelectorAll('.h-\\[300px\\]')).toHaveLength(4);
+    // Реальный контент при pending не рисуем.
+    expect(screen.queryByTestId('kpi-strip')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('ANA-131: three states — skeleton on loading, content on success, alert on error', () => {
+    const pending = render(<OverviewView status="pending" stats={[]} />);
+    expect(screen.getByTestId('overview-skeleton')).toBeInTheDocument();
+    pending.unmount();
+
+    render(<OverviewView status="success" stats={[sample]} />);
+    expect(screen.getByTestId('kpi-strip')).toBeInTheDocument();
+    cleanup();
+
+    render(<OverviewView status="error" stats={[]} />);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 
   it('renders the error state', () => {
@@ -389,7 +412,8 @@ describe('OverviewView (en locale)', () => {
   it('keeps loading and error states in English', () => {
     setTestLocale('en');
     const { rerender, container } = render(<OverviewView status="pending" stats={[]} />);
-    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    // ANA-131: the localized label lives in the skeleton's aria-label (blocks are placeholders).
+    expect(screen.getByTestId('overview-skeleton')).toHaveAttribute('aria-label', 'Loading…');
     rerender(<OverviewView status="error" stats={[]} />);
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expectNoCyrillic(container);
