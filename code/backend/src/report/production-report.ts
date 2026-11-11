@@ -13,6 +13,7 @@ import { generateInsights, type AnthropicFetch } from './ai-insights';
 import { generateHypotheses } from './ai-hypotheses';
 import { generateDecisions } from './ai-decisions';
 import { autoPopulateGenerated } from './ai-autopopulate';
+import { reportAiJobs } from './ai-job-queue';
 import { config, hasAnthropicKey } from '../config';
 import type { HypothesesRepo } from '../db/repositories/hypotheses-repo';
 import type { DecisionsRepo } from '../db/repositories/decisions-repo';
@@ -144,46 +145,47 @@ export function makeReportRunner(
         createdBy: by ?? null,
       });
 
-      // Fire-and-forget AI hypotheses generation (doesn't block the response)
+      // Fire-and-forget AI hypotheses generation (doesn't block the response). ANA-133: the
+      // auto-generation takes the SAME single AI slot as the user-triggered jobs — when a
+      // generation is already running, start() returns null and the best-effort auto-fill
+      // is skipped silently (the user can retry via POST /api/report/hypotheses).
       if (ai.available()) {
-        // ANA-33: remember which provider/model generated the auto-hypotheses.
-        let info: AiCallInfo = {};
-        generateHypotheses(snapshot, {
-          fetch: sniffAiFetch(ai.fetchFor('report-hypotheses'), (i) => {
-            info = i;
-          }),
-          apiKey: config.ANTHROPIC_API_KEY,
-          model: config.ANTHROPIC_MODEL,
-        })
-          .then(async (generatedHypotheses) => {
-            // Also propose Decision Log entries from the snapshot + hypotheses (best-effort).
-            const generatedDecisions = await generateDecisions(snapshot, generatedHypotheses, {
-              fetch: ai.fetchFor('report-decisions'),
-              apiKey: config.ANTHROPIC_API_KEY,
-              model: config.ANTHROPIC_MODEL,
-            }).catch(() => undefined);
-            const aiGeneratedBy =
-              info.provider || info.model ? { hypotheses: generationInfo(info, ai) } : undefined;
-            const payload = withAutoPopulate({
-              ...snapshot,
-              generatedHypotheses,
-              generatedDecisions,
-              ...(aiGeneratedBy ? { aiGeneratedBy } : {}),
-            });
-            snapshots.save({
-              id,
-              generatedAt,
-              dateFrom: from,
-              dateTo: to,
-              payload,
-              createdBy: by ?? null,
-              docxPath: undefined,
-              pdfPath: undefined,
-            });
-          })
-          .catch(() => {
-            // Hypotheses generation failed — user can retry via POST /api/report/hypotheses
+        void reportAiJobs.start('hypotheses', async () => {
+          // ANA-33: remember which provider/model generated the auto-hypotheses.
+          let info: AiCallInfo = {};
+          const generatedHypotheses = await generateHypotheses(snapshot, {
+            fetch: sniffAiFetch(ai.fetchFor('report-hypotheses'), (i) => {
+              info = i;
+            }),
+            apiKey: config.ANTHROPIC_API_KEY,
+            model: config.ANTHROPIC_MODEL,
           });
+          // Also propose Decision Log entries from the snapshot + hypotheses (best-effort).
+          const generatedDecisions = await generateDecisions(snapshot, generatedHypotheses, {
+            fetch: ai.fetchFor('report-decisions'),
+            apiKey: config.ANTHROPIC_API_KEY,
+            model: config.ANTHROPIC_MODEL,
+          }).catch(() => undefined);
+          const aiGeneratedBy =
+            info.provider || info.model ? { hypotheses: generationInfo(info, ai) } : undefined;
+          const payload = withAutoPopulate({
+            ...snapshot,
+            generatedHypotheses,
+            generatedDecisions,
+            ...(aiGeneratedBy ? { aiGeneratedBy } : {}),
+          });
+          snapshots.save({
+            id,
+            generatedAt,
+            dateFrom: from,
+            dateTo: to,
+            payload,
+            createdBy: by ?? null,
+            docxPath: undefined,
+            pdfPath: undefined,
+          });
+          return generatedHypotheses;
+        });
       }
 
       return snapshot;

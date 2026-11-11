@@ -8,6 +8,7 @@ import {
   type ReportSnapshot,
 } from '@pca/shared';
 import type { UsersRepo } from '../auth/users-repo';
+import { reportAiJobs, type AiJobQueue } from '../report/ai-job-queue';
 
 const SnapshotBody = z.object({ from: z.string(), to: z.string() });
 const GenerateBody = z.object({ snapshotId: z.string(), format: z.enum(['docx', 'pdf']) });
@@ -85,10 +86,22 @@ export interface ReportRouteOptions {
   /** REG-10: cabinet users repo — gates DELETE on the admin role and writes the audit entry.
    *  Absent in legacy single-user mode, where deletion is allowed without roles. */
   readonly users?: UsersRepo;
+  /** ANA-133: single-slot background AI queue. Absent → the shared production instance;
+   *  tests pass a fresh one to stay isolated. */
+  readonly aiJobs?: AiJobQueue;
 }
+
+/**
+ * ANA-133: how long a throttled client should wait before retrying a busy AI endpoint.
+ * The value is mirrored in the Retry-After header of the 429 responses.
+ */
+const AI_BUSY_RETRY_AFTER_SECONDS = 30;
+const AI_BUSY_MESSAGE =
+  'AI-генерация уже выполняется — дождитесь её завершения и попробуйте снова.';
 
 /** Build/fetch immutable report snapshots and generate report files. */
 export async function reportRoutes(app: FastifyInstance, opts: ReportRouteOptions): Promise<void> {
+  const aiJobs = opts.aiJobs ?? reportAiJobs;
   app.post('/report/snapshot', async (req, reply) => {
     const parsed = SnapshotBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
@@ -144,19 +157,62 @@ export async function reportRoutes(app: FastifyInstance, opts: ReportRouteOption
       .send(file.body);
   });
 
+  /**
+   * ANA-133: AI narrative generation moved out of the HTTP request context into the
+   * single-slot background queue. The handler validates, rejects a missing snapshot
+   * synchronously (404, unchanged contract) and answers 202 {jobId}; the client polls
+   * GET /report/ai-jobs/:jobId. While a generation holds the slot → 429 + Retry-After.
+   */
   app.post('/report/insights', async (req, reply) => {
     const parsed = InsightsBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
-    const result = await opts.runner.insights(parsed.data.snapshotId, parsed.data.providerId);
-    if (result.ok) return { narrative: result.narrative, generatedBy: result.generatedBy };
-    return reply.code(result.reason === 'not_found' ? 404 : 503).send({ error: result.message });
+    if (!opts.runner.get(parsed.data.snapshotId)) {
+      return reply.code(404).send({ error: 'snapshot not found' });
+    }
+    const jobId = aiJobs.start('insights', async () => {
+      const result = await opts.runner.insights(parsed.data.snapshotId, parsed.data.providerId);
+      // A runner failure («no key», provider error) fails the job with its message instead
+      // of the old synchronous 503 — the poll reports it as {status:'failed', error}.
+      if (!result.ok) throw new Error(result.message);
+      return { narrative: result.narrative, generatedBy: result.generatedBy };
+    });
+    if (jobId === null) {
+      return reply
+        .code(429)
+        .header('retry-after', String(AI_BUSY_RETRY_AFTER_SECONDS))
+        .send({ error: AI_BUSY_MESSAGE, code: 'AI_BUSY' });
+    }
+    return reply.code(202).send({ jobId });
   });
 
+  /** ANA-133: poll a background AI job (result payload / failure message / 404 when lost). */
+  app.get('/report/ai-jobs/:jobId', async (req, reply) => {
+    const jobId = (req.params as { jobId: string }).jobId;
+    const job = aiJobs.get(jobId);
+    return job ?? reply.code(404).send({ error: 'job not found' });
+  });
+
+  /**
+   * ANA-133: hypotheses generation uses the same background queue as insights (one shared
+   * slot — the CPU cap covers every AI entry point). Missing snapshot → sync 404.
+   */
   app.post('/report/hypotheses', async (req, reply) => {
     const parsed = HypothesesBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
-    const result = await opts.runner.hypotheses(parsed.data.snapshotId, parsed.data.providerId);
-    if (result.ok) return { hypotheses: result.hypotheses };
-    return reply.code(result.reason === 'not_found' ? 404 : 503).send({ error: result.message });
+    if (!opts.runner.get(parsed.data.snapshotId)) {
+      return reply.code(404).send({ error: 'snapshot not found' });
+    }
+    const jobId = aiJobs.start('hypotheses', async () => {
+      const result = await opts.runner.hypotheses(parsed.data.snapshotId, parsed.data.providerId);
+      if (!result.ok) throw new Error(result.message);
+      return { hypotheses: result.hypotheses };
+    });
+    if (jobId === null) {
+      return reply
+        .code(429)
+        .header('retry-after', String(AI_BUSY_RETRY_AFTER_SECONDS))
+        .send({ error: AI_BUSY_MESSAGE, code: 'AI_BUSY' });
+    }
+    return reply.code(202).send({ jobId });
   });
 }
