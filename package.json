@@ -1,6 +1,6 @@
 {
   "name": "productcamp-analytics",
-  "version": "3.4.11",
+  "version": "3.4.12",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.12.0",
