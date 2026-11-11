@@ -115,7 +115,10 @@ async function main(): Promise<void> {
         token: () => settings.get('YANDEX_OAUTH_TOKEN'),
         counterId: () => settings.getNumber('COUNTER_ID'),
       }),
-      report: makeReportRunner(builder, new SnapshotRepo(db), ai),
+      report: makeReportRunner(builder, new SnapshotRepo(db), ai, {
+        hypotheses,
+        decisions,
+      }),
       cabinet: {
         db,
         users,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { Decision, Hypothesis } from '@pca/shared';
 import { renderWithProviders } from '../../test/utils';
 import { setTestLocale } from '../../test/i18n-utils';
@@ -116,5 +116,18 @@ describe('Decisions page (Decision Log)', () => {
       ),
     );
     expect(editor).not.toBeInTheDocument();
+  });
+
+  it('marks an AI auto-populated draft with the AI badge and plain rows without it (ANA-128)', async () => {
+    const aiDraft: Decision = { ...DECISION, id: 2, number: 'DL-002', source: 'ai' };
+    vi.mocked(decisionsApi.list).mockResolvedValue([DECISION, aiDraft]);
+    vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
+    renderWithProviders(<Decisions />, '/app/decisions');
+
+    const list = await screen.findByTestId('dec-list');
+    // Exactly one AI badge — only for the source: 'ai' draft (the manual row renders none).
+    const badges = within(list).getAllByText('AI');
+    expect(badges).toHaveLength(1);
+    expect(badges[0]!.closest('li')).toHaveTextContent('DL-002');
   });
 });

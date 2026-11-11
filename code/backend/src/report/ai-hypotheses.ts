@@ -787,7 +787,12 @@ const RISK_CATEGORY: Record<SolutionRiskKind, AssumptionCategory> = {
   legal: 'market',
 };
 
-const METHOD_RULES: ReadonlyArray<readonly [RegExp, ValidationMethodType]> = [
+/**
+ * ANA-128: shared keyword→method classifier. In ai-hypotheses it types the free-text validation
+ * methods of a solution; in ai-autopopulate it classifies AI-proposed decision methods
+ * (ValidationMethodType values are a subset of DecisionMethod).
+ */
+export const METHOD_RULES: ReadonlyArray<readonly [RegExp, ValidationMethodType]> = [
   [/a\/b|аб[- ]?тест|сплит|метрик|аналитик|когорт|конверси|дашборд|воронк|данн/iu, 'quantitative'],
   [/fake|фейк|лендинг|предзаказ|smoke|конкурент|рын|цен/iu, 'market'],
   [/интервью|кастдев|custdev|опрос|юзабилити|usability|клик|прототип|коридор|фокус/iu, 'synthetic'],

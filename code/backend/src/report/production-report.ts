@@ -12,7 +12,10 @@ import { renderReportCharts } from './chart-renderer';
 import { generateInsights, type AnthropicFetch } from './ai-insights';
 import { generateHypotheses } from './ai-hypotheses';
 import { generateDecisions } from './ai-decisions';
+import { autoPopulateGenerated } from './ai-autopopulate';
 import { config, hasAnthropicKey } from '../config';
+import type { HypothesesRepo } from '../db/repositories/hypotheses-repo';
+import type { DecisionsRepo } from '../db/repositories/decisions-repo';
 
 /**
  * AI bridge: in cabinet mode report AI calls go through the admin-configured provider chain
@@ -81,18 +84,52 @@ function generationInfo(info: AiCallInfo, ai: AiBridge): AiGenerationInfo {
   };
 }
 
+/** Repos the AI drafts are written into; absent → auto-population is off (ANA-128). */
+export interface AutoPopulateRepos {
+  readonly hypotheses: HypothesesRepo;
+  readonly decisions: DecisionsRepo;
+}
+
 /**
  * Production report runner: builds + persists snapshots and writes DOCX/PDF files to data/reports.
  * Excluded from coverage — IO + non-deterministic id/clock (SnapshotBuilder, buildDocx and reportHtml
  * are tested; buildPdf launches a real browser and is also coverage-excluded).
  *
- * Auto-generates AI hypotheses during build (if ANTHROPIC_API_KEY is set).
+ * Auto-generates AI hypotheses during build (if ANTHROPIC_API_KEY is set) and — when `repos` is
+ * given — auto-populates the «Гипотезы» / «Решения» sections with them (ANA-128). The
+ * auto-population itself lives in the tested ai-autopopulate module; here it is only wired and
+ * wrapped so it can never break the report.
  */
 export function makeReportRunner(
   builder: SnapshotBuilder,
   snapshots: SnapshotRepo,
   ai: AiBridge = legacyBridge,
+  repos?: AutoPopulateRepos,
 ): ReportRunner {
+  /**
+   * ANA-128: run the auto-population over a freshly generated payload and attach the counts.
+   * Any failure leaves the payload untouched — the report keeps working without the feature.
+   */
+  const withAutoPopulate = (payload: ReportSnapshot): ReportSnapshot => {
+    if (!repos || !payload.generatedHypotheses || payload.autoPopulate) return payload;
+    try {
+      const autoPopulate = autoPopulateGenerated(
+        payload.generatedHypotheses,
+        payload.generatedDecisions,
+        {
+          hypotheses: repos.hypotheses,
+          decisions: repos.decisions,
+          snapshotId: payload.id,
+          provider: payload.aiGeneratedBy?.hypotheses?.provider,
+          model: payload.aiGeneratedBy?.hypotheses?.model,
+        },
+      );
+      return { ...payload, autoPopulate };
+    } catch {
+      return payload;
+    }
+  };
+
   return {
     build: async ({ from, to, by }) => {
       const id = randomUUID();
@@ -127,17 +164,18 @@ export function makeReportRunner(
             }).catch(() => undefined);
             const aiGeneratedBy =
               info.provider || info.model ? { hypotheses: generationInfo(info, ai) } : undefined;
+            const payload = withAutoPopulate({
+              ...snapshot,
+              generatedHypotheses,
+              generatedDecisions,
+              ...(aiGeneratedBy ? { aiGeneratedBy } : {}),
+            });
             snapshots.save({
               id,
               generatedAt,
               dateFrom: from,
               dateTo: to,
-              payload: {
-                ...snapshot,
-                generatedHypotheses,
-                generatedDecisions,
-                ...(aiGeneratedBy ? { aiGeneratedBy } : {}),
-              },
+              payload,
               createdBy: by ?? null,
               docxPath: undefined,
               pdfPath: undefined,
@@ -245,9 +283,24 @@ export function makeReportRunner(
     hypotheses: async (snapshotId, providerId) => {
       const record = snapshots.getById(snapshotId);
       if (!record) return { ok: false, reason: 'not_found', message: 'snapshot not found' };
-      // If hypotheses were already generated during build, return them
+      // If hypotheses were already generated during build, return them. ANA-128: a snapshot
+      // generated before the auto-population ships is back-filled once here, so its generated
+      // hypotheses also reach the backlog; afterwards the stored counts make this a no-op.
       const existing = record.payload as ReportSnapshot;
       if (existing.generatedHypotheses) {
+        const backfilled = withAutoPopulate(existing);
+        if (backfilled !== existing) {
+          snapshots.save({
+            id: record.id,
+            generatedAt: record.generatedAt,
+            dateFrom: record.dateFrom,
+            dateTo: record.dateTo,
+            payload: backfilled,
+            createdBy: record.createdBy,
+            docxPath: record.docxPath,
+            pdfPath: record.pdfPath,
+          });
+        }
         return { ok: true, hypotheses: existing.generatedHypotheses };
       }
       if (!ai.available()) {
@@ -273,18 +326,20 @@ export function makeReportRunner(
         apiKey: config.ANTHROPIC_API_KEY,
         model: config.ANTHROPIC_MODEL,
       }).catch(() => undefined);
-      // Persist hypotheses + decisions onto the snapshot so DOCX/PDF render them deterministically.
+      // Persist hypotheses + decisions onto the snapshot so DOCX/PDF render them deterministically,
+      // and record how many AI drafts reached the «Гипотезы» / «Решения» sections (ANA-128).
+      const payload = withAutoPopulate({
+        ...snapshot,
+        generatedHypotheses,
+        generatedDecisions,
+        aiGeneratedBy: { ...snapshot.aiGeneratedBy, hypotheses: generationInfo(info, ai) },
+      });
       snapshots.save({
         id: record.id,
         generatedAt: record.generatedAt,
         dateFrom: record.dateFrom,
         dateTo: record.dateTo,
-        payload: {
-          ...snapshot,
-          generatedHypotheses,
-          generatedDecisions,
-          aiGeneratedBy: { ...snapshot.aiGeneratedBy, hypotheses: generationInfo(info, ai) },
-        },
+        payload,
         createdBy: record.createdBy,
         docxPath: record.docxPath,
         pdfPath: record.pdfPath,

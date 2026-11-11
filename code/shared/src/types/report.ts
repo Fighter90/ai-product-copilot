@@ -125,6 +125,17 @@ export interface ReportSnapshot {
    */
   readonly generatedDecisions?: GeneratedDecisions;
   /**
+   * ANA-128: результат автопополнения разделов «Гипотезы» / «Решения» после AI-анализа —
+   * сколько AI-черновиков реально записано в таблицы (hypotheses / decisions) и сколько
+   * пропущено как дубликаты при повторном анализе (skipped). Отсутствует, пока AI-анализ
+   * не выполнен. Числа следят из фактических записей в БД (anti-hallucination).
+   */
+  readonly autoPopulate?: {
+    readonly hypotheses: number;
+    readonly decisions: number;
+    readonly skipped: number;
+  };
+  /**
    * ANA-33: which AI provider/model actually answered (the first successful one in «Авто» mode),
    * per generated block. Rendered as «Сгенерировано: YandexGPT · yandexgpt/latest».
    */

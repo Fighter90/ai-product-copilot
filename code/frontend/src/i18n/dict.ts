@@ -545,6 +545,9 @@ export const ru = {
   'rep.data.hypothesesCount': '{problems} проблем + {solutions} решений',
   'rep.data.hypothesesNone': 'не сгенерированы',
   'rep.data.decisions': 'Решений в Decision Log: {n}',
+  'rep.data.autoPopulate':
+    'Автопополнение: {hypotheses} гипотез и {decisions} решений перенесено в разделы',
+  'rep.data.autoPopulateSkipped': '(дубликатов пропущено: {n})',
   'rep.ai.note': 'AI-анализ (интерпретация поверх точных цифр — проверяйте по данным):',
   'rep.ai.pendingNote':
     'Генерация AI-анализа: 6 разделов (по 6000 токенов), обычно занимает 5–10 минут.',
@@ -1886,6 +1889,9 @@ export const en: Record<DictKey, string> = {
   'rep.data.hypothesesCount': '{problems} problems + {solutions} solutions',
   'rep.data.hypothesesNone': 'not generated',
   'rep.data.decisions': 'Decisions in the Decision Log: {n}',
+  'rep.data.autoPopulate':
+    'Auto-populated: {hypotheses} hypotheses and {decisions} decisions moved to the sections',
+  'rep.data.autoPopulateSkipped': '({n} duplicates skipped)',
   'rep.ai.note':
     'AI analysis (an interpretation on top of exact numbers — verify against the data):',
   'rep.ai.pendingNote':
