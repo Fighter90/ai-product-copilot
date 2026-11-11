@@ -8,6 +8,7 @@ import {
   type AssumptionCategory,
   type Hypothesis,
   type HypothesisEvidence,
+  type HypothesisStatus,
   type NewHypothesis,
   type ValidationMethodType,
 } from '@pca/shared';
@@ -18,9 +19,11 @@ import { CATEGORY_KEY, METHOD_TYPE_KEY } from './labels';
 /**
  * Structured hypothesis editor (ANA-37). Format «{ЦА} {действие} {решение}, если {условие}»,
  * ≥3 hidden assumptions covering all categories, ≥2 validation methods of distinct types,
- * ICE sliders (1–10) with rationales, traffic-light criteria and a deadline. Validation runs on
- * every render, but per-field errors are shown only after the first user input (dirty tracking);
- * saving an incomplete hypothesis is impossible.
+ * ICE sliders (1–10) with rationales, traffic-light criteria and a deadline.
+ * ANA-129 two-status model: editing/creating a DRAFT requires only the title (light draft,
+ * a hint points at the take-into-work gate); a work-status hypothesis keeps the full format.
+ * Validation runs on every render, but per-field errors are shown only after the first user
+ * input (dirty tracking).
  */
 
 /** Editable form state (camelCase, arrays mutable). Built from a seed, a blank template or an existing hypothesis. */
@@ -105,8 +108,13 @@ function draftToNew(d: HypothesisDraft): NewHypothesis {
     solution: d.solution.trim(),
     condition: d.condition.trim(),
     title: d.title.trim(),
-    hiddenAssumptions: d.hiddenAssumptions.map((a) => ({ ...a, text: a.text.trim() })),
-    validationMethods: d.validationMethods.map((m) => ({ ...m, plan: m.plan.trim() })),
+    // Blank rows the user added but never filled are dropped — the API rejects empty items.
+    hiddenAssumptions: d.hiddenAssumptions
+      .filter((a) => a.text.trim() !== '')
+      .map((a) => ({ ...a, text: a.text.trim() })),
+    validationMethods: d.validationMethods
+      .filter((m) => m.plan.trim() !== '')
+      .map((m) => ({ ...m, plan: m.plan.trim() })),
     impact: d.impact,
     confidence: d.confidence,
     ease: d.ease,
@@ -138,12 +146,15 @@ export function HypothesisEditor({
   open,
   initial,
   heading,
+  status = 'draft',
   onClose,
   onSave,
 }: {
   open: boolean;
   initial: HypothesisDraft;
   heading: string;
+  /** ANA-129: 'draft' (default, new) edits the light rules; a work status keeps the full format. */
+  status?: HypothesisStatus;
   onClose: () => void;
   /** Persist the draft; throw to keep the modal open (the error is shown inside). */
   onSave: (draft: NewHypothesis) => Promise<void>;
@@ -152,6 +163,7 @@ export function HypothesisEditor({
   const [d, setD] = useState<HypothesisDraft>(initial);
   const [apiError, setApiError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const isDraft = status === 'draft';
   // БАГ-14: validation errors stay hidden until the user touches the form (dirty tracking) —
   // a freshly opened editor must not greet the user with a wall of «Заполните поле».
   const [dirty, setDirty] = useState(false);
@@ -163,6 +175,11 @@ export function HypothesisEditor({
   /** Per-field errors, localised. The shared validator stays the source of truth for the counts. */
   const errors = useMemo(() => {
     const e: Record<string, string> = {};
+    if (isDraft) {
+      // ANA-129 light draft: the title is the only required field — no format wall.
+      if (d.title.trim() === '') e.title = t('hyp.err.required');
+      return e;
+    }
     for (const f of ['subject', 'action', 'solution', 'condition', 'title'] as const) {
       if (d[f].trim() === '') e[f] = t('hyp.err.required');
     }
@@ -192,9 +209,12 @@ export function HypothesisEditor({
       e.deadlineDays = t('hyp.err.deadline');
     }
     return e;
-  }, [d, t]);
+  }, [d, t, isDraft]);
 
-  const shared = useMemo(() => validateHypothesis(draftToNew(d)), [d]);
+  const shared = useMemo(
+    () => validateHypothesis(draftToNew(d), { mode: isDraft ? 'draft' : 'work' }),
+    [d, isDraft],
+  );
   const valid = Object.keys(errors).length === 0 && shared.ok;
   /** Per-field errors as displayed: gated behind the first user input (БАГ-14 dirty tracking). */
   const shownErrors = dirty ? errors : {};
@@ -225,6 +245,13 @@ export function HypothesisEditor({
         <p className="rounded-md border border-line bg-raised px-3 py-2 text-sm italic text-muted">
           {sentence || '…'}
         </p>
+
+        {/* ANA-129: light-draft hint — the full format is enforced at take-into-work. */}
+        {isDraft && (
+          <p data-testid="hyp-draft-hint" className="text-xs font-medium text-muted">
+            {t('hyp.draftHint')}
+          </p>
+        )}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div>

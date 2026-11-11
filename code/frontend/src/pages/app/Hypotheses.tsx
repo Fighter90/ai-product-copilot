@@ -2,9 +2,24 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowUpDown, Pencil, Plus, Trash2 } from 'lucide-react';
-import { iceScore, type Hypothesis, type HypothesisStatus, type NewHypothesis } from '@pca/shared';
-import { useT, fmtNum } from '../../i18n';
-import { Card, ConfirmDialog, ErrorBox, PageHeader, Pill, Skeleton } from '../../components/ui';
+import {
+  ASSUMPTION_CATEGORIES,
+  iceScore,
+  validateHypothesis,
+  type Hypothesis,
+  type HypothesisStatus,
+  type NewHypothesis,
+} from '@pca/shared';
+import { useT, fmtNum, type DictKey } from '../../i18n';
+import {
+  Card,
+  ConfirmDialog,
+  ErrorBox,
+  Modal,
+  PageHeader,
+  Pill,
+  Skeleton,
+} from '../../components/ui';
 import { EmptyState } from '../../components/EmptyState';
 import { SourceBadge, UnverifiedBadge } from '../../components/hypotheses/SourceBadge';
 import {
@@ -46,6 +61,38 @@ interface Editing {
   readonly draft: HypothesisDraft;
 }
 
+/** ANA-129 checklist line: a take-into-work requirement and whether the hypothesis meets it. */
+interface ChecklistItem {
+  readonly ok: boolean;
+  readonly key: DictKey;
+}
+
+/** The take-into-work checklist, computed from the stored hypothesis (ANA-129). */
+function workChecklist(h: Hypothesis): ChecklistItem[] {
+  const nonEmpty = (...xs: string[]): boolean => xs.every((s) => s.trim() !== '');
+  return [
+    { key: 'hyp.check.format', ok: nonEmpty(h.subject, h.action, h.solution, h.condition) },
+    {
+      key: 'hyp.check.assumptions',
+      ok:
+        h.hiddenAssumptions.length >= 3 &&
+        new Set(h.hiddenAssumptions.map((a) => a.category)).size === ASSUMPTION_CATEGORIES.length,
+    },
+    {
+      key: 'hyp.check.methods',
+      ok:
+        h.validationMethods.length >= 2 &&
+        new Set(h.validationMethods.map((m) => m.type)).size >= 2,
+    },
+    {
+      key: 'hyp.check.ice',
+      ok: nonEmpty(h.impactRationale, h.confidenceRationale, h.easeRationale),
+    },
+    { key: 'hyp.check.traffic', ok: nonEmpty(h.greenCriteria, h.yellowCriteria, h.redCriteria) },
+    { key: 'hyp.check.deadline', ok: Number.isInteger(h.deadlineDays) && h.deadlineDays >= 1 },
+  ];
+}
+
 /** Turn a deep-link seed (ANA-24) into a prefilled draft: segment + evidence land in the form. */
 function draftFromSeed(seed: ReturnType<typeof parseHypothesisSeed>): HypothesisDraft {
   const base = blankDraft();
@@ -75,6 +122,8 @@ export function Hypotheses(): JSX.Element {
   const [editing, setEditing] = useState<Editing | null>(null);
   // БАГ-15 removal-UX: deletion is confirmed by the styled ConfirmDialog, not window.confirm().
   const [pendingDelete, setPendingDelete] = useState<Hypothesis | null>(null);
+  // ANA-129: the take-into-work checklist — a draft without the full format cannot move.
+  const [checklistFor, setChecklistFor] = useState<Hypothesis | null>(null);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'iceScore', dir: -1 });
 
   const list = useQuery({ queryKey: ['hypotheses'], queryFn: hypothesesApi.list });
@@ -144,8 +193,19 @@ export function Hypotheses(): JSX.Element {
   });
 
   const hypotheses = list.data ?? [];
+  // ANA-129: drafts are not full hypotheses yet — they stay out of ICE prioritisation.
+  const work = useMemo(() => hypotheses.filter((h) => h.status !== 'draft'), [hypotheses]);
   const byStatus = (statuses: readonly HypothesisStatus[]): Hypothesis[] =>
     hypotheses.filter((h) => statuses.includes(h.status));
+
+  /** ANA-129: moving into a work status requires the complete format; a light draft gets the checklist. */
+  const onStatusChange = (h: Hypothesis, status: HypothesisStatus): void => {
+    if (status !== 'draft' && status !== h.status && !validateHypothesis(h, { mode: 'work' }).ok) {
+      setChecklistFor(h);
+      return;
+    }
+    statusMut.mutate({ id: h.id, status });
+  };
 
   // ---- Sortable ICE table ----------------------------------------------------------------------
   const sorted = useMemo(() => {
@@ -159,14 +219,14 @@ export function Hypotheses(): JSX.Element {
           return h[sort.key];
       }
     };
-    return [...hypotheses].sort((a, b) => {
+    return [...work].sort((a, b) => {
       const va = val(a);
       const vb = val(b);
       if (va < vb) return -sort.dir;
       if (va > vb) return sort.dir;
       return b.iceScore - a.iceScore;
     });
-  }, [hypotheses, sort]);
+  }, [work, sort]);
 
   const toggleSort = (key: SortKey): void =>
     setSort((prev) =>
@@ -257,9 +317,7 @@ export function Hypotheses(): JSX.Element {
                         aria-label={t('hyp.changeStatus')}
                         className="rounded border border-line bg-surface px-1 py-0.5 text-xs"
                         value={h.status}
-                        onChange={(e) =>
-                          statusMut.mutate({ id: h.id, status: e.target.value as HypothesisStatus })
-                        }
+                        onChange={(e) => onStatusChange(h, e.target.value as HypothesisStatus)}
                       >
                         {STATUSES.map((s) => (
                           <option key={s} value={s}>
@@ -301,7 +359,7 @@ export function Hypotheses(): JSX.Element {
 
       {/* ICE table */}
       <Card title={t('hyp.table.title')} hint={t('hyp.table.hint')}>
-        {hypotheses.length === 0 ? (
+        {work.length === 0 ? (
           <EmptyState
             message={t('hyp.empty')}
             action={{
@@ -418,12 +476,43 @@ export function Hypotheses(): JSX.Element {
           open
           initial={editing.draft}
           heading={editing.id === null ? t('hyp.editor.new') : t('hyp.editor.edit')}
+          status={
+            editing.id === null
+              ? 'draft'
+              : (hypotheses.find((h) => h.id === editing.id)?.status ?? 'draft')
+          }
           onClose={() => setEditing(null)}
           onSave={async (body) => {
             await saveMut.mutateAsync({ id: editing.id, body });
           }}
         />
       )}
+
+      {/* ANA-129: the take-into-work gate — the draft must carry the complete format. */}
+      <Modal
+        open={checklistFor !== null}
+        size="md"
+        title={t('hyp.check.title')}
+        onClose={() => setChecklistFor(null)}
+      >
+        {checklistFor !== null && (
+          <div data-testid="hyp-work-checklist" className="space-y-3 text-sm">
+            <p className="text-muted">{t('hyp.check.blocked')}</p>
+            <ul className="space-y-1.5">
+              {workChecklist(checklistFor).map((item) => (
+                <li key={item.key} className={item.ok ? 'text-green-700' : 'text-red-600'}>
+                  <span aria-hidden>{item.ok ? '✓' : '✗'}</span> {t(item.key)}
+                </li>
+              ))}
+            </ul>
+            <div className="flex justify-end">
+              <button type="button" className="btn-ghost" onClick={() => setChecklistFor(null)}>
+                {t('hyp.check.close')}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* БАГ-15 removal-UX: styled confirmation instead of the native window.confirm(). */}
       <ConfirmDialog

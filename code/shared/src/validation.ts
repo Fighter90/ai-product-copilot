@@ -18,19 +18,54 @@ function inIceRange(n: number): boolean {
 }
 
 /**
- * Hypothesis completeness check. A hypothesis is invalid (and must not be persisted)
- * unless: all format fields + rationales present, >=3 hidden assumptions spanning all
- * categories, >=2 distinct validation methods, ICE factors in range, positive deadline.
+ * ANA-129 two-status model: 'draft' — light draft at creation (a title is enough, format fields
+ * optional); 'work' — the complete hypothesis format (≥3 assumptions, ≥2 methods, ICE rationales,
+ * traffic light, deadline), enforced when a draft is taken into work.
  */
-export function validateHypothesis(h: NewHypothesis): ValidationResult {
+export type HypothesisValidationMode = 'draft' | 'work';
+
+export interface ValidateHypothesisOptions {
+  readonly mode?: HypothesisValidationMode;
+}
+
+/**
+ * Hypothesis completeness check. In 'work' mode a hypothesis is invalid (and must not be
+ * persisted) unless: all format fields + rationales present, >=3 hidden assumptions spanning all
+ * categories, >=2 distinct validation methods, ICE factors in range, positive deadline.
+ * In 'draft' mode only the title is required plus data sanity (ICE range, positive deadline) —
+ * format fields are optional (ANA-129).
+ */
+export function validateHypothesis(
+  h: NewHypothesis,
+  opts: ValidateHypothesisOptions = {},
+): ValidationResult {
   const errors: string[] = [];
+
+  if (isBlank(h.title)) errors.push('title is required');
+  if (opts.mode === 'draft') {
+    // ANA-129 light draft: title + data sanity only — no format requirements.
+    for (const [field, value] of [
+      ['impact', h.impact],
+      ['confidence', h.confidence],
+      ['ease', h.ease],
+    ] as const) {
+      if (!inIceRange(value)) {
+        errors.push(
+          `${field} must be an integer in ${ICE_CONFIG.scale.min}..${ICE_CONFIG.scale.max}`,
+        );
+      }
+    }
+    if (!Number.isInteger(h.deadlineDays) || h.deadlineDays < 1) {
+      errors.push('deadlineDays must be a positive integer');
+    }
+    return { ok: errors.length === 0, errors };
+  }
 
   const requiredText: ReadonlyArray<readonly [string, string]> = [
     ['subject', h.subject],
     ['action', h.action],
     ['solution', h.solution],
     ['condition', h.condition],
-    ['title', h.title],
     ['greenCriteria', h.greenCriteria],
     ['yellowCriteria', h.yellowCriteria],
     ['redCriteria', h.redCriteria],

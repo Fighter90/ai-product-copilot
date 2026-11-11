@@ -184,7 +184,7 @@ describe('Hypotheses page', () => {
     fireEvent.change(select, { target: { value: 'in_progress' } });
 
     const dialog = await screen.findByTestId('hyp-work-checklist');
-    expect(dialog).toHaveTextContent('Чеклист формата');
+    expect(screen.getByRole('heading', { name: 'Чеклист формата' })).toBeInTheDocument();
     expect(dialog).toHaveTextContent('≥3 скрытых допущения');
     expect(dialog).toHaveTextContent('≥2 метода проверки');
     // The transition is blocked while the checklist is open — no API call.

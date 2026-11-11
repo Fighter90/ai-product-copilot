@@ -4,6 +4,7 @@ import {
   type Hypothesis,
   type HypothesisSource,
   type HypothesisStatus,
+  type HypothesisValidationMode,
   type NewHypothesis,
 } from '@pca/shared';
 
@@ -137,9 +138,12 @@ export class HypothesisInUseError extends Error {
 export class HypothesesRepo {
   constructor(private readonly db: DB) {}
 
-  /** Persists a hypothesis. Rejects (throws) anything failing the completeness check. */
-  create(input: NewHypothesis): Hypothesis {
-    const result = validateHypothesis(input);
+  /**
+   * Persists a hypothesis. ANA-129: the default mode is 'draft' — a light draft needs only a
+   * title (plus data sanity); callers that require the complete format pass { mode: 'work' }.
+   */
+  create(input: NewHypothesis, opts: { mode?: HypothesisValidationMode } = {}): Hypothesis {
+    const result = validateHypothesis(input, { mode: opts.mode ?? 'draft' });
     if (!result.ok) throw new HypothesisValidationError(result.errors);
 
     const now = new Date().toISOString();
@@ -174,13 +178,16 @@ export class HypothesesRepo {
 
   /**
    * Replaces the editable content of a hypothesis (status, demo mark and creation time are kept;
-   * the deadline is recomputed from the creation time). Same completeness check as create().
+   * the deadline is recomputed from the creation time). ANA-129: a draft is edited under the
+   * light rules, a work-status hypothesis keeps the complete format.
    */
   update(id: number, input: NewHypothesis): Hypothesis | undefined {
-    const result = validateHypothesis(input);
-    if (!result.ok) throw new HypothesisValidationError(result.errors);
     const existing = this.getById(id);
     if (!existing) return undefined;
+    const result = validateHypothesis(input, {
+      mode: existing.status === 'draft' ? 'draft' : 'work',
+    });
+    if (!result.ok) throw new HypothesisValidationError(result.errors);
     if (input.parentId === id) {
       throw new HypothesisValidationError(['parentId must not reference the hypothesis itself']);
     }
@@ -247,7 +254,18 @@ export class HypothesesRepo {
     ).map(toHypothesis);
   }
 
+  /**
+   * ANA-129 two-status gate: moving a hypothesis out of 'draft' (взятие в работу) requires the
+   * complete format of the stored content — an incomplete draft is rejected and stays a draft.
+   * Moving back to 'draft' is always allowed. Returns undefined for a missing id.
+   */
   updateStatus(id: number, status: HypothesisStatus): Hypothesis | undefined {
+    if (status !== 'draft') {
+      const current = this.getById(id);
+      if (!current) return undefined;
+      const result = validateHypothesis(current, { mode: 'work' });
+      if (!result.ok) throw new HypothesisValidationError(result.errors);
+    }
     const r = this.db
       .prepare('UPDATE hypotheses SET status = @status, updated_at = @u WHERE id = @id RETURNING *')
       .get({ id, status, u: new Date().toISOString() }) as HypRow | undefined;

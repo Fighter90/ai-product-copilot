@@ -63,19 +63,17 @@ describe('HypothesesRepo.create', () => {
 
   it('rejects a hypothesis with fewer than 3 assumptions in work mode', () => {
     expect(() =>
-      repo.create(
-        validHypothesis({ hiddenAssumptions: [{ category: 'behavior', text: 'x' }] }),
-        { mode: 'work' },
-      ),
+      repo.create(validHypothesis({ hiddenAssumptions: [{ category: 'behavior', text: 'x' }] }), {
+        mode: 'work',
+      }),
     ).toThrowError(HypothesisValidationError);
   });
 
   it('rejects a hypothesis with fewer than 2 validation methods in work mode', () => {
     try {
-      repo.create(
-        validHypothesis({ validationMethods: [{ type: 'synthetic', plan: 'x' }] }),
-        { mode: 'work' },
-      );
+      repo.create(validHypothesis({ validationMethods: [{ type: 'synthetic', plan: 'x' }] }), {
+        mode: 'work',
+      });
       expect.unreachable('should have thrown');
     } catch (e) {
       expect(e).toBeInstanceOf(HypothesisValidationError);
@@ -209,7 +207,12 @@ describe('HypothesesRepo.update', () => {
         redCriteria: '',
       }),
     );
-    const edited = repo.update(h.id, validHypothesis({ title: 'Черновик отредактирован' }));
+    const partial = validHypothesis({ title: 'Черновик отредактирован' });
+    const edited = repo.update(h.id, {
+      ...partial,
+      hiddenAssumptions: [],
+      validationMethods: [],
+    });
     expect(edited?.title).toBe('Черновик отредактирован');
     expect(edited?.status).toBe('draft');
     expect(edited?.hiddenAssumptions).toEqual([]);

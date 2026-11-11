@@ -18,13 +18,14 @@ export const STATUS_KEY: Record<HypothesisStatus, DictKey> = {
   expired: 'hyp.status.expired',
 };
 
-/** Kanban columns: «Просрочена» is its own lane — expired ≠ rejected (ANA-75 / БАГ-15). */
+/** Kanban columns: «Просрочена» is its own lane — expired ≠ rejected (ANA-75 / БАГ-15).
+    ANA-129: drafts live in their own «Черновики» lane until taken into work. */
 export const KANBAN_COLUMNS: ReadonlyArray<{
   readonly id: string;
   readonly key: DictKey;
   readonly statuses: readonly HypothesisStatus[];
 }> = [
-  { id: 'draft', key: 'hyp.status.draft', statuses: ['draft'] },
+  { id: 'draft', key: 'hyp.col.drafts', statuses: ['draft'] },
   { id: 'in_progress', key: 'hyp.status.in_progress', statuses: ['in_progress'] },
   { id: 'green', key: 'hyp.status.green', statuses: ['green'] },
   { id: 'yellow', key: 'hyp.status.yellow', statuses: ['yellow'] },
