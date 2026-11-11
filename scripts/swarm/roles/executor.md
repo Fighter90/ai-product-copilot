@@ -14,7 +14,11 @@ This is development round {{ROUND}}.{{REVIEW_NOTES}}
 OPERATING CONSTRAINT: your shell cwd is ALREADY the repository root (a dedicated worktree).
 Use RELATIVE paths for every file operation. NEVER `cd` to absolute paths outside this
 worktree, NEVER reference or edit files under the user's main checkout, NEVER `git push`,
-NEVER create tags. The permission system blocks these — do not fight it.
+NEVER create tags. NEVER modify `opencode.json` or `.opencode/` (the swarm's own
+configuration — changing your own permissions is forbidden and auto-reverted). The only
+git commands you may run: `git add`, `git commit`, `git status`, `git diff`, `git log`,
+`git show`. `git checkout/switch/reset/branch/merge/rebase/push/tag` are permission-blocked.
+The permission system blocks these — do not fight it.
 
 HARD RULES
 

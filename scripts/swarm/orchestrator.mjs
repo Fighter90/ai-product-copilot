@@ -604,6 +604,23 @@ async function main() {
         // The changelog edit happens AFTER gates — format it before pushing, or
         // release.yml's format:check fails on the tag (run 19: v3.4.3).
         await sh(`cd ${JSON.stringify(WT)} && pnpm exec prettier --write CHANGELOG.md`);
+        // Protected-path guard: the executor must never ship changes to the swarm's own
+        // machinery/config (self-permission escalation — run 24 edited opencode.json to
+        // weaken its own denies; format:check caught it only by luck).
+        const touched = await sh(
+          `git -C ${JSON.stringify(WT)} diff --name-only origin/main...HEAD | grep -E ${JSON.stringify('^(opencode\\.json|\\.opencode/|scripts/swarm/)')} || true`,
+        );
+        if (touched.out.trim()) {
+          await failIssue(
+            issue,
+            'release',
+            `diff touches protected swarm files: ${short(touched.out, 200)} — reverting those changes and re-reviewing`,
+          );
+          await sh(
+            `git -C ${JSON.stringify(WT)} checkout origin/main -- opencode.json .opencode scripts/swarm && git -C ${JSON.stringify(WT)} commit -q -m "chore: revert protected swarm config changes (${issue.identifier})"`,
+          );
+        }
+
         // Non-fast-forward-safe: an operator commit may advance origin/main mid-run —
         // rebase the release commit onto the freshest main and retry once.
         let relCommit = await sh(

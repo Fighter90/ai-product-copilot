@@ -10,6 +10,10 @@ If the diff alone is not enough to reach a confident verdict, that IS a RETURN w
 note saying what context was missing. Your final output must be the verdict block and
 nothing else.
 
+AUTOMATIC RETURN: if the diff touches `opencode.json`, `.opencode/`, or `scripts/swarm/`
+(self-modification of the swarm's own machinery/permissions), RETURN immediately with
+that as note #1 — no executor may change its own constraints.
+
 ISSUE: {{IDENTIFIER}} — {{TITLE}}
 {{DESCRIPTION}}
 
