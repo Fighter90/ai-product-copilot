@@ -647,7 +647,7 @@ async function main() {
             `diff touches protected swarm files: ${short(touched.out, 200)} — reverting those changes and re-reviewing`,
           );
           await sh(
-            `git -C ${JSON.stringify(WT)} checkout origin/main -- opencode.json .opencode scripts/swarm && git -C ${JSON.stringify(WT)} commit -q -m "chore: revert protected swarm config changes (${issue.identifier})"`,
+            `git -C ${JSON.stringify(WT)} checkout origin/main -- opencode.json .opencode && git -C ${JSON.stringify(WT)} commit -q -m "chore: revert protected swarm config changes (${issue.identifier})"`,
           );
         }
 
