@@ -385,12 +385,14 @@ export function VersionBadge({ className = '' }: { className?: string }): JSX.El
   );
 }
 
-/** Status pill for live/sleeping/dead etc. */
+/** Status pill for live/sleeping/dead etc. `title` adds a tooltip (ANA-138 badge reasons). */
 export function Pill({
   tone,
+  title,
   children,
 }: {
   tone: 'green' | 'amber' | 'red' | 'neutral' | 'accent';
+  title?: string;
   children: ReactNode;
 }): JSX.Element {
   const cls = {
@@ -402,6 +404,7 @@ export function Pill({
   }[tone];
   return (
     <span
+      title={title}
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}
     >
       {children}

@@ -1,6 +1,7 @@
 /** Decision Log types (skill-decision-log.md), shared across backend and frontend. */
 
 import type { HypothesisSource } from './hypotheses';
+import type { AutonomyAssessment } from './decision-autonomy';
 import type { DecisionType } from './decision-autonomy';
 
 export type DecisionMethod = 'synthetic' | 'live' | 'quantitative' | 'market' | 'mixed';
@@ -56,4 +57,13 @@ export interface Decision extends NewDecision {
   readonly exportedMdPath?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+/**
+ * ANA-138: one row of GET /api/decisions. AI rows (`source = 'ai'`) additionally carry the
+ * autonomy assessment (assessed type, max level, required level, escalation verdict);
+ * manual rows carry no `autonomy` block at all.
+ */
+export interface DecisionListItem extends Decision {
+  readonly autonomy?: AutonomyAssessment;
 }

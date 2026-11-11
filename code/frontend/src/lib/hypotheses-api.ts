@@ -1,6 +1,8 @@
 import { http } from './api';
 import type {
+  AutonomyMatrixResponse,
   Decision,
+  DecisionListItem,
   Hypothesis,
   HypothesisStatus,
   NewDecision,
@@ -40,6 +42,9 @@ export const hypothesesApi = {
 };
 
 export const decisionsApi = {
-  list: () => http<Decision[]>('/decisions'),
+  /** ANA-138: AI rows carry the `autonomy` assessment, manual rows carry none. */
+  list: () => http<DecisionListItem[]>('/decisions'),
   create: (d: NewDecision) => http<Decision>('/decisions', { method: 'POST', ...json(d) }),
+  /** ANA-138: the static autonomy contract behind the «Матрица автономии» block. */
+  autonomyMatrix: () => http<AutonomyMatrixResponse>('/decisions/autonomy-matrix'),
 };

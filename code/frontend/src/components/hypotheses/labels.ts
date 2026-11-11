@@ -2,6 +2,7 @@ import type {
   AssumptionCategory,
   DecisionMethod,
   DecisionOutcome,
+  DecisionType,
   FindingConfidence,
   HypothesisStatus,
   ValidationMethodType,
@@ -64,6 +65,18 @@ export const CONFIDENCE_KEY: Record<FindingConfidence, DictKey> = {
   high: 'dec.conf.high',
   medium: 'dec.conf.medium',
   low: 'dec.conf.low',
+};
+
+/** ANA-138: localized label of each AI decision type (taxonomy of 8 values). */
+export const DECISION_TYPE_KEY: Record<DecisionType, DictKey> = {
+  'data-analysis': 'dec.autonomy.type.data-analysis',
+  'hypothesis-draft': 'dec.autonomy.type.hypothesis-draft',
+  'experiment-launch': 'dec.autonomy.type.experiment-launch',
+  pricing: 'dec.autonomy.type.pricing',
+  budget: 'dec.autonomy.type.budget',
+  'public-comms': 'dec.autonomy.type.public-comms',
+  strategic: 'dec.autonomy.type.strategic',
+  legal: 'dec.autonomy.type.legal',
 };
 
 /** Pill tone per hypothesis status (red/expired share the rejected tone). */
