@@ -14,6 +14,7 @@ import { generateHypotheses } from './ai-hypotheses';
 import { generateDecisions } from './ai-decisions';
 import { autoPopulateGenerated } from './ai-autopopulate';
 import { reportAiJobs } from './ai-job-queue';
+import { logger } from '../utils/logger';
 import { config, hasAnthropicKey } from '../config';
 import type { HypothesesRepo } from '../db/repositories/hypotheses-repo';
 import type { DecisionsRepo } from '../db/repositories/decisions-repo';
@@ -126,7 +127,9 @@ export function makeReportRunner(
         },
       );
       return { ...payload, autoPopulate };
-    } catch {
+    } catch (err) {
+      // ANA-134: a whole-run failure would otherwise leave no trace at all (no per-item entries).
+      logger.warn({ err }, 'ai-autopopulate failed — report continues without auto-populate');
       return payload;
     }
   };

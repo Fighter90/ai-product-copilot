@@ -11,6 +11,7 @@ import type {
 import type { DecisionsRepo } from '../db/repositories/decisions-repo';
 import type { HypothesesRepo } from '../db/repositories/hypotheses-repo';
 import { ImportAiBody, METHOD_RULES, generatedToNewHypothesis } from './ai-hypotheses';
+import { logger } from '../utils/logger';
 
 /**
  * ANA-128: auto-populate the «Гипотезы» and «Решения» sections with the AI-generated content.
@@ -20,7 +21,26 @@ import { ImportAiBody, METHOD_RULES, generatedToNewHypothesis } from './ai-hypot
  * drafts). Idempotent: a repeated analysis dedupes by a content hash, so re-running never
  * multiplies rows. Failures are isolated per item — auto-population must never break the report
  * and must not require an AI key (without generation there is simply nothing to populate).
+ * ANA-134: every per-item skip/fail is logged (item id + reason), so silent data loss in the
+ * auto-population is observable in the backend logs.
  */
+
+/**
+ * Minimal logger surface for per-item skip/fail observability (ANA-134); pino-compatible.
+ * Injectable so tests can capture the entries instead of relying on log output.
+ */
+export interface AutoPopulateLog {
+  info: (obj: Record<string, unknown>, msg: string) => void;
+  warn: (obj: Record<string, unknown>, msg: string) => void;
+}
+
+const defaultLog: AutoPopulateLog = {
+  info: (obj, msg) => logger.info(obj, msg),
+  warn: (obj, msg) => logger.warn(obj, msg),
+};
+
+/** Human-readable message of an unknown thrown value (ANA-134 log entries). */
+const errMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /** Counts of one auto-population run, persisted onto the snapshot for the report preview. */
 export interface AutoPopulateResult {
@@ -41,6 +61,11 @@ export interface AutoPopulateDeps {
   readonly model?: string;
   /** Injectable clock (tests); defaults to now. */
   readonly now?: Date;
+  /**
+   * ANA-134: injectable logger for per-item skip/fail events; defaults to the app logger
+   * (level-silent under tests).
+   */
+  readonly log?: AutoPopulateLog;
 }
 
 const stableHash = (value: unknown): string =>
@@ -154,6 +179,7 @@ export function autoPopulateGenerated(
   deps: AutoPopulateDeps,
 ): AutoPopulateResult {
   const now = deps.now ?? new Date();
+  const log = deps.log ?? defaultLog;
   // Mutable tally, returned as the readonly AutoPopulateResult.
   const result = { hypotheses: 0, decisions: 0, skipped: 0 };
   /** AI hypothesis id («P01»/«S01») → id of the imported (or pre-existing duplicate) row. */
@@ -172,6 +198,10 @@ export function autoPopulateGenerated(
     if (existingId !== undefined) {
       idMap.set(p.id, existingId);
       result.skipped++;
+      log.info(
+        { kind: 'problem', itemId: p.id, reason: 'duplicate' },
+        'ai-autopopulate: problem skipped (duplicate)',
+      );
       continue;
     }
     try {
@@ -179,8 +209,12 @@ export function autoPopulateGenerated(
       hashToId.set(key, created.id);
       idMap.set(p.id, created.id);
       result.hypotheses++;
-    } catch {
-      // One invalid draft must not break the auto-population (or the report).
+    } catch (err) {
+      // One invalid draft must not break the auto-population (or the report). ANA-134: log it.
+      log.warn(
+        { kind: 'problem', itemId: p.id, reason: 'create-failed', err: errMessage(err) },
+        'ai-autopopulate: problem skipped (create failed)',
+      );
     }
   }
 
@@ -202,14 +236,22 @@ export function autoPopulateGenerated(
       if (existingId !== undefined) {
         idMap.set(s.id, existingId);
         result.skipped++;
+        log.info(
+          { kind: 'solution', itemId: s.id, reason: 'duplicate' },
+          'ai-autopopulate: solution skipped (duplicate)',
+        );
         continue;
       }
       const created = deps.hypotheses.create(draft, { mode: 'work' });
       hashToId.set(key, created.id);
       idMap.set(s.id, created.id);
       result.hypotheses++;
-    } catch {
-      // Invalid or duplicate-shape item — skip it, keep the rest.
+    } catch (err) {
+      // Invalid or duplicate-shape item — skip it, keep the rest. ANA-134: log it.
+      log.warn(
+        { kind: 'solution', itemId: s.id, reason: 'import-failed', err: errMessage(err) },
+        'ai-autopopulate: solution skipped (import failed)',
+      );
     }
   }
 
@@ -222,19 +264,39 @@ export function autoPopulateGenerated(
   );
   for (const d of generatedDecisions?.decisions ?? []) {
     const hypothesisId = idMap.get(d.hypothesisId);
-    if (hypothesisId === undefined) continue; // the model linked an id we did not import
+    if (hypothesisId === undefined) {
+      // The model linked an id we did not import — observable skip (ANA-134).
+      log.info(
+        {
+          kind: 'decision',
+          itemId: d.id,
+          reason: 'unknown-hypothesis',
+          hypothesisId: d.hypothesisId,
+        },
+        'ai-autopopulate: decision skipped (unknown hypothesis id)',
+      );
+      continue;
+    }
     const draft = generatedToNewDecision(d, hypothesisId, deps.provider, now);
     const key = decisionContentHash(draft);
     if (knownDecisions.has(key)) {
       result.skipped++;
+      log.info(
+        { kind: 'decision', itemId: d.id, reason: 'duplicate' },
+        'ai-autopopulate: decision skipped (duplicate)',
+      );
       continue;
     }
     try {
       deps.decisions.createAiDraft(draft);
       knownDecisions.add(key);
       result.decisions++;
-    } catch {
-      // Skip the failed proposal; the rest keep populating.
+    } catch (err) {
+      // Skip the failed proposal; the rest keep populating. ANA-134: log it.
+      log.warn(
+        { kind: 'decision', itemId: d.id, reason: 'create-failed', err: errMessage(err) },
+        'ai-autopopulate: decision skipped (create failed)',
+      );
     }
   }
 

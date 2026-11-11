@@ -240,3 +240,95 @@ describe('autoPopulateGenerated (ANA-128)', () => {
     spy.mockRestore();
   });
 });
+
+describe('per-item skip/fail logging (ANA-134 observability)', () => {
+  it('warns with the item id and error when a problem create fails', () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const spy = vi.spyOn(hyps, 'create').mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+    const result = autoPopulateGenerated(generated, undefined, { ...deps, log });
+    expect(result.hypotheses).toBe(2); // P01 failed, S01/S02 landed
+    expect(log.warn).toHaveBeenCalledWith(
+      { kind: 'problem', itemId: 'P01', reason: 'create-failed', err: 'boom' },
+      'ai-autopopulate: problem skipped (create failed)',
+    );
+    spy.mockRestore();
+  });
+
+  it('warns with the item id and error when a solution fails the import validation', () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    // deadline must be a string — a number deterministically breaks ImportAiBody.parse.
+    const broken: GeneratedHypotheses = {
+      ...generated,
+      solutions: [solution({ deadline: 42 as unknown as string })],
+    };
+    const result = autoPopulateGenerated(broken, undefined, { ...deps, log });
+    expect(result.hypotheses).toBe(1); // only the problem draft landed
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    const entry = log.warn.mock.calls[0]?.[0] as Record<string, unknown>;
+    const message = log.warn.mock.calls[0]?.[1] as string;
+    expect(entry).toMatchObject({ kind: 'solution', itemId: 'S01', reason: 'import-failed' });
+    expect(String(entry.err)).not.toBe('');
+    expect(message).toBe('ai-autopopulate: solution skipped (import failed)');
+    expect(log.info).not.toHaveBeenCalled();
+  });
+
+  it('warns with String(err) for non-Error throws', () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const spy = vi.spyOn(hyps, 'create').mockImplementationOnce(() => {
+      throw 'str-boom';
+    });
+    autoPopulateGenerated(generated, undefined, { ...deps, log });
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ itemId: 'P01', err: 'str-boom' }),
+      'ai-autopopulate: problem skipped (create failed)',
+    );
+    spy.mockRestore();
+  });
+
+  it('logs an info entry for every duplicate of a re-run', () => {
+    autoPopulateGenerated(generated, generatedDecisions, deps);
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const second = autoPopulateGenerated(generated, generatedDecisions, { ...deps, log });
+    expect(second).toEqual({ hypotheses: 0, decisions: 0, skipped: 5 });
+    // DL03 is logged again too — P99 was never imported, so it is still an unknown id.
+    const itemIds = log.info.mock.calls.map((c) => (c[0] as { itemId: string }).itemId).sort();
+    expect(itemIds).toEqual(['DL01', 'DL02', 'DL03', 'P01', 'S01', 'S02']);
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it('logs the decision whose hypothesis id was not imported', () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const result = autoPopulateGenerated({ problems: [], solutions: [] }, generatedDecisions, {
+      ...deps,
+      log,
+    });
+    expect(result.decisions).toBe(0);
+    expect(log.info).toHaveBeenCalledWith(
+      { kind: 'decision', itemId: 'DL03', reason: 'unknown-hypothesis', hypothesisId: 'P99' },
+      'ai-autopopulate: decision skipped (unknown hypothesis id)',
+    );
+  });
+
+  it('warns with the item id and error when a decision insert fails', () => {
+    autoPopulateGenerated(generated, undefined, deps);
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const spy = vi.spyOn(decisions, 'createAiDraft').mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+    const result = autoPopulateGenerated(generated, generatedDecisions, { ...deps, log });
+    expect(result.decisions).toBe(1);
+    expect(log.warn).toHaveBeenCalledWith(
+      { kind: 'decision', itemId: 'DL01', reason: 'create-failed', err: 'boom' },
+      'ai-autopopulate: decision skipped (create failed)',
+    );
+    spy.mockRestore();
+  });
+
+  it('defaults to the silent app logger when no log is injected', () => {
+    // Existing deps carry no `log` — must not crash (pino is level-silent in tests).
+    const result = autoPopulateGenerated(generated, undefined, deps);
+    expect(result.hypotheses).toBe(3);
+  });
+});
