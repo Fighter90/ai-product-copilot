@@ -186,6 +186,32 @@ export function parsePickOutput(out) {
   return issue;
 }
 
+// ANA-130: the post-deploy prod gate. `out` is raw curl output of
+// https://dashboardcamp.ru/api/health; `expectedVersion` is the version the swarm just
+// released (bumpVersion → package.json → APP_VERSION). Throws (→ failIssue) unless the
+// payload is healthy JSON reporting exactly that version. Tolerates a noisy last line
+// only if the final non-empty line is the JSON payload.
+export function verifyProdHealth(out, expectedVersion) {
+  const lines = String(out).trim().split('\n');
+  const line = lines[lines.length - 1] ?? '';
+  let d;
+  try {
+    d = JSON.parse(line);
+  } catch {
+    throw new Error(`prod /api/health: not JSON (${short(line, 120)})`);
+  }
+  if (d?.status !== 'ok') {
+    throw new Error(`prod /api/health: status=${String(d?.status)} (expected ok)`);
+  }
+  if (typeof d?.version !== 'string' || !d.version) {
+    throw new Error('prod /api/health: no version field in payload');
+  }
+  if (d.version !== expectedVersion) {
+    throw new Error(`prod /api/health: deployed ${d.version} != released ${expectedVersion}`);
+  }
+  return d.version;
+}
+
 async function pickIssue() {
   const out = await clerk(
     `Read-only. In the Linear WORKSPACE "analitics-platform" (verify with get_workspace; use the linear MCP server connected to it — typically named "linear-analitics"; NEVER touch other workspaces or teams), team "Analitics-platform" (key ANA): list issues that have the label "${LABEL}" and are in state "Todo" (use list_issues with a filter; if label filtering is unsupported, list Todo issues and check their labels). Take the FIRST one. Do NOT modify anything.\nPrint the result as a data line, substituting REAL values from the issue — never print placeholder words like <issueId> or <identifier>:\nSWARM_PICK::<REAL issueId>::<REAL identifier like ANA-123>::<REAL title>\nIf there is no such issue, print exactly: SWARM_PICK::NONE`,
@@ -699,8 +725,40 @@ async function main() {
         const relC = await watchRun(relId, 40 * 60_000);
         if (relC !== 'success') throw new Error(`release.yml: ${relC}`);
 
+        // ---- deploy (ANA-130): push the released version to prod. Reached ONLY after
+        // release.yml concluded success (every earlier throw skips it — a failed verify
+        // or publish never deploys). deploy.sh is idempotent: local frontend build →
+        // rsync → pnpm install --prod → restart pca-api → waits for a green
+        // /api/health (up to 60s, retries) — same entry point as the manual run,
+        // just keyed by the pca_deploy SSH key.
+        log(`-- deploy: v${ver} → dashboardcamp.ru`);
+        const dep = await sh(
+          `cd ${JSON.stringify(WT)} && SSH_KEY=~/.ssh/pca_deploy ./deploy/deploy.sh`,
+          { timeoutMs: 20 * 60_000 },
+        );
+        if (dep.code !== 0) throw new Error(`deploy.sh failed: ${short(dep.all, 300)}`);
+        // External confirmation: prod must answer /api/health with the RELEASED version
+        // (restart propagation/lag → up to 5 short attempts before failing the issue).
+        let health = null,
+          lastErr = null;
+        for (let attempt = 1; attempt <= 5 && !health; attempt++) {
+          const hp = await sh('curl -fsS --max-time 10 https://dashboardcamp.ru/api/health');
+          if (hp.code === 0) {
+            try {
+              health = verifyProdHealth(hp.out, ver);
+            } catch (e) {
+              lastErr = e;
+            }
+          }
+          if (!health && attempt < 5) await sh('sleep 5');
+        }
+        if (!health) {
+          throw lastErr ?? new Error(`prod /api/health never answered with ${ver}`);
+        }
+        log(`-- deploy: v${ver} → dashboardcamp.ru ... ok (health ${health})`);
+
         const today = new Date().toISOString().slice(0, 10);
-        const evidence = `**Shipped by the agent swarm in v${ver}** (${today})\n\n- Issue: ${issue.identifier} — ${issue.title}\n- PR: ${prUrl} (squash-merged, PR checks ✓)\n- Release chain: main CI ✓ + E2E ✓ → tag v${ver} → release.yml verify+publish ✓\n- Story: ${short(story, 300)}`;
+        const evidence = `**Shipped by the agent swarm in v${ver}** (${today})\n\n- Issue: ${issue.identifier} — ${issue.title}\n- PR: ${prUrl} (squash-merged, PR checks ✓)\n- Release chain: main CI ✓ + E2E ✓ → tag v${ver} → release.yml verify+publish ✓ → deploy ✓ (dashboardcamp.ru /api/health = ${health})\n- Story: ${short(story, 300)}`;
         await doneIssue(issue, evidence);
         await sh(`git -C ${JSON.stringify(WT)} branch -D ${branch}`);
         log(`=== DONE: ${issue.identifier} shipped as v${ver} ===`);
