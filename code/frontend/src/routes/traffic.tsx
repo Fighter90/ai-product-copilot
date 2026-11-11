@@ -285,28 +285,33 @@ export function TrafficView({
 
       <div className="space-y-2">
         <h2 className="text-lg font-semibold">{t('an.tr.table')}</h2>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-slate-500">
-              <th className="py-1">{t('an.col.channel')}</th>
-              <th>{t('an.col.visits')}</th>
-              <th>{t('an.col.users')}</th>
-              <th>{t('an.col.applications')}</th>
-              <th>CR</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.channel} className="border-t border-slate-100">
-                <td className="py-1">{channelLabel(r.channel)}</td>
-                <td>{formatInt(r.visits)}</td>
-                <td>{formatInt(r.users)}</td>
-                <td>{formatInt(r.goalReaches)}</td>
-                <td>{formatPercent(r.conversionRate)}</td>
+        {/* ANA-135: таблица каналов — единственная на странице без обёртки-скролла; при 390px
+            её min-content (длинные названия каналов + «Пользователи») вылезал за контейнер
+            (scrollWidth 398 > 390). Обёртка как у UTM-таблицы ниже и таблиц overview/history. */}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[28rem] text-sm">
+            <thead>
+              <tr className="text-left text-slate-500">
+                <th className="py-1">{t('an.col.channel')}</th>
+                <th>{t('an.col.visits')}</th>
+                <th>{t('an.col.users')}</th>
+                <th>{t('an.col.applications')}</th>
+                <th>CR</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.channel} className="border-t border-slate-100">
+                  <td className="py-1">{channelLabel(r.channel)}</td>
+                  <td>{formatInt(r.visits)}</td>
+                  <td>{formatInt(r.users)}</td>
+                  <td>{formatInt(r.goalReaches)}</td>
+                  <td>{formatPercent(r.conversionRate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="space-y-2">

@@ -69,6 +69,21 @@ describe('TrafficView', () => {
     expect(screen.getByText('spring')).toBeInTheDocument();
   });
 
+  it('keeps both tables inside horizontal-scroll containers so 390px never overflows the page (ANA-135)', () => {
+    // ANA-135: at a 390px viewport the channel table (long Cyrillic channel names, the
+    // «Пользователи» header) had a min-content width wider than its container and, being the
+    // only table on the page without an overflow-x-auto wrapper, pushed
+    // document.scrollWidth to 398 > 390 — a horizontal page scroll. jsdom cannot measure
+    // layout, so the regression guard is structural: every table on the page must sit inside
+    // a horizontal-scroll container, which makes page-level overflow impossible.
+    render(<TrafficView status="success" stats={[stat({})]} utm={[utmStat({})]} />);
+    const tables = screen.getAllByRole('table');
+    expect(tables).toHaveLength(2);
+    for (const table of tables) {
+      expect(table.closest('.overflow-x-auto')).not.toBeNull();
+    }
+  });
+
   it('shows an empty state when there is no traffic data', () => {
     render(<TrafficView status="success" stats={[]} utm={[]} />);
     expect(screen.getByText(/Нет данных за выбранный период/)).toBeInTheDocument();
