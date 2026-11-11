@@ -6,6 +6,15 @@
 
 ## [Unreleased]
 
+## [3.4.14] — 2026-11-12
+
+### Added (swarm ANA-138)
+
+- /app/decisions: бейджи типа и автономии на AI-решениях; бейдж «требует PM-эскалации» с причиной.
+- Блок «Матрица автономии» из GET /api/decisions/autonomy-matrix.
+- docs/methodology-decision-autonomy.md — модель распределения решений ИИ↔PM (ANA-127 п.7).
+- openspec: change decision-autonomy-model заархивирован в specs/decision-autonomy.
+
 ## [3.4.13] — $(date +%Y-%m-%d)
 
 ### Added (swarm ANA-137)
