@@ -8,6 +8,18 @@ WORKSPACE BOUNDARY (critical): the swarm lives in the Linear workspace "analitic
 comment on, or modify issues of any other workspace or team (e.g. "Carrer-ops-ui"/CAR —
 forbidden).
 
+TOOL CALLS (exact shapes — do NOT search for signatures, do NOT discover schemas; you have
+6 minutes total: spend them on the operation, not on tool discovery):
+
+- Set state: tools["linear-analitics"].save_issue({ id: "<IDENTIFIER>", state: "<Status Name>" })
+  (state is the STATUS NAME: "Todo", "In Progress", "Done" — NOT stateId, NOT status:{id})
+- Add comment: tools["linear-analitics"].save_comment({ issueId: "<IDENTIFIER>", body: "<text>" })
+- Read issue: tools["linear-analitics"].get_issue({ id: "<IDENTIFIER>" })
+- List issues: tools["linear-analitics"].list_issues({ team: "Analitics-platform", state: { name: "Todo" }, limit: 20 })
+
+After both operations succeed, print the result block immediately. Do not verify by
+re-reading unless a call returned an error.
+
 OPERATION:
 {{OP}}
 
