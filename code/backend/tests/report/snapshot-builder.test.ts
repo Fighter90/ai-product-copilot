@@ -79,8 +79,10 @@ beforeEach(() => {
       conversionRate: 0.05,
     },
   ]);
-  hypotheses.create(validHypothesis({ kind: 'problem' }));
-  hypotheses.create(validHypothesis({ kind: 'solution', diamondPhase: 'develop' }));
+  hypotheses.create(validHypothesis({ kind: 'problem' }), { mode: 'work' });
+  hypotheses.create(validHypothesis({ kind: 'solution', diamondPhase: 'develop' }), {
+    mode: 'work',
+  });
   b2b.create({ company: 'BigCorp', tickets: 20, stage: 'paid', dateAdded: '2025-01-01' });
   b2b.create({ company: 'SmallCo', tickets: 3, stage: 'lead', dateAdded: '2025-01-01' });
 });
@@ -100,6 +102,30 @@ describe('SnapshotBuilder', () => {
     expect(snap.hypotheses.problems).toHaveLength(1);
     expect(snap.hypotheses.solutions).toHaveLength(1);
     expect(snap.period).toEqual({ from: '2025-01-01', to: '2025-01-07' });
+  });
+
+  it('ANA-129: light drafts are excluded from the report snapshot', () => {
+    hypotheses.create(
+      validHypothesis({
+        kind: 'solution',
+        subject: '',
+        action: '',
+        solution: '',
+        condition: '',
+        hiddenAssumptions: [],
+        validationMethods: [],
+        impactRationale: '',
+        confidenceRationale: '',
+        easeRationale: '',
+        greenCriteria: '',
+        yellowCriteria: '',
+        redCriteria: '',
+      }),
+    );
+    const snap = builder.build({ id: 's2', generatedAt: 'T', from: '2025-01-01', to: '2025-01-07' });
+    // Only the two seeded work hypotheses render — the title-only draft stays out of reports.
+    expect(snap.hypotheses.problems).toHaveLength(1);
+    expect(snap.hypotheses.solutions).toHaveLength(1);
   });
 
   it('includes top breakdowns (UTM, geo/device, entry + exit pages) for the period', () => {

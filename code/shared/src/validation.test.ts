@@ -108,6 +108,56 @@ describe('validateHypothesis', () => {
   });
 });
 
+describe('validateHypothesis draft mode (ANA-129 two-status model)', () => {
+  /** A draft with only a title: every format field blank / empty. */
+  function titleOnly(): NewHypothesis {
+    return valid({
+      subject: '',
+      action: '',
+      solution: '',
+      condition: '',
+      hiddenAssumptions: [],
+      validationMethods: [],
+      impactRationale: '',
+      confidenceRationale: '',
+      easeRationale: '',
+      greenCriteria: '',
+      yellowCriteria: '',
+      redCriteria: '',
+    });
+  }
+
+  it('accepts a title-only draft — all format fields are optional', () => {
+    const res = validateHypothesis(titleOnly(), { mode: 'draft' });
+    expect(res.ok).toBe(true);
+    expect(res.errors).toEqual([]);
+  });
+
+  it('still requires a non-blank title', () => {
+    const res = validateHypothesis(valid({ title: '   ' }), { mode: 'draft' });
+    expect(res.ok).toBe(false);
+    expect(res.errors).toContain('title is required');
+  });
+
+  it('keeps ICE factors in range and the deadline sane (data sanity, not format)', () => {
+    expect(validateHypothesis(valid({ impact: 42 }), { mode: 'draft' }).ok).toBe(false);
+    expect(validateHypothesis(valid({ deadlineDays: 0 }), { mode: 'draft' }).ok).toBe(false);
+    expect(validateHypothesis(valid({ deadlineDays: 1.5 }), { mode: 'draft' }).ok).toBe(false);
+  });
+
+  it('defaults to work mode — the full format still applies without options', () => {
+    expect(validateHypothesis(titleOnly()).ok).toBe(false);
+  });
+
+  it('work mode rejects a title-only draft that passes draft validation', () => {
+    expect(validateHypothesis(titleOnly(), { mode: 'draft' }).ok).toBe(true);
+    const res = validateHypothesis(titleOnly(), { mode: 'work' });
+    expect(res.ok).toBe(false);
+    expect(res.errors.some((e) => e.includes('>=3 hidden assumptions'))).toBe(true);
+    expect(res.errors.some((e) => e.includes('>=2 validation methods'))).toBe(true);
+  });
+});
+
 describe('iceScore', () => {
   it('multiplies the three factors (product, not mean)', () => {
     expect(iceScore(8, 5, 7)).toBe(280);

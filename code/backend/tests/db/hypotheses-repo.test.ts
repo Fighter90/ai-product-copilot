@@ -61,20 +61,59 @@ describe('HypothesesRepo.create', () => {
     expect(solution.parentId).toBe(problem.id);
   });
 
-  it('rejects a hypothesis with fewer than 3 assumptions', () => {
+  it('rejects a hypothesis with fewer than 3 assumptions in work mode', () => {
     expect(() =>
-      repo.create(validHypothesis({ hiddenAssumptions: [{ category: 'behavior', text: 'x' }] })),
+      repo.create(
+        validHypothesis({ hiddenAssumptions: [{ category: 'behavior', text: 'x' }] }),
+        { mode: 'work' },
+      ),
     ).toThrowError(HypothesisValidationError);
   });
 
-  it('rejects a hypothesis with fewer than 2 validation methods', () => {
+  it('rejects a hypothesis with fewer than 2 validation methods in work mode', () => {
     try {
-      repo.create(validHypothesis({ validationMethods: [{ type: 'synthetic', plan: 'x' }] }));
+      repo.create(
+        validHypothesis({ validationMethods: [{ type: 'synthetic', plan: 'x' }] }),
+        { mode: 'work' },
+      );
       expect.unreachable('should have thrown');
     } catch (e) {
       expect(e).toBeInstanceOf(HypothesisValidationError);
       expect((e as HypothesisValidationError).errors.length).toBeGreaterThan(0);
     }
+  });
+
+  it('ANA-129: saves a title-only light draft (everything else optional)', () => {
+    const h = repo.create(
+      validHypothesis({
+        subject: '',
+        action: '',
+        solution: '',
+        condition: '',
+        hiddenAssumptions: [],
+        validationMethods: [],
+        impactRationale: '',
+        confidenceRationale: '',
+        easeRationale: '',
+        greenCriteria: '',
+        yellowCriteria: '',
+        redCriteria: '',
+      }),
+    );
+    expect(h.status).toBe('draft');
+    expect(h.title).toBeTruthy();
+    expect(h.hiddenAssumptions).toEqual([]);
+    expect(h.validationMethods).toEqual([]);
+    expect(repo.getById(h.id)?.status).toBe('draft');
+  });
+
+  it('ANA-129: a title-only draft still must carry sane ICE factors and deadline', () => {
+    expect(() => repo.create(validHypothesis({ impact: 42 }))).toThrowError(
+      HypothesisValidationError,
+    );
+    expect(() => repo.create(validHypothesis({ deadlineDays: 0 }))).toThrowError(
+      HypothesisValidationError,
+    );
   });
 });
 
@@ -97,6 +136,34 @@ describe('HypothesesRepo reads & status', () => {
     expect(updated?.status).toBe('in_progress');
     expect(repo.updateStatus(9999, 'green')).toBeUndefined();
   });
+
+  it('ANA-129: blocks taking an incomplete draft into work, the status stays draft', () => {
+    const h = repo.create(
+      validHypothesis({
+        subject: '',
+        action: '',
+        solution: '',
+        condition: '',
+        hiddenAssumptions: [],
+        validationMethods: [],
+        impactRationale: '',
+        confidenceRationale: '',
+        easeRationale: '',
+        greenCriteria: '',
+        yellowCriteria: '',
+        redCriteria: '',
+      }),
+    );
+    expect(() => repo.updateStatus(h.id, 'in_progress')).toThrowError(HypothesisValidationError);
+    expect(repo.getById(h.id)?.status).toBe('draft');
+  });
+
+  it('ANA-129: a complete draft passes the gate; moving back to draft is always allowed', () => {
+    const h = repo.create(validHypothesis());
+    expect(repo.updateStatus(h.id, 'in_progress')?.status).toBe('in_progress');
+    expect(repo.updateStatus(h.id, 'green')?.status).toBe('green');
+    expect(repo.updateStatus(h.id, 'draft')?.status).toBe('draft');
+  });
 });
 
 describe('HypothesesRepo.update', () => {
@@ -113,14 +180,39 @@ describe('HypothesesRepo.update', () => {
     expect(updated?.createdAt).toBe(h.createdAt);
   });
 
-  it('rejects invalid content (422 shape) and a self-parent', () => {
+  it('rejects invalid content on a work hypothesis and a self-parent', () => {
     const h = repo.create(validHypothesis());
+    // ANA-129: a work-status hypothesis keeps the full format on every edit.
+    repo.updateStatus(h.id, 'in_progress');
     expect(() => repo.update(h.id, validHypothesis({ hiddenAssumptions: [] }))).toThrowError(
       HypothesisValidationError,
     );
     expect(() => repo.update(h.id, validHypothesis({ parentId: h.id }))).toThrowError(
       HypothesisValidationError,
     );
+  });
+
+  it('ANA-129: a draft is edited under the light rules — partial content persists', () => {
+    const h = repo.create(
+      validHypothesis({
+        subject: '',
+        action: '',
+        solution: '',
+        condition: '',
+        hiddenAssumptions: [],
+        validationMethods: [],
+        impactRationale: '',
+        confidenceRationale: '',
+        easeRationale: '',
+        greenCriteria: '',
+        yellowCriteria: '',
+        redCriteria: '',
+      }),
+    );
+    const edited = repo.update(h.id, validHypothesis({ title: 'Черновик отредактирован' }));
+    expect(edited?.title).toBe('Черновик отредактирован');
+    expect(edited?.status).toBe('draft');
+    expect(edited?.hiddenAssumptions).toEqual([]);
   });
 
   it('returns undefined for a missing id', () => {
