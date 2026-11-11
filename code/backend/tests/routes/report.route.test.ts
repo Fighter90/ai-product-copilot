@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { GeneratedHypotheses, ReportSnapshot } from '@pca/shared';
 import type { User, UsersRepo } from '../../src/auth/users-repo';
-import { reportRoutes, type ReportRunner } from '../../src/routes/report';
+import { reportRoutes, type InsightsResult, type ReportRunner } from '../../src/routes/report';
+import { createAiJobQueue } from '../../src/report/ai-job-queue';
 
 const snap = {
   id: 'snap-1',
@@ -24,9 +25,13 @@ const snap = {
 
 function appWith(runner: ReportRunner, opts: { users?: UsersRepo } = {}): FastifyInstance {
   const app = Fastify();
-  app.register(reportRoutes, { prefix: '/api', runner, ...opts });
+  // ANA-133: a fresh single-slot AI queue per app so tests never share job state.
+  app.register(reportRoutes, { prefix: '/api', runner, aiJobs: createAiJobQueue(), ...opts });
   return app;
 }
+
+/** One macrotask turn — the queued AI job's setImmediate + promise bookkeeping lands. */
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 describe('report routes', () => {
   it('POST /api/report/snapshot builds and returns a snapshot', async () => {
@@ -200,18 +205,17 @@ describe('report routes', () => {
     await app.close();
   });
 
-  it('POST /api/report/insights returns the narrative, 404 / 503 on failure, 400 on bad body', async () => {
+  it('POST /api/report/insights enqueues a background job (202), the result arrives via the job poll (ANA-133)', async () => {
     const runner: ReportRunner = {
       build: vi.fn(),
-      get: vi.fn(),
+      // ANA-133: the sync 404 pre-check reads the snapshot from the runner before enqueueing.
+      get: vi.fn((id: string) => (id === 'ok' || id === 'nokey' ? snap : undefined)),
       list: vi.fn(),
       generate: vi.fn(),
       remove: vi.fn(),
       download: vi.fn(),
       insights: vi.fn(async (id: string) => {
         if (id === 'ok') return { ok: true as const, narrative: 'анализ' };
-        if (id === 'missing')
-          return { ok: false as const, reason: 'not_found' as const, message: 'not found' };
         return { ok: false as const, reason: 'unavailable' as const, message: 'no key' };
       }),
       hypotheses: vi.fn(),
@@ -223,32 +227,44 @@ describe('report routes', () => {
       url: '/api/report/insights',
       payload: { snapshotId: 'ok' },
     });
-    expect(ok.statusCode).toBe(200);
-    expect(ok.json().narrative).toBe('анализ');
+    expect(ok.statusCode).toBe(202);
+    const { jobId } = ok.json() as { jobId: string };
+    expect(jobId).toBeTruthy();
 
-    // ANA-33: the optional providerId is forwarded to the runner, and the attribution returned
-    // by it («Сгенерировано: …») is passed through to the client.
+    // The generation runs in the background; the job poll reports it.
+    await settle();
+    const done = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${jobId}` });
+    expect(done.statusCode).toBe(200);
+    expect(done.json()).toMatchObject({
+      id: jobId,
+      kind: 'insights',
+      status: 'done',
+      result: { narrative: 'анализ' },
+    });
+
+    // ANA-33: the optional providerId is forwarded to the runner inside the job.
     const pinned = await app.inject({
       method: 'POST',
       url: '/api/report/insights',
       payload: { snapshotId: 'ok', providerId: 'yandexgpt' },
     });
-    expect(pinned.statusCode).toBe(200);
+    expect(pinned.statusCode).toBe(202);
+    await settle();
     expect(runner.insights).toHaveBeenCalledWith('ok', 'yandexgpt');
     const auto = await app.inject({
       method: 'POST',
       url: '/api/report/insights',
       payload: { snapshotId: 'ok', providerId: 'auto' },
     });
-    expect(auto.statusCode).toBe(200);
     expect(runner.insights).toHaveBeenCalledWith('ok', 'auto');
+    expect(auto.statusCode).toBe(202);
     const noProvider = await app.inject({
       method: 'POST',
       url: '/api/report/insights',
       payload: { snapshotId: 'ok' },
     });
     expect(runner.insights).toHaveBeenLastCalledWith('ok', undefined);
-    expect(noProvider.statusCode).toBe(200);
+    expect(noProvider.statusCode).toBe(202);
     // Unknown provider → validation error, not a silent fallback.
     const badProvider = await app.inject({
       method: 'POST',
@@ -257,27 +273,86 @@ describe('report routes', () => {
     });
     expect(badProvider.statusCode).toBe(400);
 
+    // A runner failure (no AI key) becomes a failed job with the message — not a hung request.
+    const nokey = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'nokey' },
+    });
+    expect(nokey.statusCode).toBe(202);
+    await settle();
+    const failed = await app.inject({
+      method: 'GET',
+      url: `/api/report/ai-jobs/${(nokey.json() as { jobId: string }).jobId}`,
+    });
+    expect(failed.json()).toMatchObject({ status: 'failed', error: 'no key' });
+
+    // A missing snapshot is still rejected synchronously (no pointless job is created).
     const missing = await app.inject({
       method: 'POST',
       url: '/api/report/insights',
       payload: { snapshotId: 'missing' },
     });
     expect(missing.statusCode).toBe(404);
-
-    const unavailable = await app.inject({
-      method: 'POST',
-      url: '/api/report/insights',
-      payload: { snapshotId: 'nokey' },
-    });
-    expect(unavailable.statusCode).toBe(503);
+    expect(runner.insights).not.toHaveBeenCalledWith('missing', expect.anything());
 
     const bad = await app.inject({ method: 'POST', url: '/api/report/insights', payload: {} });
     expect(bad.statusCode).toBe(400);
     await app.close();
   });
 
-  it('POST /api/report/hypotheses returns the hypotheses, 404 / 503 on failure, 400 on bad body', async () => {
-    const fakeHypotheses: GeneratedHypotheses = { problems: [], solutions: [] };
+  it('ANA-133: 3 concurrent AI requests → 1 job runs, 2 get 429 with Retry-After', async () => {
+    let release!: (r: InsightsResult) => void;
+    const gate = new Promise<InsightsResult>((resolve) => {
+      release = resolve;
+    });
+    const runner: ReportRunner = {
+      build: vi.fn(),
+      get: vi.fn(() => snap),
+      list: vi.fn(),
+      generate: vi.fn(),
+      remove: vi.fn(),
+      download: vi.fn(),
+      insights: vi.fn(() => gate),
+      hypotheses: vi.fn(),
+    };
+    const app = appWith(runner);
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok' },
+    });
+    expect(first.statusCode).toBe(202);
+    const { jobId } = first.json() as { jobId: string };
+    await settle(); // the job is running now
+
+    // While the single slot is taken, further requests are throttled — not queued.
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok' },
+    });
+    const third = await app.inject({
+      method: 'POST',
+      url: '/api/report/hypotheses',
+      payload: { snapshotId: 'ok' },
+    });
+    expect(second.statusCode).toBe(429);
+    expect(second.headers['retry-after']).toBe('30');
+    expect(second.json().code).toBe('AI_BUSY');
+    expect(third.statusCode).toBe(429);
+    expect(runner.insights).toHaveBeenCalledTimes(1);
+    expect(runner.hypotheses).not.toHaveBeenCalled();
+
+    release({ ok: true as const, narrative: 'анализ' });
+    await settle();
+    const done = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${jobId}` });
+    expect(done.json().status).toBe('done');
+    await app.close();
+  });
+
+  it('GET /api/report/ai-jobs/:jobId → 404 for an unknown id (job lost, e.g. after a restart)', async () => {
     const runner: ReportRunner = {
       build: vi.fn(),
       get: vi.fn(),
@@ -286,10 +361,26 @@ describe('report routes', () => {
       remove: vi.fn(),
       download: vi.fn(),
       insights: vi.fn(),
+      hypotheses: vi.fn(),
+    };
+    const app = appWith(runner);
+    const res = await app.inject({ method: 'GET', url: '/api/report/ai-jobs/nope' });
+    expect(res.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('POST /api/report/hypotheses enqueues a background job (202), the result arrives via the job poll (ANA-133)', async () => {
+    const fakeHypotheses: GeneratedHypotheses = { problems: [], solutions: [] };
+    const runner: ReportRunner = {
+      build: vi.fn(),
+      get: vi.fn((id: string) => (id === 'ok' ? snap : undefined)),
+      list: vi.fn(),
+      generate: vi.fn(),
+      remove: vi.fn(),
+      download: vi.fn(),
+      insights: vi.fn(),
       hypotheses: vi.fn(async (id: string) => {
         if (id === 'ok') return { ok: true as const, hypotheses: fakeHypotheses };
-        if (id === 'missing')
-          return { ok: false as const, reason: 'not_found' as const, message: 'not found' };
         return { ok: false as const, reason: 'unavailable' as const, message: 'no key' };
       }),
     };
@@ -300,16 +391,40 @@ describe('report routes', () => {
       url: '/api/report/hypotheses',
       payload: { snapshotId: 'ok' },
     });
-    expect(ok.statusCode).toBe(200);
-    expect(ok.json()).toEqual({ hypotheses: fakeHypotheses });
+    expect(ok.statusCode).toBe(202);
+    const { jobId } = ok.json() as { jobId: string };
+    await settle();
+    const done = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${jobId}` });
+    expect(done.statusCode).toBe(200);
+    expect(done.json()).toMatchObject({
+      kind: 'hypotheses',
+      status: 'done',
+      result: { hypotheses: fakeHypotheses },
+    });
 
     // ANA-33: the optional providerId is forwarded to the runner here as well.
-    await app.inject({
+    const pinned = await app.inject({
       method: 'POST',
       url: '/api/report/hypotheses',
       payload: { snapshotId: 'ok', providerId: 'gigachat' },
     });
+    expect(pinned.statusCode).toBe(202);
+    await settle();
     expect(runner.hypotheses).toHaveBeenCalledWith('ok', 'gigachat');
+
+    // Runner failure inside the job → failed job with the message.
+    const nokey = await app.inject({
+      method: 'POST',
+      url: '/api/report/hypotheses',
+      payload: { snapshotId: 'nokey' },
+    });
+    expect(nokey.statusCode).toBe(202);
+    await settle();
+    const failed = await app.inject({
+      method: 'GET',
+      url: `/api/report/ai-jobs/${(nokey.json() as { jobId: string }).jobId}`,
+    });
+    expect(failed.json()).toMatchObject({ status: 'failed', error: 'no key' });
 
     const missing = await app.inject({
       method: 'POST',
@@ -317,13 +432,6 @@ describe('report routes', () => {
       payload: { snapshotId: 'missing' },
     });
     expect(missing.statusCode).toBe(404);
-
-    const unavailable = await app.inject({
-      method: 'POST',
-      url: '/api/report/hypotheses',
-      payload: { snapshotId: 'nokey' },
-    });
-    expect(unavailable.statusCode).toBe(503);
 
     const bad = await app.inject({ method: 'POST', url: '/api/report/hypotheses', payload: {} });
     expect(bad.statusCode).toBe(400);
