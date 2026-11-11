@@ -40,21 +40,22 @@
 │ --require-passing → squash-merge → patch-версия в package.json →      │
 │ pnpm sync-versions → запись в CHANGELOG.md → commit+push main →       │
 │ watch ci.yml + e2e.yml на main → тег vX.Y.Z → release.yml             │
-│ (verify+package+publish GitHub Release).                              │
+│ (verify+package+publish GitHub Release) → deploy.sh по SSH            │
+│ (pca_deploy) → гейт /api/health прода = версии релиза (ANA-130).      │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Роли
 
-| Роль                | На чём                   | Делает                                                                                                                | Промпт                |
-| ------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| **Orchestrator**    | Node, без LLM            | Конечный автомат: берёт задачу, ветка, гоняет воркеров, парсит маркеры, git/gh/pnpm                                   | `orchestrator.mjs`    |
-| **Clerk**           | `opencode run --auto`    | Единственный, кто трогает Linear (workspace analitics-platform!): pick, claim → In Progress, Done/Canceled + evidence | `roles/clerk.md`      |
-| **Executor**        | `opencode run --auto`    | Реализует issue red-first на ветке `swarm/ana-xxx`; коммитит; печатает `DEV_SUMMARY: status: …`                       | `roles/executor.md`   |
-| **Tester**          | **без LLM**              | Детерминированные гейты `pnpm test:ci`; красный прогон возвращает хвост вывода executor'у                             | —                     |
-| **Reviewer**        | LLM, **свежий контекст** | Видит ТОЛЬКО diff и issue (никогда — рассуждения executor'а). Вердикт `VERDICT: ACCEPT/RETURN`                        | `roles/reviewer.md`   |
-| **Documenter**      | LLM                      | Человеческая история: changelog-буллет (RU) + «Намеренно не изменено» + 3 предложения `STORY:`                        | `roles/documenter.md` |
-| **Release manager** | без LLM                  | PR → checks → squash → версия+CHANGELOG+sync-versions → main CI+E2E → тег → Release                                   | код оркестратора      |
+| Роль                | На чём                   | Делает                                                                                                                              | Промпт                |
+| ------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| **Orchestrator**    | Node, без LLM            | Конечный автомат: берёт задачу, ветка, гоняет воркеров, парсит маркеры, git/gh/pnpm                                                 | `orchestrator.mjs`    |
+| **Clerk**           | `opencode run --auto`    | Единственный, кто трогает Linear (workspace analitics-platform!): pick, claim → In Progress, Done/Canceled + evidence               | `roles/clerk.md`      |
+| **Executor**        | `opencode run --auto`    | Реализует issue red-first на ветке `swarm/ana-xxx`; коммитит; печатает `DEV_SUMMARY: status: …`                                     | `roles/executor.md`   |
+| **Tester**          | **без LLM**              | Детерминированные гейты `pnpm test:ci`; красный прогон возвращает хвост вывода executor'у                                           | —                     |
+| **Reviewer**        | LLM, **свежий контекст** | Видит ТОЛЬКО diff и issue (никогда — рассуждения executor'а). Вердикт `VERDICT: ACCEPT/RETURN`                                      | `roles/reviewer.md`   |
+| **Documenter**      | LLM                      | Человеческая история: changelog-буллет (RU) + «Намеренно не изменено» + 3 предложения `STORY:`                                      | `roles/documenter.md` |
+| **Release manager** | без LLM                  | PR → checks → squash → версия+CHANGELOG+sync-versions → main CI+E2E → тег → Release → deploy на prod (SSH pca_deploy) + health-гейт | код оркестратора      |
 
 Все LLM-роли работают на одной модели через `opencode run --auto`. Ревью независимо за счёт
 **свежего контекста**: рецензент получает только задачу и diff, без рассуждений исполнителя.
@@ -69,7 +70,9 @@
 6. **Document** — документер пишет changelog-буллеты (RU) + `STORY:`.
 7. **Release** — PR (conventional title) → checks → squash-merge → patch-версия →
    sync-versions → CHANGELOG → commit main → CI+E2E зелёные → тег `vX.Y.Z` → release.yml
-   публикует GitHub Release.
+   публикует GitHub Release → деплой на prod: `SSH_KEY=~/.ssh/pca_deploy
+./deploy/deploy.sh` (только при success release.yml), затем гейт: `curl -s
+https://dashboardcamp.ru/api/health` обязан вернуть версию релиза, иначе failIssue.
 8. **Done** — клерк: Linear Done + evidence (PR, версия, прогоны, story). Ветка удалена.
 
 ## Как скормить задачу рою
