@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+## [3.4.13] — $(date +%Y-%m-%d)
+
+### Added (swarm ANA-137)
+
+- Модель «тип решения × автономия ИИ» (спека decision-autonomy-model, ANA-127 п.7): shared-типы DecisionType / AutonomyLevel (A0/A1/A2) / AUTONOMY_MATRIX + needsEscalation.
+- Миграция 020: decision_type / autonomy / needs_escalation в таблице decisions.
+- GET /api/decisions/autonomy-matrix — матрица и правила эскалации.
+- ai-autopopulate: классификация типа AI-решения + флаг «требует PM-эскалации» с причиной; автосохранение не блокируется.
+- Тесты: unit матрицы/эскалации, repo, API (app.inject), классификация — coverage 100%.
+
 ## [3.4.12] - 2026-11-11
 
 ### Fixed
