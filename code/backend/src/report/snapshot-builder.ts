@@ -73,7 +73,9 @@ export class SnapshotBuilder {
     const geoDeviceStats = this.deps.metrics.listGeoDeviceStats(range);
     const pageStats = this.deps.metrics.listPageStats(range);
     const exitPageStats = this.deps.metrics.listExitPageStats(range);
-    const all = this.deps.hypotheses.list();
+    // ANA-129: light drafts (status draft) are not full hypotheses yet — they stay out of
+    // reports and ICE prioritisation until they are taken into work.
+    const all = this.deps.hypotheses.list().filter((h) => h.status !== 'draft');
     const decisions = this.deps.decisions.list();
     const b2b = this.deps.b2b.list();
 

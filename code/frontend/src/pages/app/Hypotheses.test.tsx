@@ -72,12 +72,29 @@ const SEEDED: Hypothesis[] = [
     confidence: 9,
     ease: 9,
     iceScore: 729,
+    status: 'in_progress',
     source: 'ai',
     aiProvider: 'openrouter',
     aiModel: 'claude-sonnet-4-6',
     unverifiedNumbers: ['5123'],
   }),
 ];
+
+/** ANA-129: a light draft — only the title, everything else blank. */
+const LIGHT_DRAFT: Partial<Hypothesis> = {
+  subject: '',
+  action: '',
+  solution: '',
+  condition: '',
+  hiddenAssumptions: [],
+  validationMethods: [],
+  impactRationale: '',
+  confidenceRationale: '',
+  easeRationale: '',
+  greenCriteria: '',
+  yellowCriteria: '',
+  redCriteria: '',
+};
 
 function mockData({ list = SEEDED, snapshot }: { list?: Hypothesis[]; snapshot?: unknown } = {}) {
   vi.mocked(hypothesesApi.list).mockResolvedValue(list);
@@ -95,7 +112,7 @@ describe('Hypotheses page', () => {
     const { container } = renderWithProviders(<Hypotheses />, '/app/hypotheses');
     expect(await screen.findByTestId('hyp-kanban')).toBeInTheDocument();
     for (const col of [
-      'Бэклог',
+      'Черновики',
       'В проверке',
       'Подтверждена',
       'Частично',
@@ -111,15 +128,16 @@ describe('Hypotheses page', () => {
     expect(container).toBeTruthy();
   });
 
-  it('sorts the ICE table descending by default and flips on header click', async () => {
+  it('sorts the ICE table descending by default and flips on header click; drafts stay out (ANA-129)', async () => {
     renderWithProviders(<Hypotheses />, '/app/hypotheses');
     const table = await screen.findByTestId('hyp-ice-table');
-    expect(table.textContent).toMatch(/BBB высокий[\s\S]*AAA низкий/);
+    // AAA is a draft (status draft) — it never enters the ICE prioritisation table.
+    expect(table.textContent).toContain('BBB высокий');
+    expect(table.textContent).not.toContain('AAA низкий');
     expect(table.querySelector('th[aria-sort="descending"]')).not.toBeNull();
 
     fireEvent.click(screen.getAllByRole('button', { name: 'ICE' })[0]!);
     await waitFor(() => expect(table.querySelector('th[aria-sort="ascending"]')).not.toBeNull());
-    expect(table.textContent).toMatch(/AAA низкий[\s\S]*BBB высокий/);
   });
 
   it('ANA-24: opens the editor prefilled from the ?segment&evidence deep link', async () => {
@@ -133,68 +151,56 @@ describe('Hypotheses page', () => {
     expect(editor).toHaveTextContent('CR 0,7%');
   });
 
-  it('refuses to save an incomplete draft (per-field errors) and creates a valid one', async () => {
+  it('ANA-129: creates a light draft in two clicks — only the title is required', async () => {
     vi.mocked(hypothesesApi.create).mockResolvedValue(SEEDED[0]!);
     renderWithProviders(<Hypotheses />, '/app/hypotheses');
-    fireEvent.click(await screen.findByTestId('hyp-new'));
+    fireEvent.click(await screen.findByTestId('hyp-new')); // click 1 — open the editor
     const save = await screen.findByTestId('hyp-save');
-    // БАГ-14: until the user touches the form the per-field errors are hidden — the button
-    // already reflects them though.
+    // Blank title still blocks the save; format errors are not shown for a draft.
     expect(save).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('Название'), { target: { value: ' ' } }); // touch → dirty
-    expect(screen.getAllByText('Заполните поле').length).toBeGreaterThan(0);
-    expect(screen.getByText('Нужно минимум 3 допущения')).toBeInTheDocument();
-    expect(screen.getByText('Нужно минимум 2 метода проверки')).toBeInTheDocument();
+    expect(screen.getByTestId('hypothesis-editor')).toHaveTextContent('Черновик: достаточно');
+    expect(screen.queryByText('Нужно минимум 3 допущения')).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('Целевая аудитория'), { target: { value: 'Подкаст' } });
-    fireEvent.change(screen.getByLabelText('Действие'), { target: { value: 'упростим форму' } });
-    fireEvent.change(screen.getByLabelText('Решение'), { target: { value: 'один шаг' } });
-    fireEvent.change(screen.getByLabelText('Условие'), { target: { value: 'CR вырастет' } });
-    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Тест' } });
-    // 3 assumptions across all categories.
-    for (let i = 0; i < 3; i += 1) {
-      fireEvent.click(screen.getAllByRole('button', { name: 'Добавить' })[0]!);
-    }
-    const cats = screen.getAllByLabelText('Категория допущения');
-    fireEvent.change(cats[1]!, { target: { value: 'market' } });
-    fireEvent.change(cats[2]!, { target: { value: 'tech' } });
-    const texts = screen.getAllByLabelText('Текст допущения');
-    texts.forEach((el, i) => fireEvent.change(el, { target: { value: `допущение ${i}` } }));
-    // 2 methods of distinct types (the editor requires ≥2 with different VALIDATION_METHOD_TYPES).
-    fireEvent.click(screen.getAllByRole('button', { name: 'Добавить' })[1]!);
-    fireEvent.click(screen.getAllByRole('button', { name: 'Добавить' })[1]!);
-    const typeSelects = screen.getAllByLabelText('Тип метода');
-    fireEvent.change(typeSelects[0]!, { target: { value: 'quantitative' } });
-    fireEvent.change(typeSelects[1]!, { target: { value: 'live' } });
-    const plans = screen.getAllByLabelText('План проверки');
-    fireEvent.change(plans[0]!, { target: { value: 'A/B-тест' } });
-    fireEvent.change(plans[1]!, { target: { value: 'интервью' } });
-    fireEvent.change(screen.getByLabelText('Обоснование', { selector: '#hyp-impactRationale' }), {
-      target: { value: 'i' },
-    });
-    fireEvent.change(
-      screen.getByLabelText('Обоснование', { selector: '#hyp-confidenceRationale' }),
-      {
-        target: { value: 'c' },
-      },
-    );
-    fireEvent.change(screen.getByLabelText('Обоснование', { selector: '#hyp-easeRationale' }), {
-      target: { value: 'e' },
-    });
-    fireEvent.change(screen.getByLabelText('🟢 Зелёный'), { target: { value: 'g' } });
-    fireEvent.change(screen.getByLabelText('🟡 Жёлтый'), { target: { value: 'y' } });
-    fireEvent.change(screen.getByLabelText('🔴 Красный'), { target: { value: 'r' } });
-
-    await waitFor(() => expect(screen.getByTestId('hyp-save')).toBeEnabled());
-    fireEvent.click(screen.getByTestId('hyp-save'));
-
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Быстрая идея' } });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save); // click 2 — save the draft
     await waitFor(() =>
       expect(hypothesesApi.create).toHaveBeenCalledWith(
-        expect.objectContaining({ subject: 'Подкаст', title: 'Тест' }),
+        expect.objectContaining({
+          title: 'Быстрая идея',
+          subject: '',
+          hiddenAssumptions: [],
+          validationMethods: [],
+        }),
       ),
     );
-    // Heavy multi-field form flow: ~19s standalone, >20s under parallel coverage load.
   }, 45_000);
+
+  it('ANA-129: taking an incomplete draft into work shows the format checklist and blocks the move', async () => {
+    vi.mocked(hypothesesApi.setStatus).mockResolvedValue(SEEDED[0]!);
+    mockData({ list: [h({ id: 7, title: 'DDD черновик', ...LIGHT_DRAFT })] });
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    const select = await screen.findByRole('combobox', { name: 'Изменить статус' });
+    fireEvent.change(select, { target: { value: 'in_progress' } });
+
+    const dialog = await screen.findByTestId('hyp-work-checklist');
+    expect(screen.getByRole('heading', { name: 'Чеклист формата' })).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('≥3 скрытых допущения');
+    expect(dialog).toHaveTextContent('≥2 метода проверки');
+    // The transition is blocked while the checklist is open — no API call.
+    expect(hypothesesApi.setStatus).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Понятно' }));
+    expect(screen.queryByTestId('hyp-work-checklist')).not.toBeInTheDocument();
+    expect(hypothesesApi.setStatus).not.toHaveBeenCalled();
+  });
+
+  it('ANA-129: a complete draft moves to «В проверке» without the checklist', async () => {
+    vi.mocked(hypothesesApi.setStatus).mockResolvedValue(SEEDED[0]!);
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    const select = (await screen.findAllByRole('combobox', { name: 'Изменить статус' }))[0]!;
+    fireEvent.change(select, { target: { value: 'in_progress' } });
+    await waitFor(() => expect(hypothesesApi.setStatus).toHaveBeenCalledWith(1, 'in_progress'));
+  });
 
   it('БАГ-15: shows «Просрочена» as its own kanban column, separate from «Отклонена»', async () => {
     mockData({ list: [h({ id: 3, title: 'CCC просроченная', status: 'expired' })] });
@@ -206,23 +212,16 @@ describe('Hypotheses page', () => {
     expect(rejected).toHaveTextContent('— пусто —');
   });
 
-  it('БАГ-14: the editor hides «Заполните поле» until a field is touched', async () => {
+  it('БАГ-14: the editor hides «Заполните поле» until a field is touched (draft: title only)', async () => {
     renderWithProviders(<Hypotheses />, '/app/hypotheses');
     fireEvent.click(await screen.findByTestId('hyp-new'));
     await waitFor(() => expect(screen.getByTestId('hyp-save')).toBeDisabled());
     expect(screen.queryByText('Заполните поле')).not.toBeInTheDocument();
 
-    // First input anywhere reveals the remaining per-field errors.
+    // Touching an OPTIONAL field reveals only the title error — no format-error wall (ANA-129).
     fireEvent.change(screen.getByLabelText('Целевая аудитория'), { target: { value: 'x' } });
-    expect(screen.getAllByText('Заполните поле').length).toBeGreaterThan(0);
-  });
-
-  it('moves a card via the status select (ANA-37 kanban)', async () => {
-    vi.mocked(hypothesesApi.setStatus).mockResolvedValue(SEEDED[0]!);
-    renderWithProviders(<Hypotheses />, '/app/hypotheses');
-    const select = (await screen.findAllByRole('combobox', { name: 'Изменить статус' }))[0]!;
-    fireEvent.change(select, { target: { value: 'in_progress' } });
-    await waitFor(() => expect(hypothesesApi.setStatus).toHaveBeenCalledWith(1, 'in_progress'));
+    expect(screen.getByText('Заполните поле')).toBeInTheDocument(); // exactly one — the title
+    expect(screen.queryByText('Нужно минимум 3 допущения')).not.toBeInTheDocument();
   });
 
   it('БАГ-15 removal-UX: delete asks via the styled ConfirmDialog (not window.confirm)', async () => {

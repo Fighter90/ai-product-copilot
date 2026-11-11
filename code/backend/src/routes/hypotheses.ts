@@ -34,29 +34,33 @@ const EvidenceBody = z.object({
   note: z.string().optional(),
 });
 
-/** REG-02: shape of NewHypothesis; completeness itself stays in the repo (422, not 400). */
+/**
+ * REG-02: shape of NewHypothesis. ANA-129: format text fields are optional at creation (defaults
+ * are empty), a title-only body parses into a light draft; the completeness itself stays in the
+ * repo (draft vs work mode → 422, not 400).
+ */
 const CreateBody = z.object({
-  diamondPhase: z.enum(['define', 'develop']),
-  kind: z.enum(['problem', 'solution']),
-  subject: z.string().min(1),
-  action: z.string().min(1),
-  solution: z.string().min(1),
-  condition: z.string().min(1),
+  diamondPhase: z.enum(['define', 'develop']).default('develop'),
+  kind: z.enum(['problem', 'solution']).default('solution'),
+  subject: z.string().default(''),
+  action: z.string().default(''),
+  solution: z.string().default(''),
+  condition: z.string().default(''),
   title: z.string().min(1),
   description: z.string().optional(),
   parentId: z.number().int().positive().optional(),
-  hiddenAssumptions: z.array(AssumptionBody),
-  validationMethods: z.array(ValidationMethodBody),
-  impact: z.number().int().min(1).max(10),
-  confidence: z.number().int().min(1).max(10),
-  ease: z.number().int().min(1).max(10),
-  impactRationale: z.string().min(1),
-  confidenceRationale: z.string().min(1),
-  easeRationale: z.string().min(1),
-  greenCriteria: z.string().min(1),
-  yellowCriteria: z.string().min(1),
-  redCriteria: z.string().min(1),
-  deadlineDays: z.number().int().min(1),
+  hiddenAssumptions: z.array(AssumptionBody).default([]),
+  validationMethods: z.array(ValidationMethodBody).default([]),
+  impact: z.number().int().min(1).max(10).default(5),
+  confidence: z.number().int().min(1).max(10).default(5),
+  ease: z.number().int().min(1).max(10).default(5),
+  impactRationale: z.string().default(''),
+  confidenceRationale: z.string().default(''),
+  easeRationale: z.string().default(''),
+  greenCriteria: z.string().default(''),
+  yellowCriteria: z.string().default(''),
+  redCriteria: z.string().default(''),
+  deadlineDays: z.number().int().min(1).default(14),
   evidence: z.array(EvidenceBody).optional(),
   isDemo: z.boolean().optional(),
   source: z.enum(['manual', 'ai']).optional(),
@@ -84,12 +88,15 @@ export async function hypothesesRoutes(
 
   app.post('/hypotheses', { schema: { tags: ['hypotheses'] } }, async (req, reply) => {
     // REG-02: validate before touching fields — a partial body used to 500 on undefined.
+    // ANA-129: an incomplete body becomes a light draft; completeness is checked in the repo.
     const parsed = CreateBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });
     }
     try {
-      return reply.code(201).send(opts.repo.create(parsed.data as NewHypothesis));
+      return reply
+        .code(201)
+        .send(opts.repo.create(parsed.data as NewHypothesis, { mode: 'draft' }));
     } catch (err) {
       if (err instanceof HypothesisValidationError) {
         return reply.code(422).send({ error: 'invalid hypothesis', issues: err.errors });
@@ -107,7 +114,12 @@ export async function hypothesesRoutes(
         .send({ error: 'invalid AI hypothesis', message: parsed.error.message });
     }
     try {
-      return reply.code(201).send(opts.repo.create(generatedToNewHypothesis(parsed.data)));
+      // ANA-129: AI imports must carry the complete format — no light drafts from the model.
+      return reply.code(201).send(
+        opts.repo.create(generatedToNewHypothesis(parsed.data), {
+          mode: 'work',
+        }),
+      );
     } catch (err) {
       if (err instanceof HypothesisValidationError) {
         return reply.code(422).send({ error: 'invalid hypothesis', issues: err.errors });
@@ -146,7 +158,15 @@ export async function hypothesesRoutes(
   app.patch('/hypotheses/:id/status', { schema: { tags: ['hypotheses'] } }, async (req, reply) => {
     const parsed = StatusBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid status' });
-    const updated = opts.repo.updateStatus(idOf(req.params), parsed.data.status);
-    return updated ?? reply.code(404).send({ error: 'not found' });
+    try {
+      const updated = opts.repo.updateStatus(idOf(req.params), parsed.data.status);
+      return updated ?? reply.code(404).send({ error: 'not found' });
+    } catch (err) {
+      // ANA-129: taking an incomplete draft into work is refused with the checklist issues.
+      if (err instanceof HypothesisValidationError) {
+        return reply.code(422).send({ error: 'invalid hypothesis', issues: err.errors });
+      }
+      throw err;
+    }
   });
 }

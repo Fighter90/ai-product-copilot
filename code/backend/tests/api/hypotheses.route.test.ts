@@ -30,28 +30,44 @@ describe('hypotheses API', () => {
     expect(missing.statusCode).toBe(404);
   });
 
-  it('rejects an incomplete hypothesis with 422 and the error list', async () => {
-    const res = await ctx.app.inject({
+  it('ANA-129: saves an incomplete hypothesis as a draft (201), blocks take-into-work with 422', async () => {
+    const created = await ctx.app.inject({
       method: 'POST',
       url: '/api/hypotheses',
       payload: validHypothesis({ hiddenAssumptions: [{ category: 'behavior', text: 'x' }] }),
     });
-    expect(res.statusCode).toBe(422);
-    expect(res.json().error).toBe('invalid hypothesis');
-    expect(Array.isArray(res.json().issues)).toBe(true);
+    expect(created.statusCode).toBe(201);
+    expect(created.json().status).toBe('draft');
+    const id = created.json().id as number;
+
+    const blocked = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/hypotheses/${id}/status`,
+      payload: { status: 'in_progress' },
+    });
+    expect(blocked.statusCode).toBe(422);
+    expect(blocked.json().error).toBe('invalid hypothesis');
+    expect(Array.isArray(blocked.json().issues)).toBe(true);
+    // The failed transition left the hypothesis a draft.
+    const still = await ctx.app.inject({ method: 'GET', url: `/api/hypotheses/${id}` });
+    expect(still.json().status).toBe('draft');
   });
 
-  it('rejects an incomplete body with 400 instead of 500 (REG-02)', async () => {
-    for (const payload of [{ title: 'x' }, {}]) {
-      const res = await ctx.app.inject({
-        method: 'POST',
-        url: '/api/hypotheses',
-        payload,
-      });
-      expect(res.statusCode).toBe(400);
-      expect(res.json().error).toBe('invalid body');
-      expect(Array.isArray(res.json().issues)).toBe(true);
-    }
+  it('ANA-129: a title-only body creates a light draft; an empty body is a 400 (REG-02)', async () => {
+    const draft = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/hypotheses',
+      payload: { title: 'Быстрая идея' },
+    });
+    expect(draft.statusCode).toBe(201);
+    expect(draft.json().status).toBe('draft');
+    expect(draft.json().impact).toBe(5);
+    expect(draft.json().deadlineDays).toBe(14);
+
+    const empty = await ctx.app.inject({ method: 'POST', url: '/api/hypotheses', payload: {} });
+    expect(empty.statusCode).toBe(400);
+    expect(empty.json().error).toBe('invalid body');
+    expect(Array.isArray(empty.json().issues)).toBe(true);
   });
 
   it('returns 500 when the repo throws a non-validation error (bad parent FK)', async () => {

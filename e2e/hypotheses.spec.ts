@@ -224,10 +224,11 @@ test.describe('«→ гипотеза» deep link (ANA-24)', () => {
     await page.getByTestId('hyp-save').click();
     await expect(editor).toHaveCount(0);
 
-    // The saved hypothesis appears in the kanban backlog and the ICE table.
-    const backlog = page.getByRole('region', { name: 'Бэклог' });
-    await expect(backlog.getByTestId('hyp-card-100')).toBeVisible();
-    await expect(page.getByTestId('hyp-ice-table')).toContainText('низкая конверсия');
+    // ANA-129: the saved light draft lands in the «Черновики» lane and stays out of the ICE
+    // table — drafts are not prioritised until they are taken into work.
+    const drafts = page.getByRole('region', { name: 'Черновики' });
+    await expect(drafts.getByTestId('hyp-card-100')).toBeVisible();
+    await expect(page.getByTestId('hyp-ice-table')).not.toContainText('низкая конверсия');
   });
 });
 
