@@ -13,7 +13,7 @@ import {
   type ReportSnapshot,
 } from '@pca/shared';
 import { api } from '../lib/api';
-import { isBusyError, trackAiJob } from '../lib/ai-jobs';
+import { isBusyError, jobErrorHint, trackAiJob } from '../lib/ai-jobs';
 import { v3 } from '../lib/api-v3';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
@@ -178,6 +178,13 @@ export interface ReportPreviewProps {
   insightsPending: boolean;
   narrative: string | undefined;
   insightsError: string | undefined;
+  /**
+   * ANA-132: user-displayable failure of the follow-up AI hypotheses generation («AI-анализ»
+   * succeeded, the backfill did not). Rendered next to «AI-гипотез: не сгенерированы» while
+   * the snapshot still has no drafts — before this, the failure vanished silently
+   * (.catch(() => undefined)) and prod saw «0 AI-черновиков» without a trace.
+   */
+  hypothesesError?: string;
   /** ANA-33: the selected provider rides along («auto» walks the admin-defined chain). */
   onInsights: (snapshotId: string, providerId: string) => void;
   /** ANA-33: providers currently usable (enabled + key set) from the admin API; [] = none. */
@@ -285,6 +292,7 @@ export function ReportPreviewView({
   insightsPending,
   narrative,
   insightsError,
+  hypothesesError,
   onInsights,
   providers,
   providersPending,
@@ -507,6 +515,13 @@ export function ReportPreviewView({
                   : ''}
               </li>
             )}
+            {/* ANA-132: the follow-up AI hypotheses generation is tracked — its failure is
+                shown right where «не сгенерированы» hangs, until the drafts actually arrive. */}
+            {hypothesesError && !snapshot.generatedHypotheses && (
+              <li data-testid="rep-hypotheses-error" className="text-rose-700">
+                {t('rep.ai.hypothesesFailed', { error: hypothesesError })}
+              </li>
+            )}
           </ul>
 
           {/* ANA-39: one main action — "Build report" creates a fresh snapshot in place
@@ -635,6 +650,10 @@ export function ReportPreview(): JSX.Element {
   });
 
   const snapshot = existingSnapshot.data ?? buildMut.data;
+  // ANA-132: сбой до-генерации гипотез живёт в отдельном состоянии компонента, а не в данных
+  // мутации — мутация завершается сразу после нарратива, и «Сгенерировано…» не ждёт фоновую
+  // задачу до 10-минутного таймаута (см. mutationFn ниже).
+  const [hypothesesError, setHypothesesError] = useState<string | undefined>(undefined);
   // БАГ-21: «Сгенерировать AI-анализ» пополнял только narrative — строка «AI-гипотез: не
   // сгенерированы» могла висеть вечно, когда fire-and-forget автогенерация на бэке терялась
   // (параллельные AI-вызовы, тихий .catch). Досыпаем гипотезы тем же провайдером: бэкенд
@@ -658,10 +677,23 @@ export function ReportPreview(): JSX.Element {
         if (isBusyError(err)) throw new Error(t('rep.ai.busy'));
         throw err;
       }
+      // ANA-132: мутация завершается здесь — нарратив уже готов и должен остаться на экране
+      // сразу, поэтому до-генерация гипотез идёт параллельно (fire-and-forget). Любой её сбой
+      // (429 / провайдер / потерянная задача) оседает в отдельном состоянии рядом с
+      // «AI-гипотез: не сгенерированы» — на проде именно этот тихий путь давал
+      // «0 AI-черновиков после AI-анализа» без единого следа в интерфейсе.
+      setHypothesesError(undefined);
       if (!snapshot?.generatedHypotheses) {
-        // Слот освободился — гипотезы досыпаем тем же провайдером (ответ не нужен:
-        // существующий поллинг среза сам подхватит сохранённый результат).
-        void api.generateHypotheses(input.snapshotId, input.providerId).catch(() => undefined);
+        void (async () => {
+          try {
+            const { jobId } = await api.generateHypotheses(input.snapshotId, input.providerId);
+            await trackAiJob(jobId, api.getAiJob);
+          } catch (err) {
+            // ANA-132: busy — локализованная подсказка; прочие сбои приводим к читаемому
+            // тексту (сырой JSON тела прокси/провайдера в UI не попадает).
+            setHypothesesError(jobErrorHint(err, t('rep.ai.busy'), t('rep.ai.jobFailed')));
+          }
+        })();
       }
       return result;
     },
@@ -732,6 +764,7 @@ export function ReportPreview(): JSX.Element {
         insightsPending={insightsPending}
         narrative={narrative}
         insightsError={errorMessage(insightsMut.error)}
+        hypothesesError={hypothesesError}
         onInsights={(snapshotId, providerId) => insightsMut.mutate({ snapshotId, providerId })}
         providers={providersQ.data ?? []}
         providersPending={providersQ.isPending}

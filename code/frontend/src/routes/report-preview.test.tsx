@@ -140,6 +140,31 @@ describe('ReportPreviewView', () => {
     expect(screen.queryByText(/Автопополнение/)).not.toBeInTheDocument();
   });
 
+  it('ANA-132: shows the hypotheses-failure hint only while drafts are still missing', () => {
+    const { rerender } = render(
+      <ReportPreviewView
+        {...baseProps}
+        snapshot={snapshot}
+        hypothesesError="AI returned invalid JSON"
+      />,
+    );
+    expect(screen.getByTestId('rep-hypotheses-error')).toHaveTextContent(
+      'Гипотезы не сгенерированы: AI returned invalid JSON',
+    );
+    // Once the drafts exist (snapshot refreshed by the poll), the hint is gone.
+    rerender(
+      <ReportPreviewView
+        {...baseProps}
+        snapshot={{
+          ...snapshot,
+          generatedHypotheses: { problems: [], solutions: [] },
+        }}
+        hypothesesError="AI returned invalid JSON"
+      />,
+    );
+    expect(screen.queryByTestId('rep-hypotheses-error')).not.toBeInTheDocument();
+  });
+
   it('KPI label follows the snapshot goalLabel (Заявок for a purchase goal — БАГ-02: заявки, не «заказы»)', () => {
     const paidSnapshot = {
       ...snapshot,
@@ -367,15 +392,17 @@ describe('ReportPreview (wrapper)', () => {
 
   it('БАГ-21: after the narrative, hypotheses are backfilled — «не сгенерированы» не зависает', async () => {
     vi.mocked(api.generateInsights).mockResolvedValue({ jobId: 'job-1' });
-    vi.mocked(api.getAiJob).mockResolvedValue({
-      id: 'job-1',
-      kind: 'insights',
-      status: 'done',
-      result: { narrative: 'AI: рост заявок' },
-    });
-    vi.mocked(api.generateHypotheses).mockResolvedValue({
-      hypotheses: { problems: [{ title: 'p1' }], solutions: [{ title: 's1' }] },
-    } as never);
+    vi.mocked(api.getAiJob).mockImplementation(async (id: string) =>
+      id === 'job-1'
+        ? { id, kind: 'insights', status: 'done', result: { narrative: 'AI: рост заявок' } }
+        : {
+            id,
+            kind: 'hypotheses',
+            status: 'done',
+            result: { hypotheses: { problems: [{ title: 'p1' }], solutions: [{ title: 's1' }] } },
+          },
+    );
+    vi.mocked(api.generateHypotheses).mockResolvedValue({ jobId: 'job-2' } as never);
     // getSnapshot powers the existing poll (enabled while the snapshot has no hypotheses yet).
     vi.mocked(api.getSnapshot).mockResolvedValue({ ...snapshot });
     renderWithProviders(<ReportPreview />);
@@ -391,6 +418,114 @@ describe('ReportPreview (wrapper)', () => {
       expect(vi.mocked(api.generateHypotheses)).toHaveBeenCalledWith('snap-1', 'auto'),
     );
     expect(screen.getByText(/AI-гипотез: не сгенерированы/)).toBeInTheDocument();
+    // ANA-132: the backfill settled successfully — no failure hint is rendered.
+    expect(screen.queryByTestId('rep-hypotheses-error')).not.toBeInTheDocument();
+  });
+
+  it('ANA-132: a failed follow-up hypotheses generation is shown, not silently swallowed', async () => {
+    vi.mocked(api.generateInsights).mockResolvedValue({ jobId: 'job-1' });
+    vi.mocked(api.getAiJob).mockImplementation(async (id: string) =>
+      id === 'job-1'
+        ? { id, kind: 'insights', status: 'done', result: { narrative: 'AI: рост заявок' } }
+        : { id, kind: 'hypotheses', status: 'failed', error: 'AI returned invalid JSON' },
+    );
+    vi.mocked(api.generateHypotheses).mockResolvedValue({ jobId: 'job-2' } as never);
+    vi.mocked(api.getSnapshot).mockResolvedValue({ ...snapshot });
+    renderWithProviders(<ReportPreview />);
+    fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
+    expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
+    await screen.findByText(/AI: рост заявок/);
+    // On prod the follow-up generation used to fail invisibly («AI-гипотез: не сгенерированы»
+    // hung forever, 0 drafts, no hint). ANA-132: the tracked job failure becomes a visible hint,
+    // while the successful narrative stays on screen.
+    const hint = await screen.findByTestId('rep-hypotheses-error');
+    expect(hint).toHaveTextContent('Гипотезы не сгенерированы');
+    expect(hint).toHaveTextContent('AI returned invalid JSON');
+    expect(screen.getByText(/AI: рост заявок/)).toBeInTheDocument();
+  });
+
+  it('ANA-132: a busy AI slot (429) on the follow-up hypotheses call is reported too', async () => {
+    vi.mocked(api.generateInsights).mockResolvedValue({ jobId: 'job-1' });
+    vi.mocked(api.getAiJob).mockResolvedValue({
+      id: 'job-1',
+      kind: 'insights',
+      status: 'done',
+      result: { narrative: 'AI: рост заявок' },
+    });
+    vi.mocked(api.generateHypotheses).mockRejectedValue(
+      Object.assign(new Error('{"error":"другая генерация","code":"AI_BUSY"}'), { status: 429 }),
+    );
+    vi.mocked(api.getSnapshot).mockResolvedValue({ ...snapshot });
+    renderWithProviders(<ReportPreview />);
+    fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
+    expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
+    await screen.findByText(/AI: рост заявок/);
+    // 429 on the backfill is a legit state (another generation holds the slot) — it gets the
+    // same localized hint instead of vanishing (ANA-132).
+    const hint = await screen.findByTestId('rep-hypotheses-error');
+    expect(hint).toHaveTextContent('уже выполняется');
+    expect(screen.getByText(/AI: рост заявок/)).toBeInTheDocument();
+  });
+
+  it('ANA-132: the narrative stays on screen while the follow-up hypotheses job is still running', async () => {
+    vi.mocked(api.generateInsights).mockResolvedValue({ jobId: 'job-1' });
+    // The insights job settles at once; the follow-up hypotheses job (job-2) never settles
+    // within the test — in the awaited wrapper this withheld insightsMut.data (and the
+    // narrative with it) until the 10-minute jobTimeout.
+    vi.mocked(api.getAiJob).mockImplementation(async (id: string) =>
+      id === 'job-1'
+        ? { id, kind: 'insights', status: 'done', result: { narrative: 'AI: рост заявок' } }
+        : new Promise(() => {}),
+    );
+    vi.mocked(api.generateHypotheses).mockResolvedValue({ jobId: 'job-2' } as never);
+    vi.mocked(api.getSnapshot).mockResolvedValue({ ...snapshot });
+    renderWithProviders(<ReportPreview />);
+    fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
+    expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
+    // The mutation resolves with the narrative — it must be on screen immediately, not after
+    // the backfill job finishes (ordering regression: comment promises «нарратив уже готов
+    // и должен остаться на экране»).
+    await screen.findByText(/AI: рост заявок/);
+    // The backfill has started, is still running (no failure hint yet)…
+    expect(vi.mocked(api.generateHypotheses)).toHaveBeenCalledWith('snap-1', 'auto');
+    expect(screen.queryByTestId('rep-hypotheses-error')).not.toBeInTheDocument();
+    // …and the generation progress UI has already settled.
+    expect(screen.queryByText(/Генерация AI-анализа/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'AI-анализ сгенерирован' })).toBeInTheDocument();
+  });
+
+  it('ANA-132: a raw-JSON job.error from the provider is mapped to a readable hint', async () => {
+    vi.mocked(api.generateInsights).mockResolvedValue({ jobId: 'job-1' });
+    vi.mocked(api.getAiJob).mockImplementation(async (id: string) =>
+      id === 'job-1'
+        ? { id, kind: 'insights', status: 'done', result: { narrative: 'AI: рост заявок' } }
+        : {
+            id,
+            kind: 'hypotheses',
+            status: 'failed',
+            // ANA-133 precedent: a failed job's error can be the raw proxy/provider JSON.
+            error: '{"error":{"code":429,"message":"quota exceeded"}}',
+          },
+    );
+    vi.mocked(api.generateHypotheses).mockResolvedValue({ jobId: 'job-2' } as never);
+    vi.mocked(api.getSnapshot).mockResolvedValue({ ...snapshot });
+    renderWithProviders(<ReportPreview />);
+    fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
+    expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
+    const hint = await screen.findByTestId('rep-hypotheses-error');
+    // The machine JSON is replaced by the localized generic failure note…
+    expect(hint).toHaveTextContent('AI-генерация не удалась');
+    expect(screen.queryByText(/quota exceeded/)).not.toBeInTheDocument();
+    // …and the successful narrative stays on screen.
+    expect(screen.getByText(/AI: рост заявок/)).toBeInTheDocument();
   });
 
   it('ANA-133: a busy AI slot (429) shows the localized hint instead of the raw proxy JSON', async () => {
