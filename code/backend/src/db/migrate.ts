@@ -12,9 +12,12 @@ interface MigrationRow {
 /**
  * Apply pending `.sql` migrations in filename order, each in its own transaction.
  * Idempotent: already-applied files (tracked in `_migrations`) are skipped.
+ * `until` (tests only): apply only files strictly earlier than the named one — used to
+ * stage a pre-migration DB state (e.g. legacy rows before 020). Default behaviour is
+ * unchanged when omitted.
  * Returns the names applied during this call.
  */
-export function migrate(db: DB): string[] {
+export function migrate(db: DB, options?: { readonly until?: string }): string[] {
   db.exec(
     'CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)',
   );
@@ -33,6 +36,7 @@ export function migrate(db: DB): string[] {
 
   const ran: string[] = [];
   for (const file of files) {
+    if (options?.until !== undefined && file >= options.until) break;
     if (!applied.has(file)) {
       applyOne(file);
       ran.push(file);

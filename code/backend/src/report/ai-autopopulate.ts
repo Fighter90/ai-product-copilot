@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type {
   DecisionMethod,
+  DecisionType,
   GeneratedDecision,
   GeneratedDecisions,
   GeneratedHypotheses,
@@ -8,6 +9,7 @@ import type {
   NewHypothesis,
   ProblemHypothesis,
 } from '@pca/shared';
+import { AUTONOMY_LEVEL_RANK, AUTONOMY_MATRIX } from '@pca/shared';
 import type { DecisionsRepo } from '../db/repositories/decisions-repo';
 import type { HypothesesRepo } from '../db/repositories/hypotheses-repo';
 import { ImportAiBody, METHOD_RULES, generatedToNewHypothesis } from './ai-hypotheses';
@@ -147,6 +149,38 @@ function toDecisionMethod(method: string): DecisionMethod {
   return METHOD_RULES.find(([re]) => re.test(method))?.[1] ?? 'mixed';
 }
 
+/**
+ * ANA-137: keyword→decision-type classifier in the spirit of METHOD_RULES — deterministic,
+ * no LLM. Runs over the AI-authored content of a proposal (findings / method / scope /
+ * rationale). Conservative by construction: when several types match, the one with the
+ * LOWEST autonomy maximum wins (worst case an extra PM escalation, never a missed one);
+ * unrecognizable text → null (no type stored — assessed later as `strategic`/A0 with
+ * reason 'unclassified-type').
+ */
+export const DECISION_TYPE_RULES: ReadonlyArray<readonly [RegExp, DecisionType]> = [
+  [/юридич|правов|152-?фз|закон|персональные данные|gdpr|договор|оферта|legal/iu, 'legal'],
+  [/бюджет|budget|закуп|потрат|расход/iu, 'budget'],
+  [/цен|прайс|тариф|скидк|pricing|price/iu, 'pricing'],
+  [/публ|коммуникац|пресс|рассылк|соцсет|announcement|pr\b/iu, 'public-comms'],
+  [/запуск|пилот|эксперимент|a\/b|аб-?тест|mvp|launch/iu, 'experiment-launch'],
+  [/стратег|пивот|pivot|позиционир|масштабир/iu, 'strategic'],
+  [/гипотез|провер|кастдев|custdev|интервью|опрос/iu, 'hypothesis-draft'],
+  [/анализ|разбивк|воронк|дашборд|метрик|конверси|срез|агрегат|статистик|отчет/iu, 'data-analysis'],
+];
+
+/** Classify a decision proposal's text into a taxonomy type; null when nothing matches. */
+export function classifyDecisionType(text: string): DecisionType | null {
+  const matched = DECISION_TYPE_RULES.filter(([re]) => re.test(text)).map(([, type]) => type);
+  if (matched.length === 0) return null;
+  // Ambiguity → the type with the lowest autonomy maximum wins (ties: first rule wins).
+  return matched.reduce((a, b) =>
+    AUTONOMY_LEVEL_RANK[AUTONOMY_MATRIX[a].maxAutonomy] <=
+    AUTONOMY_LEVEL_RANK[AUTONOMY_MATRIX[b].maxAutonomy]
+      ? a
+      : b,
+  );
+}
+
 /** Map one AI-proposed decision to a Decision Log draft linked to the imported hypothesis. */
 function generatedToNewDecision(
   d: GeneratedDecision,
@@ -154,6 +188,11 @@ function generatedToNewDecision(
   provider: string | undefined,
   now: Date,
 ): NewDecision {
+  // Classification reads only the AI-authored content — the template nextStep
+  // («Проверить гипотезу: …») is not the model's decision text.
+  const decisionType = classifyDecisionType(
+    [d.findings, d.method, d.scope, d.outcomeRationale].join(' '),
+  );
   return {
     hypothesisId,
     date: now.toISOString().slice(0, 10),
@@ -166,6 +205,8 @@ function generatedToNewDecision(
     outcomeRationale: d.outcomeRationale,
     nextStep: `Проверить гипотезу: ${d.method}`,
     decidedBy: provider ? `AI · ${provider}` : 'AI',
+    // Never blocks the save: an untypable draft simply stays without a type (NULL).
+    ...(decisionType ? { decisionType } : {}),
   };
 }
 

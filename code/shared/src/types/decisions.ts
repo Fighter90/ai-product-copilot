@@ -1,6 +1,7 @@
 /** Decision Log types (skill-decision-log.md), shared across backend and frontend. */
 
 import type { HypothesisSource } from './hypotheses';
+import type { DecisionType } from './decision-autonomy';
 
 export type DecisionMethod = 'synthetic' | 'live' | 'quantitative' | 'market' | 'mixed';
 export type DecisionOutcome = 'green' | 'yellow' | 'red';
@@ -36,6 +37,12 @@ export interface NewDecision {
   readonly participants?: string;
   /** True for seeded demo content (ANA-18) — the report renders a «ДЕМО» badge for it. */
   readonly isDemo?: boolean;
+  /**
+   * ANA-137: autonomy classification of an AI draft (taxonomy + static matrix in
+   * @pca/shared). Set only by the ai-autopopulate classifier; manual decisions never
+   * carry it and the POST API does not accept it — the type is not editable in MVP.
+   */
+  readonly decisionType?: DecisionType;
 }
 
 export interface Decision extends NewDecision {

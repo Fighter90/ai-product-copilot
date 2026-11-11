@@ -1,6 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { NewDecision } from '@pca/shared';
+import {
+  AUTONOMY_LEVEL_LABELS,
+  AUTONOMY_MATRIX,
+  REQUIRED_AUTONOMY,
+  assessDecisionAutonomy,
+} from '@pca/shared';
 import { DecisionsRepo, DecisionValidationError } from '../db/repositories/decisions-repo';
 
 export interface DecisionsRouteOptions {
@@ -44,7 +50,28 @@ export async function decisionsRoutes(
   app: FastifyInstance,
   opts: DecisionsRouteOptions,
 ): Promise<void> {
-  app.get('/decisions', { schema: { tags: ['decisions'] } }, async () => opts.repo.list());
+  // ANA-137: the static autonomy contract (read-only; changing the matrix is not in MVP).
+  app.get('/decisions/autonomy-matrix', { schema: { tags: ['decisions'] } }, async () => ({
+    /** The autonomy level every AI decision actually runs at in MVP. */
+    required: REQUIRED_AUTONOMY,
+    /** Human-readable labels of the levels A0–A2. */
+    levels: AUTONOMY_LEVEL_LABELS,
+    /** Static matrix «decision type → maximum autonomy» (code, not DB). */
+    matrix: AUTONOMY_MATRIX,
+  }));
+
+  // ANA-137: AI decisions carry their autonomy assessment (type, max, required level,
+  // escalation + machine-readable reason code); manual decisions carry none.
+  app.get('/decisions', { schema: { tags: ['decisions'] } }, async () =>
+    opts.repo.list().map((d) =>
+      d.source === 'ai'
+        ? {
+            ...d,
+            autonomy: assessDecisionAutonomy({ source: d.source, decisionType: d.decisionType }),
+          }
+        : d,
+    ),
+  );
 
   app.get('/decisions/:id', { schema: { tags: ['decisions'] } }, async (req, reply) => {
     const d = opts.repo.getById(Number((req.params as { id: string }).id));
