@@ -555,7 +555,8 @@ export const ru = {
   'rep.ai.done': 'AI-анализ сгенерирован',
   'rep.ai.generate': 'Сгенерировать AI-анализ',
   'rep.ai.unavailable': 'AI-анализ недоступен: {error}',
-  'rep.ai.busy': 'Другая AI-генерация уже выполняется — дождитесь её завершения и попробуйте снова.',
+  'rep.ai.busy':
+    'Другая AI-генерация уже выполняется — дождитесь её завершения и попробуйте снова.',
   'rep.ai.jobLost': 'Фоновая генерация прервана (сервер был перезапущен) — запустите её ещё раз.',
   'rep.ai.jobFailed': 'AI-генерация не удалась — попробуйте ещё раз.',
   'rep.ai.jobTimeout': 'AI-генерация не завершилась за 10 минут — проверьте срез позже.',
@@ -1907,7 +1908,8 @@ export const en: Record<DictKey, string> = {
   'rep.ai.busy': 'Another AI generation is already running — wait for it to finish and try again.',
   'rep.ai.jobLost': 'The background job was interrupted (the server restarted) — start it again.',
   'rep.ai.jobFailed': 'The AI generation failed — please try again.',
-  'rep.ai.jobTimeout': 'The AI generation did not finish within 10 minutes — check the snapshot later.',
+  'rep.ai.jobTimeout':
+    'The AI generation did not finish within 10 minutes — check the snapshot later.',
   'rep.stage.prepare': 'Preparing data',
   'rep.stage.summary': 'Generating: Summary',
   'rep.stage.channels': 'Generating: Channels, UTM and Audience',
