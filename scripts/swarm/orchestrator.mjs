@@ -110,14 +110,44 @@ const sh = async (cmd, opts) => {
   return r;
 };
 
+// Poll a GitHub Actions run until it completes. `gh run watch` hangs indefinitely on
+// network/sleep interruptions (runs 11-30) — polling `gh run view` every 30s with a hard
+// cap never wedges the orchestrator.
+async function watchRun(id, timeoutMs = 45 * 60_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const r = await sh(`gh run view ${JSON.stringify(id)} --json status,conclusion`);
+    if (r.code === 0) {
+      try {
+        const d = JSON.parse(r.out.trim().split('\n').pop());
+        if (d.status === 'completed') return d.conclusion;
+      } catch {
+        /* transient parse issue — keep polling */
+      }
+    }
+    if (Date.now() > deadline) return 'timeout';
+    await sh('sleep 30');
+  }
+}
+
 async function worker(role, vars, { timeoutMs = 40 * 60_000, cwd = ROOT } = {}) {
   let prompt = ROLES[role];
   for (const [k, v] of Object.entries(vars)) prompt = prompt.replaceAll(`{{${k}}}`, v ?? '');
   log(`  [${role}] worker started (timeout ${Math.round(timeoutMs / 60000)}m)`);
-  const r = await run('opencode', ['run', '--auto', '--agent', 'executor', prompt], {
+  let r = await run('opencode', ['run', '--auto', '--agent', 'executor', prompt], {
     timeoutMs,
     cwd,
   });
+  // MCP connections break on server restarts/sleep — one retry after a pause saves
+  // transient failures (run 30: the claim died on a stale MCP session, killing the run).
+  if (r.code !== 0) {
+    log(`  [${role}] failed (code ${r.code}) — retry after 25s`);
+    await sh('sleep 25');
+    r = await run('opencode', ['run', '--auto', '--agent', 'executor', prompt], {
+      timeoutMs,
+      cwd,
+    });
+  }
   const tail = r.all.slice(-4000);
   log(`  [${role}] finished code=${r.code}`);
   log(`  [${role}] tail: ${short(tail, 600)}`);
@@ -645,14 +675,16 @@ async function main() {
             `gh run list --workflow=ci.yml --branch main --limit 1 --json databaseId --jq '.[0].databaseId'`,
           )
         ).out.trim();
-        await sh(`gh run watch ${ciId} --exit-status`, { timeoutMs: 60 * 60_000 });
+        const ciC = await watchRun(ciId, 60 * 60_000);
+        if (ciC !== 'success') throw new Error(`CI on main: ${ciC}`);
         await sh('sleep 10');
         const e2eId = (
           await sh(
             `gh run list --workflow=e2e.yml --branch main --limit 1 --json databaseId --jq '.[0].databaseId'`,
           )
         ).out.trim();
-        await sh(`gh run watch ${e2eId} --exit-status`, { timeoutMs: 45 * 60_000 });
+        const e2eC = await watchRun(e2eId, 45 * 60_000);
+        if (e2eC !== 'success') throw new Error(`E2E on main: ${e2eC}`);
 
         log('-- release manager: tag → Release (publish)');
         await sh(
@@ -664,7 +696,8 @@ async function main() {
             `gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId'`,
           )
         ).out.trim();
-        await sh(`gh run watch ${relId} --exit-status`, { timeoutMs: 40 * 60_000 });
+        const relC = await watchRun(relId, 40 * 60_000);
+        if (relC !== 'success') throw new Error(`release.yml: ${relC}`);
 
         const today = new Date().toISOString().slice(0, 10);
         const evidence = `**Shipped by the agent swarm in v${ver}** (${today})\n\n- Issue: ${issue.identifier} — ${issue.title}\n- PR: ${prUrl} (squash-merged, PR checks ✓)\n- Release chain: main CI ✓ + E2E ✓ → tag v${ver} → release.yml verify+publish ✓\n- Story: ${short(story, 300)}`;
