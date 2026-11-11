@@ -115,3 +115,24 @@ describe('DecisionsRepo reads', () => {
     expect(decisions.listByHypothesis(9999)).toHaveLength(0);
   });
 });
+
+describe('DecisionsRepo decision type (ANA-137)', () => {
+  it('round-trips decisionType on AI drafts and leaves manual rows unset', () => {
+    const h = hyps.create(validHypothesis());
+    const typed = decisions.createAiDraft(decisionFor(h.id, { decisionType: 'budget' }));
+    expect(typed.decisionType).toBe('budget');
+    expect(decisions.getById(typed.id)?.decisionType).toBe('budget');
+    expect(decisions.list()[0]?.decisionType).toBe('budget');
+
+    const manual = decisions.create(decisionFor(h.id));
+    expect(manual.decisionType).toBeUndefined();
+    expect(decisions.getById(manual.id)?.decisionType).toBeUndefined();
+  });
+
+  it('maps an unknown stored decision_type to undefined (garbage/legacy tolerance)', () => {
+    const h = hyps.create(validHypothesis());
+    const d = decisions.createAiDraft(decisionFor(h.id));
+    db.prepare('UPDATE decisions SET decision_type = ? WHERE id = ?').run('bogus', d.id);
+    expect(decisions.getById(d.id)?.decisionType).toBeUndefined();
+  });
+});

@@ -81,4 +81,70 @@ describe('decisions API', () => {
     });
     expect(res.statusCode).toBe(500);
   });
+
+  it('does not accept decisionType through POST (the type is not editable in MVP)', async () => {
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/decisions',
+      payload: decision({ decisionType: 'legal' } as Partial<NewDecision>),
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().decisionType).toBeUndefined();
+  });
+});
+
+describe('decision autonomy (ANA-137)', () => {
+  it('GET /api/decisions/autonomy-matrix returns the static matrix and rules', async () => {
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/decisions/autonomy-matrix' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.required).toBe('A1');
+    expect(Object.keys(body.levels)).toEqual(['A0', 'A1', 'A2']);
+    expect(Object.keys(body.matrix)).toEqual([
+      'data-analysis',
+      'hypothesis-draft',
+      'experiment-launch',
+      'pricing',
+      'budget',
+      'public-comms',
+      'strategic',
+      'legal',
+    ]);
+    expect(body.matrix['data-analysis'].maxAutonomy).toBe('A2');
+    expect(body.matrix['hypothesis-draft'].maxAutonomy).toBe('A1');
+    expect(body.matrix.legal.maxAutonomy).toBe('A0');
+    expect(body.matrix['data-analysis'].label.length).toBeGreaterThan(0);
+  });
+
+  it('attaches the autonomy block to AI decisions and omits it for manual ones', async () => {
+    ctx.deps.decisions.createAiDraft(decision({ decisionType: 'budget' }));
+    await ctx.app.inject({ method: 'POST', url: '/api/decisions', payload: decision() });
+
+    const list = await ctx.app.inject({ method: 'GET', url: '/api/decisions' });
+    const rows = list.json() as Array<Record<string, unknown>>;
+    const ai = rows.find((r) => r.source === 'ai')!;
+    const manual = rows.find((r) => r.source === 'manual')!;
+    expect(ai.autonomy).toEqual({
+      type: 'budget',
+      unclassified: false,
+      maxAutonomy: 'A0',
+      required: 'A1',
+      escalation: { required: true, reason: 'autonomy-exceeded' },
+    });
+    expect(manual.autonomy).toBeUndefined();
+  });
+
+  it('assesses a legacy AI row with decision_type NULL conservatively (strategic / A0 / unclassified-type)', async () => {
+    // An AI draft whose text the classifier could not type — stored without decision_type.
+    ctx.deps.decisions.createAiDraft(decision());
+    const list = await ctx.app.inject({ method: 'GET', url: '/api/decisions' });
+    const ai = (list.json() as Array<Record<string, unknown>>).find((r) => r.source === 'ai')!;
+    expect(ai.autonomy).toEqual({
+      type: 'strategic',
+      unclassified: true,
+      maxAutonomy: 'A0',
+      required: 'A1',
+      escalation: { required: true, reason: 'unclassified-type' },
+    });
+  });
 });

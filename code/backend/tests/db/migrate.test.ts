@@ -33,6 +33,7 @@ describe('migrate', () => {
       '018_marketing_weekly.sql',
       '018_snapshot_author.sql',
       '019_decisions_source.sql',
+      '020_decision_type.sql',
     ]);
   });
 
@@ -182,5 +183,50 @@ describe('migrate', () => {
     expect(count('channel_stats', "date = '2026-10-20'")).toBe(1); // same channel, real date
     expect(count('utm_stats', "date = '2025-01-02'")).toBe(0);
     expect(count('utm_stats', "date = '2026-10-20'")).toBe(1);
+  });
+
+  it('020 adds decisions.decision_type and backfills legacy AI rows as hypothesis drafts (ANA-137)', () => {
+    db = openDb(':memory:');
+    // `until` stops right before 020: a DB where AI drafts predate the autonomy model.
+    const before = migrate(db, { until: '020_decision_type.sql' });
+    expect(before).not.toContain('020_decision_type.sql');
+    const columns = (
+      db.prepare('PRAGMA table_info(decisions)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(columns).not.toContain('decision_type');
+
+    // Pre-020 rows inserted the old way — no decision_type column exists yet.
+    const h = db
+      .prepare(
+        `INSERT INTO hypotheses (diamond_phase, kind, subject, action, solution, condition, title,
+          hidden_assumptions, validation_methods, impact, confidence, ease,
+          impact_rationale, confidence_rationale, ease_rationale,
+          green_criteria, yellow_criteria, red_criteria, deadline_days, deadline_at, created_at, updated_at)
+         VALUES ('define','problem','s','a','sol','c','t','[]','[]',8,5,7,'r','r','r','g','y','rd',2,'x','n','n')`,
+      )
+      .run();
+    const insertDecision = db.prepare(
+      `INSERT INTO decisions (number, hypothesis_id, date, method, scope, period_days, findings,
+         evidence, outcome, outcome_rationale, next_step, decided_by, is_demo, source, created_at, updated_at)
+       VALUES (?, ?, '2025-01-10', 'mixed', '5 интервью', 5, '[]', '[]', 'yellow', 'r', 'next', ?, 0, ?, 'n', 'n')`,
+    );
+    insertDecision.run('DL-001', Number(h.lastInsertRowid), 'AI · yandexgpt', 'ai');
+    insertDecision.run('DL-002', Number(h.lastInsertRowid), 'команда трека', 'manual');
+
+    const applied = migrate(db);
+    expect(applied).toEqual(['020_decision_type.sql']);
+
+    const typeOf = (number: string): string | null =>
+      (
+        db.prepare('SELECT decision_type FROM decisions WHERE number = ?').get(number) as {
+          decision_type: string | null;
+        }
+      ).decision_type;
+    // Every AI row created before 020 came from ai-autopopulate (ANA-128) as a
+    // hypothesis-verification draft — the backfill records that, so no legacy row
+    // turns into a «requires PM escalation» badge on deploy.
+    expect(typeOf('DL-001')).toBe('hypothesis-draft');
+    // Manual rows stay NULL — their type is not inferred.
+    expect(typeOf('DL-002')).toBeNull();
   });
 });

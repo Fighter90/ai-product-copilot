@@ -5,12 +5,12 @@ import type {
   ProblemHypothesis,
   SolutionHypothesis,
 } from '@pca/shared';
-import { validateHypothesis } from '@pca/shared';
+import { assessDecisionAutonomy, validateHypothesis } from '@pca/shared';
 import { freshDb } from '../db/helpers';
 import type { DB } from '../../src/db/connection';
 import { HypothesesRepo } from '../../src/db/repositories/hypotheses-repo';
 import { DecisionsRepo } from '../../src/db/repositories/decisions-repo';
-import { autoPopulateGenerated } from '../../src/report/ai-autopopulate';
+import { autoPopulateGenerated, classifyDecisionType } from '../../src/report/ai-autopopulate';
 import type { AutoPopulateDeps } from '../../src/report/ai-autopopulate';
 
 /**
@@ -330,5 +330,71 @@ describe('per-item skip/fail logging (ANA-134 observability)', () => {
     // Existing deps carry no `log` — must not crash (pino is level-silent in tests).
     const result = autoPopulateGenerated(generated, undefined, deps);
     expect(result.hypotheses).toBe(3);
+  });
+});
+
+describe('decision type classification (ANA-137)', () => {
+  it('stamps every AI decision draft with decisionType and the escalation verdict', () => {
+    autoPopulateGenerated(generated, generatedDecisions, deps);
+    const log = decisions.list();
+    const byNumber = (n: string) => log.find((d) => d.number === n)!;
+    // «количественный анализ воронки» + «конверсия…» — a reversible data-analysis draft (A2).
+    expect(byNumber('DL-001').decisionType).toBe('data-analysis');
+    // «цена действительно скрыта» also matches pricing (A0) — the conservative lowest-max
+    // type wins, so the draft is escalated to the PM (worst case: one extra badge).
+    expect(byNumber('DL-002').decisionType).toBe('pricing');
+    expect(
+      assessDecisionAutonomy({ source: 'ai', decisionType: byNumber('DL-002').decisionType })
+        ?.escalation,
+    ).toEqual({ required: true, reason: 'autonomy-exceeded' });
+    expect(
+      assessDecisionAutonomy({ source: 'ai', decisionType: byNumber('DL-001').decisionType })
+        ?.escalation,
+    ).toEqual({ required: false, reason: null });
+  });
+
+  it('leaves decisionType unset when nothing matches (stored NULL, assessed conservatively)', () => {
+    const untypable: GeneratedDecisions = {
+      decisions: [
+        {
+          id: 'DL01',
+          hypothesisId: 'S01',
+          method: 'обсуждение на созвоне',
+          periodDays: 14,
+          scope: 'общий разговор',
+          findings: 'команда согласилась продолжать',
+          confidence: 'medium',
+          evidence: 'протокол встречи',
+          source: 'snap-1',
+          outcome: 'yellow',
+          outcomeRationale: 'пока неясно',
+        },
+      ],
+    };
+    const result = autoPopulateGenerated(generated, untypable, deps);
+    expect(result.decisions).toBe(1);
+    const draft = decisions.list()[0]!;
+    expect(draft.decisionType).toBeUndefined();
+    expect(assessDecisionAutonomy({ source: 'ai', decisionType: draft.decisionType })).toEqual({
+      type: 'strategic',
+      unclassified: true,
+      maxAutonomy: 'A0',
+      required: 'A1',
+      escalation: { required: true, reason: 'unclassified-type' },
+    });
+  });
+
+  it('classifyDecisionType picks the lowest-maximum type when several patterns match', () => {
+    // «анализ воронки» (data-analysis, A2) + «запуск пилота» (experiment-launch, A0) →
+    // the A0 type wins: worst case an extra escalation, never a missed one.
+    expect(classifyDecisionType('анализ воронки перед запуском пилота')).toBe('experiment-launch');
+    expect(classifyDecisionType('закупить рекламу в подкасте, бюджет 50к')).toBe('budget');
+    expect(classifyDecisionType('проверить гипотезу кастдев-интервью')).toBe('hypothesis-draft');
+    expect(classifyDecisionType('юридическая проверка 152-ФЗ')).toBe('legal');
+    expect(classifyDecisionType('пресс-релиз и публикации в соцсетях')).toBe('public-comms');
+    expect(classifyDecisionType('пересмотр тарифов и скидок')).toBe('pricing');
+    expect(classifyDecisionType('пивот позиционирования продукта')).toBe('strategic');
+    expect(classifyDecisionType('разбивка конверсий по каналам воронки')).toBe('data-analysis');
+    expect(classifyDecisionType('никаких узнаваемых слов')).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import type { DB } from '../connection';
 import type { Decision, NewDecision } from '@pca/shared';
+import { isDecisionType } from '@pca/shared';
 
 /** Thrown when a Decision Log entry lacks its required evidence base. */
 export class DecisionValidationError extends Error {
@@ -31,6 +32,7 @@ interface DecRow {
   exported_md_path: string | null;
   is_demo: number;
   source: 'manual' | 'ai';
+  decision_type: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -60,6 +62,7 @@ function toDecision(r: DecRow): Decision {
     exportedMdPath: r.exported_md_path ?? undefined,
     isDemo: r.is_demo ? true : undefined,
     source: r.source === 'ai' ? 'ai' : 'manual',
+    decisionType: isDecisionType(r.decision_type) ? r.decision_type : undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -105,12 +108,12 @@ export class DecisionsRepo {
          number, hypothesis_id, date, method, scope, period_days, findings, evidence,
          outcome, outcome_rationale, next_step, responsible, next_deadline,
          previous_decision_id, spawned_hypothesis_ids, decided_by, participants,
-         is_demo, source, created_at, updated_at
+         is_demo, source, decision_type, created_at, updated_at
        ) VALUES (
          @number, @hypothesis_id, @date, @method, @scope, @period_days, @findings, @evidence,
          @outcome, @outcome_rationale, @next_step, @responsible, @next_deadline,
          @previous_decision_id, @spawned_hypothesis_ids, @decided_by, @participants,
-         @is_demo, @source, @created_at, @updated_at
+         @is_demo, @source, @decision_type, @created_at, @updated_at
        ) RETURNING *`,
     );
     const updateStatus = this.db.prepare(
@@ -140,6 +143,8 @@ export class DecisionsRepo {
         participants: d.participants ?? null,
         is_demo: d.isDemo ? 1 : 0,
         source,
+        // ANA-137: the type is set only by the ai-autopopulate classifier; manual rows stay NULL.
+        decision_type: d.decisionType ?? null,
         created_at: now,
         updated_at: now,
       }) as DecRow;

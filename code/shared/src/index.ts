@@ -15,6 +15,7 @@ export * from './aggregate';
 export * from './traffic-sources';
 export * from './types/hypotheses';
 export * from './types/decisions';
+export * from './types/decision-autonomy';
 export * from './types/metrics';
 export * from './types/report';
 export * from './types/generated-hypotheses';
