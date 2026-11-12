@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb, type DB } from '../../src/db/connection';
 import { migrate } from '../../src/db/migrate';
+import { MetricsRepo } from '../../src/db/repositories/metrics-repo';
 
 let db: DB;
 afterEach(() => db?.close());
@@ -34,6 +35,7 @@ describe('migrate', () => {
       '018_snapshot_author.sql',
       '019_decisions_source.sql',
       '020_decision_type.sql',
+      '021_ana147_prelaunch_cleanup.sql',
     ]);
   });
 
@@ -214,7 +216,7 @@ describe('migrate', () => {
     insertDecision.run('DL-002', Number(h.lastInsertRowid), 'команда трека', 'manual');
 
     const applied = migrate(db);
-    expect(applied).toEqual(['020_decision_type.sql']);
+    expect(applied).toEqual(['020_decision_type.sql', '021_ana147_prelaunch_cleanup.sql']);
 
     const typeOf = (number: string): string | null =>
       (
@@ -228,5 +230,118 @@ describe('migrate', () => {
     expect(typeOf('DL-001')).toBe('hypothesis-draft');
     // Manual rows stay NULL — their type is not inferred.
     expect(typeOf('DL-002')).toBeNull();
+  });
+
+  it('021 purges the unmarked pre-launch era so coverage starts at the real counter day (ANA-147)', () => {
+    db = openDb(':memory:');
+    // Stage the prod state (progress.md): the one-off 365-day Metrika backfill wrote
+    // 2025-04-29..2026-11-03 through the normal sync path — every row UNMARKED (is_demo = 0),
+    // so ANA-142's live-wins reads treat the era as real and coverage stretches to «563 дн.
+    // (с 2025-04-29)». The counter only lives from 2026-11-06 (the honest KPI base, ANA-142).
+    const before = migrate(db, { until: '021_ana147_prelaunch_cleanup.sql' });
+    expect(before).not.toContain('021_ana147_prelaunch_cleanup.sql');
+
+    // Unmarked backfill-era rows in every derived stat table (real Metrika dimension values —
+    // fingerprints can't match them, the date boundary is the only honest predicate).
+    db.prepare(
+      `INSERT INTO channel_stats (date, channel, visits, users, bounce_rate, avg_duration, goal_reaches, conversion_rate)
+       VALUES ('2025-04-29', 'advertising', 3, 3, 0, 0, 0, 0)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO utm_stats (date, utm_source, utm_medium, utm_campaign, visits, users, goal_reaches, conversion_rate)
+       VALUES ('2025-04-29', 'yandex', 'cpc', 'brand', 3, 3, 0, 0)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO geo_device_stats (date, country, device, visits, users, goal_reaches, conversion_rate)
+       VALUES ('2026-01-15', 'Россия', 'desktop', 3, 3, 0, 0)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO page_stats (date, page, visits, users, bounce_rate, goal_reaches, conversion_rate)
+       VALUES ('2026-11-03', '/', 3, 3, 0, 0, 0)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO exit_page_stats (date, page, visits, users, bounce_rate, goal_reaches, conversion_rate)
+       VALUES ('2026-11-03', '/', 3, 3, 0, 0, 0)`,
+    ).run();
+    // A demo-marked leftover from the same pre-launch era goes too: before the counter's
+    // first real day EVERY stat row is noise, regardless of the mark.
+    db.prepare(
+      `INSERT INTO channel_stats (date, channel, visits, users, bounce_rate, avg_duration, goal_reaches, conversion_rate, is_demo)
+       VALUES ('2025-06-01', 'podcast', 420, 378, 0.2, 60, 12, 0.02, 1)`,
+    ).run();
+    // The counter's real first days — must survive the purge.
+    for (const day of ['2026-11-06', '2026-11-07']) {
+      db.prepare(
+        `INSERT INTO channel_stats (date, channel, visits, users, bounce_rate, avg_duration, goal_reaches, conversion_rate)
+         VALUES (?, 'advertising', 900, 800, 0.3, 90, 30, 0.033)`,
+      ).run(day);
+      db.prepare(
+        `INSERT INTO utm_stats (date, utm_source, utm_medium, utm_campaign, visits, users, goal_reaches, conversion_rate)
+         VALUES (?, 'yandex', 'cpc', 'brand', 130, 117, 6, 0.046)`,
+      ).run(day);
+      db.prepare(
+        `INSERT INTO geo_device_stats (date, country, device, visits, users, goal_reaches, conversion_rate)
+         VALUES (?, 'Россия', 'mobile', 900, 800, 30, 0.033)`,
+      ).run(day);
+      db.prepare(
+        `INSERT INTO page_stats (date, page, visits, users, bounce_rate, goal_reaches, conversion_rate)
+         VALUES (?, '/tickets', 900, 800, 0.3, 30, 0.033)`,
+      ).run(day);
+      db.prepare(
+        `INSERT INTO exit_page_stats (date, page, visits, users, bounce_rate, goal_reaches, conversion_rate)
+         VALUES (?, '/tickets', 900, 800, 0.3, 30, 0.033)`,
+      ).run(day);
+    }
+    // User-entered data and the raw audit trail are never Metrika stat rows — untouched.
+    db.prepare(
+      `INSERT INTO b2b_manual (company, tickets, stage, date_added)
+       VALUES ('RealCo', 50, 'paid', '2026-10-20')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO b2c_payments (date, tickets, source, updated_at)
+       VALUES ('2026-11-10', 5, 'manual', 'n')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO raw_responses (endpoint, query_hash, date_from, date_to, payload, fetched_at)
+       VALUES ('/stat/v1/data', 'h', '2025-04-29', '2025-04-29', '{}', 'n')`,
+    ).run();
+
+    const applied = migrate(db);
+    expect(applied).toEqual(['021_ana147_prelaunch_cleanup.sql']);
+
+    const dates = (table: string): string[] =>
+      (
+        db.prepare(`SELECT DISTINCT date FROM ${table} ORDER BY date`).all() as Array<{
+          date: string;
+        }>
+      ).map((r) => r.date);
+    // Pre-launch era gone (marked or not), the real counter days stay in every table.
+    for (const t of [
+      'channel_stats',
+      'utm_stats',
+      'geo_device_stats',
+      'page_stats',
+      'exit_page_stats',
+    ]) {
+      expect(dates(t)).toEqual(['2026-11-06', '2026-11-07']);
+    }
+    expect(dates('b2c_payments')).toEqual(['2026-11-10']); // user data survives
+    expect(
+      (db.prepare('SELECT company FROM b2b_manual').all() as Array<{ company: string }>).map(
+        (r) => r.company,
+      ),
+    ).toEqual(['RealCo']); // user data survives
+    // raw_responses keep the anti-hallucination audit trail of the purged era.
+    expect((db.prepare('SELECT COUNT(*) AS n FROM raw_responses').get() as { n: number }).n).toBe(
+      1,
+    );
+    // «Показать честное окно»: KPI/coverage counts from the first real counter day only.
+    expect(new MetricsRepo(db).statsCoverage()).toEqual({
+      from: '2026-11-06',
+      to: '2026-11-07',
+      days: 2,
+    });
+    // Idempotent: a second run applies nothing.
+    expect(migrate(db)).toEqual([]);
   });
 });
