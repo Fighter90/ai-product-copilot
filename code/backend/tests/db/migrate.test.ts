@@ -36,6 +36,7 @@ describe('migrate', () => {
       '019_decisions_source.sql',
       '020_decision_type.sql',
       '021_ana147_prelaunch_cleanup.sql',
+      '022_ana148_stat_date_indexes.sql',
     ]);
   });
 
@@ -216,7 +217,11 @@ describe('migrate', () => {
     insertDecision.run('DL-002', Number(h.lastInsertRowid), 'команда трека', 'manual');
 
     const applied = migrate(db);
-    expect(applied).toEqual(['020_decision_type.sql', '021_ana147_prelaunch_cleanup.sql']);
+    expect(applied).toEqual([
+      '020_decision_type.sql',
+      '021_ana147_prelaunch_cleanup.sql',
+      '022_ana148_stat_date_indexes.sql',
+    ]);
 
     const typeOf = (number: string): string | null =>
       (
@@ -307,7 +312,10 @@ describe('migrate', () => {
     ).run();
 
     const applied = migrate(db);
-    expect(applied).toEqual(['021_ana147_prelaunch_cleanup.sql']);
+    expect(applied).toEqual([
+      '021_ana147_prelaunch_cleanup.sql',
+      '022_ana148_stat_date_indexes.sql',
+    ]);
 
     const dates = (table: string): string[] =>
       (
@@ -343,5 +351,33 @@ describe('migrate', () => {
     });
     // Idempotent: a second run applies nothing.
     expect(migrate(db)).toEqual([]);
+  });
+
+  it('022 adds a single-column date index to every derived stat table (ANA-148)', () => {
+    db = openDb(':memory:');
+    migrate(db);
+    for (const t of [
+      'channel_stats',
+      'utm_stats',
+      'geo_device_stats',
+      'page_stats',
+      'exit_page_stats',
+    ]) {
+      const indexes = db.prepare(`PRAGMA index_list(${t})`).all() as Array<{
+        name: string;
+        origin: string;
+      }>;
+      expect(indexes.map((i) => i.name)).toContain(`idx_${t}_date`);
+      const cols = (
+        db.prepare(`PRAGMA index_info(idx_${t}_date)`).all() as Array<{ name: string }>
+      ).map((c) => c.name);
+      expect(cols[0]).toBe('date');
+    }
+    // The date-ranged read behind GET /api/metrics/utm?from&to stays index-driven, never a
+    // full table scan — the «холодный < 3с» half of the acceptance criteria.
+    const plan = db
+      .prepare('EXPLAIN QUERY PLAN SELECT * FROM utm_stats WHERE date >= ? AND date <= ?')
+      .all('2025-01-01', '2025-01-31') as Array<{ detail: string }>;
+    expect(plan.some((r) => /USING INDEX/i.test(r.detail))).toBe(true);
   });
 });
