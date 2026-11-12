@@ -123,6 +123,8 @@ export const ru = {
   'live.notConfigured':
     'Метрика не подключена. Администратор задаёт токен и счётчик в «Метрика и данные».',
   'live.testTraffic': 'Включая тестовый трафик',
+  'live.loadingData': 'Загружаем данные Метрики… первое открытие может занять до минуты',
+  'live.empty': 'За выбранный период нет визитов — измените период или включите тестовый трафик',
 
   'goals.title': 'Цели Метрики',
   'goals.subtitle':
@@ -1512,6 +1514,8 @@ export const en: Record<DictKey, string> = {
   'live.notConfigured':
     'Metrika is not connected. An administrator sets the token and counter in “Metrika & data”.',
   'live.testTraffic': 'Include test traffic',
+  'live.loadingData': 'Loading Metrika data… the first load can take up to a minute',
+  'live.empty': 'No visits in the selected period — change the range or include test traffic',
 
   'goals.title': 'Metrika goals',
   'goals.subtitle': 'Every counter goal: reaches, conversion, change vs previous period and status',
