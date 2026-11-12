@@ -1,6 +1,7 @@
-// Mobile (iPhone 14) smoke: every cabinet page renders without horizontal overflow, and the
-// hamburger menu opens and navigates. Runs only under the `mobile-iphone-14` Playwright project
-// (webkit). v3: the cabinet lives behind auth at /app — fixtures provide the session; admin, so
+// Mobile (iPhone 14 profile on chromium, 390×844) smoke: every cabinet page renders without
+// horizontal overflow, and the hamburger menu opens and navigates. Runs only under the
+// `mobile-iphone-14` Playwright project (chromium, see playwright.config.ts — ANA-146). v3: the
+// cabinet lives behind auth at /app — fixtures provide the session; admin, so
 // the admin page is covered too.
 import { test, expect } from '@playwright/test';
 import { CABINET_USER, installMocks } from './fixtures';
