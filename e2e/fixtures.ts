@@ -217,6 +217,15 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
   });
   await page.route('**/api/settings/refresh*', (r) => json(r, { ok: true }));
 
+  // REG-12: public settings slice is a separate endpoint (GET /api/settings is admin-only), and
+  // the glob above cannot match the extra path segment. Without this mock the request leaks
+  // through the dev proxy; a live backend on :4000 answers 401 and the global auth guard kicks
+  // the mocked session to /login (ANA-141 round 2: e2e ran red in any dev environment).
+  // EVENT_DATE '' = unset → the app falls back to its documented heuristic.
+  await page.route('**/api/settings/public*', (r) =>
+    json(r, { KPI_TARGET: { value: '300' }, EVENT_DATE: { value: '' } }),
+  );
+
   // B2B — stateful CRUD.
   await page.route('**/api/b2b*', async (r) => {
     if (r.request().method() === 'POST') {

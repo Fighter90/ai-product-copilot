@@ -64,6 +64,8 @@ const note = (page, status, detail = '') => {
 async function newSession(browser, { locale, email, password }) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await ctx.addInitScript((loc) => globalThis.localStorage.setItem('pca.locale', loc), locale);
+  // ANA-141: скрипты не должны видеть онбординг-тур — флаг гасит его на всех страницах.
+  await ctx.addInitScript(() => globalThis.localStorage.setItem('qa-notour', '1'));
   const page = await ctx.newPage();
   const consoleErrors = [];
   page.on('console', (m) => {
