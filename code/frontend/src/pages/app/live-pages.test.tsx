@@ -322,6 +322,47 @@ describe('Explore — weighted totals (БАГ-08)', () => {
   });
 });
 
+// ANA-144: /app/live must never show «only layout» while Metrika answers slowly
+// (cold cache can hold the page for 12+ seconds): the content area shows a labelled
+// loading state, and a period with zero visits shows an explicit empty state.
+describe('Live — loading and empty states (ANA-144)', () => {
+  it('shows a labelled loading state while liveSummary is pending (not bare skeletons)', async () => {
+    vi.mocked(v3.liveSummary).mockReturnValue(new Promise(() => undefined) as never);
+    vi.mocked(v3.liveFunnel).mockReturnValue(new Promise(() => undefined) as never);
+    setTestLocale('ru');
+    const { container } = renderWithProviders(<Live />);
+    // The chart card states WHAT is happening — visible text, not just faint gray boxes.
+    expect(await screen.findByText(/Загружаем данные Метрики/)).toBeInTheDocument();
+    // KPI skeletons still keep the page shape while waiting.
+    expect(container.querySelectorAll('.skeleton').length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('renders without Cyrillic in the loading state (en locale)', async () => {
+    vi.mocked(v3.liveSummary).mockReturnValue(new Promise(() => undefined) as never);
+    vi.mocked(v3.liveFunnel).mockReturnValue(new Promise(() => undefined) as never);
+    setTestLocale('en');
+    const { container } = renderWithProviders(<Live />);
+    expect(await screen.findByText(/Loading Metrika data/)).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+
+  it('shows an empty state instead of a bare chart when the period has zero visits', async () => {
+    vi.mocked(v3.liveSummary).mockResolvedValue({
+      from: '2026-10-01',
+      to: '2026-10-14',
+      updatedAt: NOW,
+      totals: { visits: 0, users: 0, pageviews: 0, bounceRate: 0, avgDurationSec: 0 },
+      series: [],
+    } as Awaited<ReturnType<typeof v3.liveSummary>>);
+    setTestLocale('ru');
+    const { container } = renderWithProviders(<Live />);
+    expect(await screen.findByText(/За выбранный период нет визитов/)).toBeInTheDocument();
+    // The loading state is gone, the page shows the (traceable) zero KPIs.
+    expect(screen.queryByText(/Загружаем данные Метрики/)).not.toBeInTheDocument();
+    expect(container.querySelectorAll('.skeleton')).toHaveLength(0);
+  });
+});
+
 // REG-06 (ANA-95): «Заявки по ролям» — a role step whose goal is missing from the counter shows a
 // warning instead of a silent 0, a >100 % step ratio is never rendered, and the chain keeps the
 // values of the steps that do have goals.
