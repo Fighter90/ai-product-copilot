@@ -3,12 +3,26 @@ import { useNavigate } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { useT } from '../../i18n';
 import { useAuth } from '../../auth/AuthContext';
-import { TOUR_RESTART_EVENT, isTourDone, markTourDone, tourSteps, type TourRole } from './tour';
+import {
+  TOUR_RESTART_EVENT,
+  isTourDone,
+  isTourSuppressed,
+  markTourDone,
+  tourSteps,
+  type TourRole,
+} from './tour';
+
+/** The tour opens only for a role that has not seen it — and never while suppressed (ANA-141). */
+function shouldOpen(role: TourRole | null | undefined): boolean {
+  return !!role && !isTourDone(role) && !isTourSuppressed();
+}
 
 /**
  * First-visit step tour, different for each role (ANA-47). Non-modal card at the bottom of the
  * screen: Next/Back walk through the cabinet sections, «Пропустить» / Escape dismiss it for good;
- * «Пройти тур заново» in Help clears the flag and restarts it.
+ * «Пройти тур заново» in Help clears the flag and restarts it. ANA-141: the tour is an overlay,
+ * never a render gate — page content is always in the DOM under it, and `?tour=0` (or the
+ * `qa-notour` flag) keeps it closed entirely for automated checks and repeat users.
  */
 export function OnboardingTour({
   role,
@@ -18,18 +32,18 @@ export function OnboardingTour({
   const { t } = useT();
   const navigate = useNavigate();
   const titleId = useId();
-  const [open, setOpen] = useState(() => !!role && !isTourDone(role));
+  const [open, setOpen] = useState(() => shouldOpen(role));
   const [index, setIndex] = useState(0);
   const nextRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setIndex(0);
-    setOpen(!!role && !isTourDone(role));
+    setOpen(shouldOpen(role));
   }, [role]);
 
   useEffect(() => {
     const onRestart = () => {
-      if (!role) return;
+      if (!role || isTourSuppressed()) return;
       setIndex(0);
       setOpen(true);
     };

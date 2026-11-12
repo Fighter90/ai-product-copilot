@@ -3,7 +3,14 @@ import { act, fireEvent, screen } from '@testing-library/react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { CabinetTour, OnboardingTour } from './OnboardingTour';
 import { RestartTourButton } from './RestartTourButton';
-import { isTourDone, markTourDone, restartTour, tourSteps } from './tour';
+import {
+  TOUR_OFF_KEY,
+  isTourDone,
+  isTourSuppressed,
+  markTourDone,
+  restartTour,
+  tourSteps,
+} from './tour';
 import { renderWithProviders } from '../../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../../test/i18n-utils';
 
@@ -31,6 +38,7 @@ function renderTour(role: 'admin' | 'analyst' | null, route = '/app/traffic') {
 beforeEach(() => {
   window.localStorage.removeItem('pca.tour.v1.admin');
   window.localStorage.removeItem('pca.tour.v1.analyst');
+  window.localStorage.removeItem(TOUR_OFF_KEY);
   session.role = 'analyst';
 });
 afterEach(() => setTestLocale('ru'));
@@ -165,6 +173,71 @@ describe('CabinetTour', () => {
     session.role = null;
     renderWithProviders(<CabinetTour />);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('suppression (ANA-141: ?tour=0 / qa-notour)', () => {
+  /** jsdom has no address bar; point window.location at `/${search}` and restore it after. */
+  const setSearch = (search: string): void => {
+    window.history.replaceState(null, '', `/${search}`);
+  };
+
+  afterEach(() => setSearch(''));
+
+  it('isTourSuppressed: only ?tour=0 or the qa-notour flag suppress it', () => {
+    setSearch('');
+    expect(isTourSuppressed()).toBe(false);
+    setSearch('?tour=0');
+    expect(isTourSuppressed()).toBe(true);
+    setSearch('?tour=1');
+    expect(isTourSuppressed()).toBe(false);
+    setSearch('');
+    window.localStorage.setItem(TOUR_OFF_KEY, '1');
+    expect(isTourSuppressed()).toBe(true);
+    window.localStorage.removeItem(TOUR_OFF_KEY);
+    expect(isTourSuppressed()).toBe(false);
+  });
+
+  it('?tour=0 keeps the tour closed on a fresh storage — content is visible without clicks', () => {
+    setSearch('?tour=0');
+    renderTour('analyst');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('the qa-notour flag keeps the tour closed on a fresh storage', () => {
+    window.localStorage.setItem(TOUR_OFF_KEY, '1');
+    renderTour('analyst');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('?tour=0 also blocks the restart event — scripts never face the tour', () => {
+    setSearch('?tour=0');
+    markTourDone('analyst');
+    renderTour('analyst');
+    act(() => restartTour());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // restart still cleared the flag; only suppression keeps the tour closed
+    expect(isTourDone('analyst')).toBe(false);
+  });
+
+  it('the role effect honours suppression when the session resolves', () => {
+    setSearch('?tour=0');
+    const view = renderTour(null);
+    view.rerender(
+      <>
+        <OnboardingTour role="analyst" />
+        <Routes>
+          <Route path="*" element={<Where />} />
+        </Routes>
+      </>,
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('without suppression a regular user still sees the tour once', () => {
+    setSearch('');
+    renderTour('analyst');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
 

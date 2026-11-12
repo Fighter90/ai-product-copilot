@@ -63,12 +63,30 @@ export function tourSteps(role: TourRole): readonly TourStep[] {
 const KEY = (role: TourRole): string => `pca.tour.v1.${role}`;
 /** Fired by «Пройти тур заново» so a mounted tour restarts without a reload. */
 export const TOUR_RESTART_EVENT = 'pca:tour-restart';
+/** localStorage flag (ANA-141): scripts and repeat visitors suppress the tour entirely. */
+export const TOUR_OFF_KEY = 'qa-notour';
 
 function storage(): Storage | null {
   try {
     return typeof window === 'undefined' ? null : window.localStorage;
   } catch {
     return null;
+  }
+}
+
+/**
+ * True when the tour must never open: `?tour=0` in the address bar or the `qa-notour` localStorage
+ * flag (ANA-141). Automated browser checks and repeat users see the full cabinet content with no
+ * tour clicks; a regular visitor still sees the tour once («done» flag per role).
+ */
+export function isTourSuppressed(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (new URLSearchParams(window.location.search).get('tour') === '0') return true;
+    const flag = storage()?.getItem(TOUR_OFF_KEY);
+    return flag !== null && flag !== undefined;
+  } catch {
+    return false;
   }
 }
 
