@@ -225,10 +225,16 @@ test.describe('«→ гипотеза» deep link (ANA-24)', () => {
     await expect(editor).toHaveCount(0);
 
     // ANA-129: the saved light draft lands in the «Черновики» lane and stays out of the ICE
-    // table — drafts are not prioritised until they are taken into work.
+    // table — drafts are not prioritised until they are taken into work. With only drafts on
+    // the page the ICE table does not render at all (EmptyState instead), and a negated text
+    // assertion still waits for the element to mount — it failed with "element(s) not found"
+    // (ANA-145 root cause), so absence is asserted by count, plus the EmptyState copy.
     const drafts = page.getByRole('region', { name: 'Черновики' });
     await expect(drafts.getByTestId('hyp-card-100')).toBeVisible();
-    await expect(page.getByTestId('hyp-ice-table')).not.toContainText('низкая конверсия');
+    await expect(page.getByTestId('hyp-ice-table')).toHaveCount(0);
+    await expect(
+      page.getByText('Пока нет гипотез — создайте первую или импортируйте AI-варианты'),
+    ).toBeVisible();
   });
 });
 
