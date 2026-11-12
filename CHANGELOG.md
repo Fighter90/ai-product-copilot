@@ -6,6 +6,15 @@
 
 ## [Unreleased]
 
+## [3.4.17] — 2026-11-13
+
+### Fixed (swarm ANA-145)
+- E2E deep link «гипотеза»: после Save карточка появляется в канбане (hyp-card-100) — восстановлен сквозной флоу weak-spot → editor → kanban.
+
+### Fixed (swarm ANA-146)
+- KpiStrip адаптирован под мобильные вьюпорты — /app снова умещается в 390px; mobile-E2E зелёный.
+
+
 ## [3.4.16] — 2026-11-12
 
 ### Fixed (swarm ANA-139/142)
