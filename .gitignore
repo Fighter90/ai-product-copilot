@@ -35,6 +35,10 @@ code/backend/data/
 *.log
 .DS_Store
 
+# One-off local QA scripts (tmp-*.mjs) must never be committed — they are session
+# scratch files (hardcoded prod URLs, /tmp output) and break the lint gate.
+/scripts/tmp-*
+
 # Agent swarm state (lock + cycle logs + gates output)
 .task-board/
 # Swarm's isolated working tree (all cycle work happens here, never in the user's checkout)
