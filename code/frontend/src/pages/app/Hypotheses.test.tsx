@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { Hypothesis } from '@pca/shared';
 import { renderWithProviders } from '../../test/utils';
 import { setTestLocale } from '../../test/i18n-utils';
@@ -243,6 +243,96 @@ describe('Hypotheses page', () => {
     fireEvent.click(await screen.findByTestId('confirm-accept'));
     await waitFor(() => expect(hypothesesApi.remove).toHaveBeenCalledWith(1));
     confirmSpy.mockRestore();
+  });
+
+  it('ANA-145: the deep-link draft save lands the card in the «Черновики» kanban lane (e2e mirror)', async () => {
+    // Mirror of e2e/hypotheses.spec.ts:178 (ANA-24 → kanban). The e2e fixtures answer POST
+    // /hypotheses with a stateful record shaped like the real repo: id 100, status 'draft',
+    // computed iceScore and the provenance label `source: 'manual'` (ANA-145 contract fix).
+    // No `as` cast — shape drift must surface at compile time.
+    let stored: Hypothesis | null = null;
+    vi.mocked(hypothesesApi.create).mockImplementation(async (body) => {
+      stored = {
+        id: 100,
+        ...body,
+        iceScore: 125,
+        status: 'draft',
+        source: 'manual',
+        deadlineAt: '2026-11-26T00:00:00.000Z',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      };
+      return stored;
+    });
+    // The stateful list: empty before create, the created record after (POST → list re-fetch).
+    vi.mocked(hypothesesApi.list).mockImplementation(async () => (stored === null ? [] : [stored]));
+
+    renderWithProviders(
+      <Hypotheses />,
+      '/app/hypotheses?segment=podcast&trouble=%D0%BD%D0%B8%D0%B7%D0%BA%D0%B0%D1%8F+%D0%BA%D0%BE%D0%BD%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8F&evidence=CR+2%2C9%25',
+    );
+    const editor = await screen.findByTestId('hypothesis-editor');
+    // Segment and evidence from the weak spot are prefilled…
+    expect((screen.getByLabelText('Целевая аудитория') as HTMLInputElement).value).toBe('podcast');
+    expect((screen.getByLabelText('Название') as HTMLInputElement).value).not.toBe('');
+    expect(editor).toHaveTextContent('Доказательства');
+
+    // Fill the remaining required fields (same fields as the e2e).
+    fireEvent.change(screen.getByLabelText('Действие'), {
+      target: { value: 'сократим форму до одного шага' },
+    });
+    fireEvent.change(screen.getByLabelText('Решение'), {
+      target: { value: 'одноэкранная регистрация' },
+    });
+    fireEvent.change(screen.getByLabelText('Условие'), { target: { value: 'CR вырастет до 5%' } });
+    // Assumptions: one prefilled (Поведение) — add Рынок + Технологии.
+    const addBtns = screen.getAllByRole('button', { name: 'Добавить' });
+    fireEvent.click(addBtns[0]!);
+    fireEvent.click(addBtns[0]!);
+    const catSelects = screen.getAllByLabelText('Категория допущения');
+    fireEvent.change(catSelects[1]!, { target: { value: 'market' } });
+    fireEvent.change(catSelects[2]!, { target: { value: 'tech' } });
+    const assumptionInputs = screen.getAllByLabelText('Текст допущения');
+    fireEvent.change(assumptionInputs[1]!, { target: { value: 'конкуренты уже упростили форму' } });
+    fireEvent.change(assumptionInputs[2]!, {
+      target: { value: 'форма переиспользуется с лендинга' },
+    });
+    // Validation methods: two distinct types.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Добавить' })[1]!);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Добавить' })[1]!);
+    const typeSelects = screen.getAllByLabelText('Тип метода');
+    fireEvent.change(typeSelects[1]!, { target: { value: 'synthetic' } });
+    const planInputs = screen.getAllByLabelText('План проверки');
+    fireEvent.change(planInputs[0]!, { target: { value: 'A/B-тест формы' } });
+    fireEvent.change(planInputs[1]!, { target: { value: '5 интервью с пользователями' } });
+    // ICE rationales + traffic light.
+    fireEvent.change(screen.getAllByLabelText('Обоснование')[0]!, {
+      target: { value: 'много визитов с низкой конверсией' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Обоснование')[1]!, {
+      target: { value: 'данные Метрики подтверждают' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Обоснование')[2]!, {
+      target: { value: 'готовый компонент формы' },
+    });
+    fireEvent.change(screen.getByLabelText('🟢 Зелёный'), {
+      target: { value: 'CR ≥ 5% за 2 недели' },
+    });
+    fireEvent.change(screen.getByLabelText('🟡 Жёлтый'), { target: { value: 'CR 3–5%' } });
+    fireEvent.change(screen.getByLabelText('🔴 Красный'), { target: { value: 'CR < 3%' } });
+
+    await waitFor(() => expect(screen.getByTestId('hyp-save')).toBeEnabled());
+    fireEvent.click(screen.getByTestId('hyp-save'));
+
+    // The saved light draft lands in the «Черновики» lane; the ICE table stays without drafts.
+    // The lane node is re-queried INSIDE the wait — the list re-fetch may remount the region,
+    // and a captured node would go detached (ANA-145 round-2 review note).
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('region', { name: 'Черновики' })).getByTestId('hyp-card-100'),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId('hyp-ice-table')).not.toBeInTheDocument();
   });
 
   it('ANA-38: imports an AI hypothesis from the latest snapshot with provenance', async () => {

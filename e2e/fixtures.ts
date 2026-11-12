@@ -253,11 +253,15 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
     if (r.request().method() === 'POST') {
       const body = JSON.parse(r.request().postData() ?? '{}') as Record<string, number | string>;
       const score = Number(body.impact) * Number(body.confidence) * Number(body.ease);
+      // The real repo labels provenance on every row (hypotheses-repo contentParams stores
+      // 'manual' unless the payload is an AI import) — the mocked POST must mirror that
+      // contract, or the created row drifts from what production returns (ANA-145).
       const hyp = {
         id: nextHypId++,
         ...body,
         iceScore: score,
         status: 'draft',
+        source: body.source === 'ai' ? 'ai' : 'manual',
         deadlineAt: future(Number(body.deadlineDays) || 7),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
