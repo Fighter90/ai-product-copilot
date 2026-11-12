@@ -41,6 +41,7 @@ interface ChannelRow {
   avg_duration: number;
   goal_reaches: number;
   conversion_rate: number;
+  is_demo: number;
 }
 
 interface UtmRow {
@@ -52,6 +53,7 @@ interface UtmRow {
   users: number;
   goal_reaches: number;
   conversion_rate: number;
+  is_demo: number;
 }
 
 function toUtmStat(r: UtmRow): UtmStat {
@@ -64,6 +66,7 @@ function toUtmStat(r: UtmRow): UtmStat {
     users: r.users,
     goalReaches: r.goal_reaches,
     conversionRate: r.conversion_rate,
+    isDemo: r.is_demo === 1,
   };
 }
 
@@ -75,6 +78,7 @@ interface GeoDeviceRow {
   users: number;
   goal_reaches: number;
   conversion_rate: number;
+  is_demo: number;
 }
 
 function toGeoDeviceStat(r: GeoDeviceRow): GeoDeviceStat {
@@ -86,6 +90,7 @@ function toGeoDeviceStat(r: GeoDeviceRow): GeoDeviceStat {
     users: r.users,
     goalReaches: r.goal_reaches,
     conversionRate: r.conversion_rate,
+    isDemo: r.is_demo === 1,
   };
 }
 
@@ -97,6 +102,7 @@ interface PageRow {
   bounce_rate: number;
   goal_reaches: number;
   conversion_rate: number;
+  is_demo: number;
 }
 
 function toPageStat(r: PageRow): PageStat {
@@ -108,6 +114,7 @@ function toPageStat(r: PageRow): PageStat {
     bounceRate: r.bounce_rate,
     goalReaches: r.goal_reaches,
     conversionRate: r.conversion_rate,
+    isDemo: r.is_demo === 1,
   };
 }
 
@@ -135,7 +142,18 @@ function toChannelStat(r: ChannelRow): ChannelStat {
     avgDuration: r.avg_duration,
     goalReaches: r.goal_reaches,
     conversionRate: r.conversion_rate,
+    isDemo: r.is_demo === 1,
   };
+}
+
+/** Inclusive day count between two ISO dates (ANA-49). */
+function coverageWindow(
+  minDate: string,
+  maxDate: string,
+): { from: string; to: string; days: number } {
+  const days =
+    Math.round((new Date(maxDate).getTime() - new Date(minDate).getTime()) / 86_400_000) + 1; // inclusive both ends
+  return { from: minDate, to: maxDate, days };
 }
 
 /** Repository for Metrika-derived data: goals, raw API responses, channel stats. */
@@ -340,13 +358,36 @@ export class MetricsRepo {
     tx(rows);
   }
 
+  /**
+   * ANA-142: does the scope (whole table, or the [from, to] range) contain at least one live
+   * (is_demo = 0) row? Live rows win over the seeded demo dataset in every read path.
+   */
+  private hasLiveRows(table: string, range?: { from: string; to: string }): boolean {
+    const row = range
+      ? this.db
+          .prepare(`SELECT 1 FROM ${table} WHERE date >= ? AND date <= ? AND is_demo = 0 LIMIT 1`)
+          .get(range.from, range.to)
+      : this.db.prepare(`SELECT 1 FROM ${table} WHERE is_demo = 0 LIMIT 1`).get();
+    return row !== undefined;
+  }
+
+  /**
+   * ANA-142: SELECT for a derived stat table — live rows win. When the scope contains any live
+   * (is_demo = 0) rows, only they come back: seeded demo history (prod had 2025-04-29..2025-12-31)
+   * must never blend into real Metrika reads and distort trends/KPIs. A demo-only scope (fresh
+   * ./run.sh without a token) still serves the demo dataset so the cabinet stays usable — the
+   * mappers keep isDemo on those rows so the UI can badge them «ДЕМО».
+   */
+  private selectStatRows(table: string, range?: { from: string; to: string }): unknown[] {
+    const live = this.hasLiveRows(table, range);
+    const sql = range
+      ? `SELECT * FROM ${table} WHERE date >= ? AND date <= ?${live ? ' AND is_demo = 0' : ''} ORDER BY date`
+      : `SELECT * FROM ${table}${live ? ' WHERE is_demo = 0' : ''} ORDER BY date`;
+    return range ? this.db.prepare(sql).all(range.from, range.to) : this.db.prepare(sql).all();
+  }
+
   listChannelStats(range?: { from: string; to: string }): ChannelStat[] {
-    const rows = range
-      ? (this.db
-          .prepare('SELECT * FROM channel_stats WHERE date >= ? AND date <= ? ORDER BY date')
-          .all(range.from, range.to) as ChannelRow[])
-      : (this.db.prepare('SELECT * FROM channel_stats ORDER BY date').all() as ChannelRow[]);
-    return rows.map(toChannelStat);
+    return (this.selectStatRows('channel_stats', range) as ChannelRow[]).map(toChannelStat);
   }
 
   upsertUtmStats(rows: readonly UtmStat[]): void {
@@ -375,12 +416,7 @@ export class MetricsRepo {
   }
 
   listUtmStats(range?: { from: string; to: string }): UtmStat[] {
-    const rows = range
-      ? (this.db
-          .prepare('SELECT * FROM utm_stats WHERE date >= ? AND date <= ? ORDER BY date')
-          .all(range.from, range.to) as UtmRow[])
-      : (this.db.prepare('SELECT * FROM utm_stats ORDER BY date').all() as UtmRow[]);
-    return rows.map(toUtmStat);
+    return (this.selectStatRows('utm_stats', range) as UtmRow[]).map(toUtmStat);
   }
 
   upsertGeoDeviceStats(rows: readonly GeoDeviceStat[]): void {
@@ -407,12 +443,7 @@ export class MetricsRepo {
   }
 
   listGeoDeviceStats(range?: { from: string; to: string }): GeoDeviceStat[] {
-    const rows = range
-      ? (this.db
-          .prepare('SELECT * FROM geo_device_stats WHERE date >= ? AND date <= ? ORDER BY date')
-          .all(range.from, range.to) as GeoDeviceRow[])
-      : (this.db.prepare('SELECT * FROM geo_device_stats ORDER BY date').all() as GeoDeviceRow[]);
-    return rows.map(toGeoDeviceStat);
+    return (this.selectStatRows('geo_device_stats', range) as GeoDeviceRow[]).map(toGeoDeviceStat);
   }
 
   upsertPageStats(rows: readonly PageStat[]): void {
@@ -439,12 +470,7 @@ export class MetricsRepo {
   }
 
   listPageStats(range?: { from: string; to: string }): PageStat[] {
-    const rows = range
-      ? (this.db
-          .prepare('SELECT * FROM page_stats WHERE date >= ? AND date <= ? ORDER BY date')
-          .all(range.from, range.to) as PageRow[])
-      : (this.db.prepare('SELECT * FROM page_stats ORDER BY date').all() as PageRow[]);
-    return rows.map(toPageStat);
+    return (this.selectStatRows('page_stats', range) as PageRow[]).map(toPageStat);
   }
 
   upsertExitPageStats(rows: readonly PageStat[]): void {
@@ -471,28 +497,29 @@ export class MetricsRepo {
   }
 
   listExitPageStats(range?: { from: string; to: string }): PageStat[] {
-    const rows = range
-      ? (this.db
-          .prepare('SELECT * FROM exit_page_stats WHERE date >= ? AND date <= ? ORDER BY date')
-          .all(range.from, range.to) as PageRow[])
-      : (this.db.prepare('SELECT * FROM exit_page_stats ORDER BY date').all() as PageRow[]);
-    return rows.map(toPageStat);
+    return (this.selectStatRows('exit_page_stats', range) as PageRow[]).map(toPageStat);
   }
 
   /**
    * Cached data coverage (ANA-49): the first and the last synced day across the per-day stat
    * tables. The FilterBar compares the selected period against it and offers «Догрузить N дней»
    * when the selection starts before the cache. `null` while nothing has been synced yet.
+   *
+   * ANA-142: the KPI base is the REAL data window — live (is_demo = 0) rows win. The seeded demo
+   * «history» (prod had 2025-04-29..2025-12-31 while the counter only lives from its first real
+   * day) must not stretch «данных N дней». A demo-only DB (fresh ./run.sh without a token) falls
+   * back to the demo window so the cabinet keeps working, flagged by the ДЕМО banner.
    */
   statsCoverage(): { from: string; to: string; days: number } | null {
-    const r = this.db
-      .prepare('SELECT MIN(date) AS min_date, MAX(date) AS max_date FROM channel_stats')
-      .get() as { min_date: string | null; max_date: string | null };
-    if (!r.min_date || !r.max_date) return null;
-    const days =
-      Math.round((new Date(r.max_date).getTime() - new Date(r.min_date).getTime()) / 86_400_000) +
-      1; // inclusive both ends
-    return { from: r.min_date, to: r.max_date, days };
+    const minMax = (where: string): { min_date: string | null; max_date: string | null } =>
+      this.db
+        .prepare(`SELECT MIN(date) AS min_date, MAX(date) AS max_date FROM channel_stats ${where}`)
+        .get() as { min_date: string | null; max_date: string | null };
+    const live = minMax('WHERE is_demo = 0');
+    if (live.min_date && live.max_date) return coverageWindow(live.min_date, live.max_date);
+    const any = minMax('');
+    if (!any.min_date || !any.max_date) return null;
+    return coverageWindow(any.min_date, any.max_date);
   }
 
   /**
@@ -500,6 +527,9 @@ export class MetricsRepo {
    * complete while utm_stats/geo/pages lag behind days or weeks (the optional sync steps are
    * best-effort and get skipped on failures) — GET /metrics/coverage reports the per-table
    * window so the FilterBar can surface the gap and offer a re-sync of the selected period.
+   *
+   * ANA-142: per table, live (is_demo = 0) rows win; a demo-only table falls back to its demo
+   * window — same rule as statsCoverage().
    */
   statsCoverageTables(): Record<string, { from: string; to: string } | null> {
     const sources: Array<[string, string]> = [
@@ -511,10 +541,13 @@ export class MetricsRepo {
     ];
     const out: Record<string, { from: string; to: string } | null> = {};
     for (const [key, table] of sources) {
-      const r = this.db
-        .prepare(`SELECT MIN(date) AS min_date, MAX(date) AS max_date FROM ${table}`)
-        .get() as { min_date: string | null; max_date: string | null };
-      out[key] = r.min_date && r.max_date ? { from: r.min_date, to: r.max_date } : null;
+      const minMax = (where: string): { min_date: string | null; max_date: string | null } =>
+        this.db
+          .prepare(`SELECT MIN(date) AS min_date, MAX(date) AS max_date FROM ${table} ${where}`)
+          .get() as { min_date: string | null; max_date: string | null };
+      const live = minMax('WHERE is_demo = 0');
+      const win = live.min_date && live.max_date ? live : minMax('');
+      out[key] = win.min_date && win.max_date ? { from: win.min_date, to: win.max_date } : null;
     }
     return out;
   }
