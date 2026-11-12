@@ -98,7 +98,25 @@ export function Live(): JSX.Element {
         )}
       </div>
       <Card title={single ? t('live.byHour') : t('live.byDay')}>
-        {option ? <EChart option={option} height={300} /> : <Skeleton className="h-72" />}
+        {option ? (
+          // ANA-144: a period with zero visits gets an explicit empty state instead of a bare
+          // chart canvas — the zero KPIs stay (they are the API's honest, traceable answer).
+          s && s.totals.visits === 0 ? (
+            <p className="flex h-72 items-center justify-center px-6 text-center text-sm text-muted">
+              {t('live.empty')}
+            </p>
+          ) : (
+            <EChart option={option} height={300} />
+          )
+        ) : (
+          // ANA-144: while the summary is pending the content area states WHAT is happening —
+          // bare skeletons read as a blank layout during the slow first load (cold Metrika
+          // cache can hold the page for 12+ seconds).
+          <div className="flex h-72 flex-col items-center justify-center gap-3" role="status">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-line border-t-accent" />
+            <span className="text-xs text-muted">{t('live.loadingData')}</span>
+          </div>
+        )}
       </Card>
       <Card
         title={t('funnel.title')}
