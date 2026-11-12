@@ -826,7 +826,7 @@ export function Overview(): JSX.Element {
   const visibleChannels = applyTestTrafficFilter(allChannels, includeTest, isTestChannelRow);
   const visibleUtm = applyTestTrafficFilter(utm.data ?? [], includeTest, isTestChannelRow);
   const filteredChannels = filterBySegment(visibleChannels, segment);
-  const filteredUtm = filterUtmBySegment(visibleUtm, segment, visibleChannels);
+  const filteredUtm = filterUtmBySegment(visibleUtm, segment);
 
   return (
     <OverviewView

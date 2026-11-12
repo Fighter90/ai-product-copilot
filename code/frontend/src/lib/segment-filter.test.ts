@@ -105,47 +105,36 @@ describe('filterBySegment', () => {
   });
 });
 
-describe('filterUtmBySegment', () => {
+// ANA-139: the UTM breakdown is its own Metrika dataset and does not inherit the channel
+// segment filter. The old «active sources» cross-filter derived UTM sources from
+// channel_stats.utmSource — permanently null since the M-004 fix (the channel query uses a
+// single lastsignTrafficSource dimension) — so the whole UTM table, Sankey and coverage
+// read empty in the B2C/B2B segments while Metrika had the data.
+describe('filterUtmBySegment — ANA-139', () => {
+  const utm = [makeUtm('vk', 'cpc', 'spring', 40, 4), makeUtm('telegram', 'social', 'post', 20, 2)];
+
   it('returns all UTM data for b2c_b2b segment', () => {
-    const channels = [makeChannel('Direct traffic')];
-    const utm = [makeUtm('google', 'cpc', 'campaign1')];
-    expect(filterUtmBySegment(utm, 'b2c_b2b', channels)).toHaveLength(1);
+    expect(filterUtmBySegment(utm, 'b2c_b2b')).toEqual(utm);
   });
 
-  it('filters UTM data based on active channel sources for b2c segment', () => {
-    const channels = [makeChannel('Direct traffic')];
-    const utm = [
-      makeUtm('google', 'cpc', 'campaign1', 50, 5),
-      makeUtm('yandex', 'cpc', 'campaign2', 30, 3),
-    ];
-    const result = filterUtmBySegment(utm, 'b2c', channels);
-    // UTM filtering is based on active sources from filtered channels
-    expect(result.length).toBeGreaterThanOrEqual(0);
+  it('b2c keeps the whole UTM breakdown even though channel rows carry no UTM (M-004 shape)', () => {
+    const channels = [makeChannel('Ad traffic'), makeChannel('Search engine traffic')];
+    expect(channels.every((c) => c.utmSource === null)).toBe(true);
+    expect(filterUtmBySegment(utm, 'b2c')).toEqual(utm);
+  });
+
+  it('b2c shows UTM data even when the segment leaves no channel rows', () => {
+    expect(filterUtmBySegment(utm, 'b2c')).toEqual(utm);
+  });
+
+  it('b2b stays manual-only: Metrika UTM rows never belong to the B2B segment', () => {
+    expect(filterUtmBySegment(utm, 'b2b')).toEqual([]);
   });
 
   it('handles empty UTM data', () => {
-    const channels = [makeChannel('Direct traffic')];
-    expect(filterUtmBySegment([], 'b2c', channels)).toEqual([]);
-  });
-
-  it('handles empty channels', () => {
-    const utm = [makeUtm('google', 'cpc', 'campaign1')];
-    // When no channels, UTM data is returned as-is for b2c_b2b, filtered for others
-    expect(filterUtmBySegment(utm, 'b2c_b2b', [])).toEqual(utm);
-    expect(filterUtmBySegment(utm, 'b2c', [])).toEqual([]);
-  });
-
-  it('returns matching UTM data when active sources exist (covers the filter branch)', () => {
-    // Channel has a non-null utmSource → activeSources.size > 0 → line 47 is exercised
-    const channelWithSource: ChannelStat = {
-      ...makeChannel('Direct traffic'),
-      utmSource: 'google',
-    };
-    const utm = [makeUtm('google', 'cpc', 'spring'), makeUtm('yandex', 'cpc', 'other')];
-    const result = filterUtmBySegment(utm, 'b2c', [channelWithSource]);
-    // Only the google UTM should be returned (matches active source)
-    expect(result).toHaveLength(1);
-    expect(result[0]!.utmSource).toBe('google');
+    expect(filterUtmBySegment([], 'b2c')).toEqual([]);
+    expect(filterUtmBySegment([], 'b2b')).toEqual([]);
+    expect(filterUtmBySegment([], 'b2c_b2b')).toEqual([]);
   });
 });
 

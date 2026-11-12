@@ -420,6 +420,14 @@ export const ru = {
   'dq.backfillRunning': 'Догружаю…',
   'dq.backfillDone': 'Догружено — обновите страницу.',
   'dq.backfillFailed': 'Не удалось догрузить данные',
+  // ANA-139: derived dataset stops INSIDE the selected period while channel_stats covers it.
+  'dq.table.utm': 'UTM',
+  'dq.table.geoDevice': 'гео/устройства',
+  'dq.table.pages': 'страницы входа',
+  'dq.table.exitPages': 'страницы выхода',
+  'dq.coverageStale':
+    'Данные {tables} обрываются {date}: часть выбранного периода не синхронизирована',
+  'dq.staleBackfillAction': 'Догрузить период',
   'flt.segment': 'Сегмент',
   'flt.error.max': 'Максимальный период — {n} дней (1 год).',
   'flt.error.order': 'Дата окончания не может быть раньше даты начала.',
@@ -1797,6 +1805,13 @@ export const en: Record<DictKey, string> = {
   'dq.backfillRunning': 'Backfilling…',
   'dq.backfillDone': 'Backfilled — refresh the page.',
   'dq.backfillFailed': 'Failed to backfill data',
+  // ANA-139: derived dataset stops INSIDE the selected period while channel_stats covers it.
+  'dq.table.utm': 'UTM',
+  'dq.table.geoDevice': 'geo/devices',
+  'dq.table.pages': 'entry pages',
+  'dq.table.exitPages': 'exit pages',
+  'dq.coverageStale': 'Data for {tables} stops {date}: part of the selected period is not synced',
+  'dq.staleBackfillAction': 'Backfill the period',
   'flt.segment': 'Segment',
   'flt.error.max': 'Maximum period is {n} days (1 year).',
   'flt.error.order': 'End date cannot be before the start date.',

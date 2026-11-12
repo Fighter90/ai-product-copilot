@@ -496,6 +496,30 @@ export class MetricsRepo {
   }
 
   /**
+   * ANA-139: per-table min/max of every derived stat table. The channel window alone can look
+   * complete while utm_stats/geo/pages lag behind days or weeks (the optional sync steps are
+   * best-effort and get skipped on failures) — GET /metrics/coverage reports the per-table
+   * window so the FilterBar can surface the gap and offer a re-sync of the selected period.
+   */
+  statsCoverageTables(): Record<string, { from: string; to: string } | null> {
+    const sources: Array<[string, string]> = [
+      ['channels', 'channel_stats'],
+      ['utm', 'utm_stats'],
+      ['geoDevice', 'geo_device_stats'],
+      ['pages', 'page_stats'],
+      ['exitPages', 'exit_page_stats'],
+    ];
+    const out: Record<string, { from: string; to: string } | null> = {};
+    for (const [key, table] of sources) {
+      const r = this.db
+        .prepare(`SELECT MIN(date) AS min_date, MAX(date) AS max_date FROM ${table}`)
+        .get() as { min_date: string | null; max_date: string | null };
+      out[key] = r.min_date && r.max_date ? { from: r.min_date, to: r.max_date } : null;
+    }
+    return out;
+  }
+
+  /**
    * ANA-18: count of `is_demo = 1` rows per dataset — drives the «Демо-данные» banner
    * (GET /api/demo/status). All-zero counts → demo: false.
    */

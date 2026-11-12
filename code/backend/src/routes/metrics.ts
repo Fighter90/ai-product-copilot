@@ -120,9 +120,14 @@ export async function metricsRoutes(
 
   // ANA-49: how far back the cached data reaches, so the FilterBar can offer «Догрузить N дней»
   // when the selected period starts before the first synced day. 200 with nulls while empty.
+  // ANA-139: plus per-table min/max — utm_stats/geo/pages can lag behind channels (optional
+  // sync steps are best-effort), and the FilterBar needs that to surface stale UTM data.
   app.get(
     '/metrics/coverage',
     { schema: { tags: ['metrics'], summary: 'Cached data coverage (first/last synced day)' } },
-    async () => opts.repo.statsCoverage() ?? { from: null, to: null, days: 0 },
+    async () => ({
+      ...(opts.repo.statsCoverage() ?? { from: null, to: null, days: 0 }),
+      tables: opts.repo.statsCoverageTables(),
+    }),
   );
 }
