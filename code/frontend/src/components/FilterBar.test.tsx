@@ -11,6 +11,9 @@ import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
 const mocks = vi.hoisted(() => ({
   isAdmin: true,
   coverageFrom: new Date(Date.now() - 15 * 86_400_000).toISOString().slice(0, 10),
+  // ANA-139: per-table coverage from GET /metrics/coverage (undefined = old backend response).
+  coverageTables: undefined as Record<string, { from: string; to: string } | null> | undefined,
+  sync: vi.fn(),
 }));
 vi.mock('../auth/AuthContext', () => ({
   useAuth: () => ({
@@ -36,11 +39,12 @@ vi.mock('../lib/api', () => ({
         from: mocks.coverageFrom,
         to: new Date(Date.now()).toISOString().slice(0, 10),
         days: 15,
+        ...(mocks.coverageTables ? { tables: mocks.coverageTables } : {}),
       };
     }
     throw new Error(`unexpected fetch in FilterBar tests: ${path}`);
   },
-  api: { sync: async () => ({}) },
+  api: { sync: mocks.sync },
 }));
 
 const initial = useFilters.getState();
@@ -288,6 +292,8 @@ describe('FilterBar — partial data coverage (REG-04/ANA-93)', () => {
   afterEach(() => {
     mocks.isAdmin = true;
     mocks.coverageFrom = new Date(Date.now() - 15 * 86_400_000).toISOString().slice(0, 10);
+    mocks.coverageTables = undefined;
+    mocks.sync.mockClear();
     setTestLocale('ru');
   });
 
@@ -330,6 +336,117 @@ describe('FilterBar — partial data coverage (REG-04/ANA-93)', () => {
     const banner = await screen.findByRole('status');
     expect(banner).toHaveTextContent(/only partially covered/);
     expectNoCyrillic(container);
+  });
+});
+
+// ANA-139: per-table coverage — utm_stats/geo/pages can stop INSIDE the selected period while
+// channel_stats is complete (optional sync steps skipped for days). The FilterBar must say so
+// and offer a re-sync of the selected period («допарсить»), otherwise the UTM breakdown looks
+// empty while Metrika has the data and nothing in the UI can repair the gap.
+describe('FilterBar — stale derived tables (ANA-139)', () => {
+  const fullTables = (): Record<string, { from: string; to: string } | null> => ({
+    channels: { from: isoOffset(-15), to: today },
+    utm: { from: isoOffset(-15), to: today },
+    geoDevice: { from: isoOffset(-15), to: today },
+    pages: { from: isoOffset(-15), to: today },
+    exitPages: { from: isoOffset(-15), to: today },
+  });
+
+  afterEach(() => {
+    mocks.isAdmin = true;
+    mocks.coverageFrom = new Date(Date.now() - 15 * 86_400_000).toISOString().slice(0, 10);
+    mocks.coverageTables = undefined;
+    mocks.sync.mockClear();
+    setTestLocale('ru');
+  });
+
+  it('warns when utm_stats stops inside the selected period while channels are complete', async () => {
+    mocks.coverageTables = {
+      ...fullTables(),
+      utm: { from: isoOffset(-15), to: isoOffset(-4) },
+    };
+    renderBar();
+
+    const banner = await screen.findByRole('status');
+    expect(banner).toHaveTextContent(/UTM/);
+    expect(banner).toHaveTextContent(/обрываются/);
+    expect(screen.getByRole('button', { name: /Догрузить период/ })).toBeEnabled();
+  });
+
+  it('the stale-period action re-syncs the whole selected range', async () => {
+    mocks.coverageTables = {
+      ...fullTables(),
+      utm: { from: isoOffset(-15), to: isoOffset(-4) },
+    };
+    renderBar();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Догрузить период/ }));
+    await act(async () => {});
+    // Default range = the last 14 days; the re-sync covers it end to end (допарсить).
+    expect(mocks.sync).toHaveBeenCalledWith({ from: isoOffset(-13), to: today });
+  });
+
+  it('shows the warning without the action for non-admins (REG-04 parity)', async () => {
+    mocks.isAdmin = false;
+    mocks.coverageTables = {
+      ...fullTables(),
+      utm: { from: isoOffset(-15), to: isoOffset(-4) },
+    };
+    renderBar();
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/обрываются/);
+    expect(screen.queryByRole('button', { name: /Догрузить период/ })).not.toBeInTheDocument();
+  });
+
+  it('renders the warning without Cyrillic in en', async () => {
+    setTestLocale('en');
+    mocks.isAdmin = false;
+    mocks.coverageTables = {
+      ...fullTables(),
+      utm: { from: isoOffset(-15), to: isoOffset(-4) },
+    };
+    const { container } = renderBar();
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/stops/);
+    expectNoCyrillic(container);
+  });
+
+  it('shows no staleness banner while every derived table reaches the selected end', async () => {
+    mocks.coverageTables = fullTables();
+    renderBar();
+
+    await act(async () => {});
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Догрузить период/ })).not.toBeInTheDocument();
+  });
+
+  it('ignores an empty (null) derived table — only a lagging one is stale', async () => {
+    mocks.coverageTables = { ...fullTables(), utm: null };
+    renderBar();
+
+    await act(async () => {});
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Догрузить период/ })).not.toBeInTheDocument();
+  });
+
+  it('surfaces a failed stale-period re-sync next to the banner', async () => {
+    mocks.sync.mockRejectedValueOnce(new Error('quota'));
+    mocks.coverageTables = {
+      ...fullTables(),
+      utm: { from: isoOffset(-15), to: isoOffset(-4) },
+    };
+    renderBar();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Догрузить период/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Не удалось догрузить/);
+  });
+
+  it('shows no staleness banner when the response carries no tables (older backend)', async () => {
+    renderBar();
+
+    await act(async () => {});
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Догрузить период/ })).not.toBeInTheDocument();
   });
 });
 

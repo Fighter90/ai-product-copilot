@@ -336,6 +336,38 @@ describe('MetricsRepo — statsCoverage (ANA-49)', () => {
   });
 });
 
+// ANA-139: /metrics/coverage must expose per-table coverage — channel_stats can be complete
+// while utm_stats/geo/pages lag behind (optional sync steps skipped for days), and the
+// FilterBar's «Догрузить» prompt is blind to that gap when only the channel window is reported.
+describe('MetricsRepo — statsCoverageTables (ANA-139)', () => {
+  it('returns null per table while nothing is synced', () => {
+    expect(repo.statsCoverageTables()).toEqual({
+      channels: null,
+      utm: null,
+      geoDevice: null,
+      pages: null,
+      exitPages: null,
+    });
+  });
+
+  it('reports per-table min/max so a lagging utm_stats is visible next to fresh channels', () => {
+    repo.upsertChannelStats([stat('2025-01-01'), stat('2025-01-05')]);
+    // The ANA-139 symptom: utm stops four days before channels do.
+    repo.upsertUtmStats([utm('2025-01-01')]);
+    repo.upsertGeoDeviceStats([geo('2025-01-03')]);
+    repo.upsertPageStats([page('2025-01-02', { page: '/lp' })]);
+    repo.upsertExitPageStats([page('2025-01-04', { page: '/checkout' })]);
+
+    expect(repo.statsCoverageTables()).toEqual({
+      channels: { from: '2025-01-01', to: '2025-01-05' },
+      utm: { from: '2025-01-01', to: '2025-01-01' },
+      geoDevice: { from: '2025-01-03', to: '2025-01-03' },
+      pages: { from: '2025-01-02', to: '2025-01-02' },
+      exitPages: { from: '2025-01-04', to: '2025-01-04' },
+    });
+  });
+});
+
 // ANA-18 (appended): demo rows carry is_demo = 1 across every dataset; the demo banner reads
 // demoStatus() and the first successful sync calls deleteDemoRows() — demo and live data must
 // never mix in the KPIs.

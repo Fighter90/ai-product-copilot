@@ -1,4 +1,4 @@
-import type { ChannelStat, UtmStat, GeoDeviceStat, PageStat } from '@pca/shared';
+import type { UtmStat, GeoDeviceStat, PageStat } from '@pca/shared';
 import { B2C_TRAFFIC_SOURCE_IDS, trafficSourceId, type TrafficSourceId } from '@pca/shared';
 import type { Segment } from '../store/filters';
 
@@ -28,19 +28,20 @@ export function filterBySegment<T extends { channel?: string }>(data: T[], segme
   return data.filter((d) => d.channel && channelMatchesSegment(d.channel, segment));
 }
 
-/** Filter UTM stats by segment (based on channel). */
-export function filterUtmBySegment(
-  data: UtmStat[],
-  segment: Segment,
-  channels: ChannelStat[],
-): UtmStat[] {
-  if (segment === 'b2c_b2b') return data;
-  // Filter channels first, then derive which UTM sources are relevant
-  const filteredChannels = filterBySegment(channels, segment);
-  const activeSources = new Set(filteredChannels.map((c) => c.utmSource).filter(Boolean));
-  // If no active sources for this segment, return empty array
-  if (activeSources.size === 0) return [];
-  return data.filter((u) => activeSources.has(u.utmSource));
+/**
+ * Filter UTM stats by segment. ANA-139: the UTM breakdown is a Metrika dataset of its own
+ * (utm_stats) and does not inherit the channel segmentation. The old «active sources»
+ * cross-filter derived UTM sources from `channel_stats.utmSource` — permanently null since the
+ * M-004 fix (the channel query uses a single `lastsignTrafficSource` dimension), which left the
+ * UTM table, Sankey and coverage empty in the B2C/B2B segments even when Metrika had the data.
+ * Semantics per the segment model (ANA-17):
+ *  - «B2C+B2B» → everything;
+ *  - «B2C» → everything (UTM-tagged visits are Metrika-classified campaign traffic — the B2C side);
+ *  - «B2B» → nothing (the B2B segment is the manual pipeline; Metrika never tags a visit as B2B).
+ */
+export function filterUtmBySegment(data: UtmStat[], segment: Segment): UtmStat[] {
+  if (segment === 'b2b') return [];
+  return data;
 }
 
 /** Filter geo/device stats by segment. */

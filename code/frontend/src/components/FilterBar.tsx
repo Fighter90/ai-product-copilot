@@ -1,7 +1,7 @@
 import { useFilters, isoDaysAgo, type Segment } from '../store/filters';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useT, fmtDate } from '../i18n';
+import { useT, fmtDate, type DictKey } from '../i18n';
 import { api, http } from '../lib/api';
 import { useAuth } from '../auth/AuthContext';
 
@@ -13,7 +13,20 @@ interface Coverage {
   from: string | null;
   to: string | null;
   days: number;
+  /** ANA-139: per-table min/max — derived tables can lag behind channel_stats. */
+  tables?: Record<string, { from: string; to: string } | null>;
 }
+
+/** Derived stat tables the ANA-139 staleness check watches (channels drive the gap banner). */
+const DERIVED_TABLE_KEYS = ['utm', 'geoDevice', 'pages', 'exitPages'] as const;
+
+/** Localized names of the derived tables for the staleness banner (dq.table.* dict keys). */
+const TABLE_LABEL: Record<(typeof DERIVED_TABLE_KEYS)[number], DictKey> = {
+  utm: 'dq.table.utm',
+  geoDevice: 'dq.table.geoDevice',
+  pages: 'dq.table.pages',
+  exitPages: 'dq.table.exitPages',
+};
 
 /** Local (UTC) calendar day before `iso`, as YYYY-MM-DD. */
 function dayBefore(iso: string): string {
@@ -95,6 +108,20 @@ export function FilterBar(): JSX.Element {
     : 0;
   const needsBackfill = coverageFrom !== null && missingDays > 0;
 
+  // ANA-139: derived datasets whose last synced day is older than the selected end — the period
+  // contains days these tables are missing (utm_stats/geo/pages are best-effort sync steps and
+  // can stop days behind channel_stats). Only checked when the channel window itself is complete,
+  // so the two banners never compete.
+  const staleTables = coverage
+    ? DERIVED_TABLE_KEYS.filter((k) => {
+        const t = coverage.tables?.[k];
+        return t != null && t.to < to;
+      })
+    : [];
+  const staleDate =
+    coverage && staleTables[0] ? (coverage.tables?.[staleTables[0]]?.to ?? null) : null;
+  const staleLabels = staleTables.map((k) => t(TABLE_LABEL[k]));
+
   const runBackfill = async (): Promise<void> => {
     if (!coverageFrom) return;
     setBackfill('running');
@@ -103,6 +130,18 @@ export function FilterBar(): JSX.Element {
       // the whole period, sync the selected range itself.
       const gapEnd = dayBefore(coverageFrom);
       await api.sync({ from, to: gapEnd >= from && gapEnd <= to ? gapEnd : to });
+      setBackfill('done'); // the [backfill] effect re-probes coverage
+    } catch {
+      setBackfill('failed');
+    }
+  };
+
+  // ANA-139: the gap sits INSIDE the selected period (channels cover it) → re-sync the period
+  // end to end so the lagging utm/geo/page datasets are re-parsed («допарсить»).
+  const runStaleBackfill = async (): Promise<void> => {
+    setBackfill('running');
+    try {
+      await api.sync({ from, to });
       setBackfill('done'); // the [backfill] effect re-probes coverage
     } catch {
       setBackfill('failed');
@@ -210,6 +249,38 @@ export function FilterBar(): JSX.Element {
                 {backfill === 'running'
                   ? t('dq.backfillRunning')
                   : t('dq.backfillAction', { n: missingDays })}
+              </button>
+            )}
+            {isAdmin && backfill === 'done' && <span>{t('dq.backfillDone')}</span>}
+            {isAdmin && backfill === 'failed' && (
+              <span role="alert" className="text-red-700">
+                {t('dq.backfillFailed')}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* ANA-139: a derived dataset (UTM/гео/страницы) stops INSIDE the selected period while
+            channel_stats covers it — say so and offer a re-sync of the period («допарсить»). */}
+        {!needsBackfill && staleTables.length > 0 && staleDate && (
+          <div
+            role="status"
+            className="flex w-full flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800 md:w-auto"
+          >
+            <span>
+              {t('dq.coverageStale', {
+                tables: staleLabels.join(', '),
+                date: fmtDate(staleDate, locale),
+              })}
+            </span>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={runStaleBackfill}
+                disabled={backfill === 'running'}
+                className="rounded bg-amber-600 px-2 py-0.5 text-xs text-white hover:bg-amber-700 focus-visible:ring-2 focus-visible:ring-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {backfill === 'running' ? t('dq.backfillRunning') : t('dq.staleBackfillAction')}
               </button>
             )}
             {isAdmin && backfill === 'done' && <span>{t('dq.backfillDone')}</span>}
