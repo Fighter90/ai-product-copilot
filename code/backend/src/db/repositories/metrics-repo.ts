@@ -156,6 +156,13 @@ function coverageWindow(
   return { from: minDate, to: maxDate, days };
 }
 
+/**
+ * ANA-148: TTL of the in-process derived-stats read cache (the issue allows 60–120s). A sync
+ * invalidates explicitly, so the TTL is only a safety net for out-of-band writes (e.g. the
+ * seeder running while a server stays up).
+ */
+export const STAT_CACHE_TTL_MS = 120_000;
+
 /** Repository for Metrika-derived data: goals, raw API responses, channel stats. */
 /** Rows removed by resetSyncedWindow(), keyed by table — see snapshotWindow(). */
 export interface SyncedWindowBackup {
@@ -165,7 +172,14 @@ export interface SyncedWindowBackup {
 }
 
 export class MetricsRepo {
-  constructor(private readonly db: DB) {}
+  /** ANA-148: table+range → last computed rows; dropped by every write path below. */
+  private readonly statCache = new Map<string, { at: number; rows: unknown[] }>();
+
+  constructor(
+    private readonly db: DB,
+    /** Injectable clock (tests); keeps the TTL deterministic without sleeping. */
+    private readonly now: () => number = Date.now,
+  ) {}
 
   upsertGoals(goals: readonly Goal[]): void {
     const stmt = this.db.prepare(
@@ -256,6 +270,7 @@ export class MetricsRepo {
       for (const t of tables) this.db.prepare(`DELETE FROM ${t}`).run();
     });
     tx();
+    this.invalidateStatCache();
   }
 
   /**
@@ -276,6 +291,7 @@ export class MetricsRepo {
       this.db.prepare('DELETE FROM goals').run();
     });
     tx();
+    this.invalidateStatCache();
   }
 
   /** In-memory copy of everything resetSyncedWindow() would delete — restored if a sync fails. */
@@ -299,6 +315,7 @@ export class MetricsRepo {
    * never leave the cabinet with less data than before.
    */
   restoreWindowTable(backup: SyncedWindowBackup, table: string): void {
+    this.invalidateStatCache();
     const rows = backup.tables[table];
     if (!rows) return;
     const tx = this.db.transaction(() => {
@@ -356,6 +373,7 @@ export class MetricsRepo {
       }
     });
     tx(rows);
+    this.invalidateStatCache();
   }
 
   /**
@@ -377,13 +395,30 @@ export class MetricsRepo {
    * must never blend into real Metrika reads and distort trends/KPIs. A demo-only scope (fresh
    * ./run.sh without a token) still serves the demo dataset so the cabinet stays usable — the
    * mappers keep isDemo on those rows so the UI can badge them «ДЕМО».
+   *
+   * Reads go through a small in-process TTL cache keyed by table+range (ANA-148): the dashboard
+   * polls /metrics/utm repeatedly and the 1-CPU prod served each poll with a fresh query. The
+   * cache holds exactly what a fresh read returned (anti-hallucination: numbers stay traceable
+   * to SQLite), and every write path drops it via invalidateStatCache().
    */
   private selectStatRows(table: string, range?: { from: string; to: string }): unknown[] {
+    const key = `${table}|${range ? `${range.from}..${range.to}` : 'all'}`;
+    const hit = this.statCache.get(key);
+    if (hit && this.now() - hit.at < STAT_CACHE_TTL_MS) return hit.rows;
     const live = this.hasLiveRows(table, range);
     const sql = range
       ? `SELECT * FROM ${table} WHERE date >= ? AND date <= ?${live ? ' AND is_demo = 0' : ''} ORDER BY date`
       : `SELECT * FROM ${table}${live ? ' WHERE is_demo = 0' : ''} ORDER BY date`;
-    return range ? this.db.prepare(sql).all(range.from, range.to) : this.db.prepare(sql).all();
+    const rows = range
+      ? this.db.prepare(sql).all(range.from, range.to)
+      : this.db.prepare(sql).all();
+    this.statCache.set(key, { at: this.now(), rows });
+    return rows;
+  }
+
+  /** ANA-148: every write into the derived stat tables drops the whole read cache. */
+  private invalidateStatCache(): void {
+    this.statCache.clear();
   }
 
   listChannelStats(range?: { from: string; to: string }): ChannelStat[] {
@@ -413,6 +448,7 @@ export class MetricsRepo {
       }
     });
     tx(rows);
+    this.invalidateStatCache();
   }
 
   listUtmStats(range?: { from: string; to: string }): UtmStat[] {
@@ -440,6 +476,7 @@ export class MetricsRepo {
       }
     });
     tx(rows);
+    this.invalidateStatCache();
   }
 
   listGeoDeviceStats(range?: { from: string; to: string }): GeoDeviceStat[] {
@@ -467,6 +504,7 @@ export class MetricsRepo {
       }
     });
     tx(rows);
+    this.invalidateStatCache();
   }
 
   listPageStats(range?: { from: string; to: string }): PageStat[] {
@@ -494,6 +532,7 @@ export class MetricsRepo {
       }
     });
     tx(rows);
+    this.invalidateStatCache();
   }
 
   listExitPageStats(range?: { from: string; to: string }): PageStat[] {
@@ -605,5 +644,6 @@ export class MetricsRepo {
       for (const t of tables) this.db.prepare(`DELETE FROM ${t} WHERE is_demo = 1`).run();
     });
     tx();
+    this.invalidateStatCache();
   }
 }

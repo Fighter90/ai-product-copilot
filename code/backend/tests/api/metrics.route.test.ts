@@ -274,3 +274,66 @@ describe('GET /api/metrics/goal-roles', () => {
     ctx.db.close();
   });
 });
+
+// ANA-148: GET /api/metrics/utm took ~10s on the 1-CPU prod. The repo caches the derived-stat
+// reads with a short TTL; here we prove the route serves repeats from that cache and that a
+// sync (resetSyncedWindow + upserts) makes fresh rows visible on the very next GET.
+describe('GET /api/metrics/utm — response cache (ANA-148)', () => {
+  const row = (date: string, source: string, campaign: string) => ({
+    date,
+    utmSource: source,
+    utmMedium: 'cpc',
+    utmCampaign: campaign,
+    visits: 80,
+    users: 70,
+    goalReaches: 4,
+    conversionRate: 0.05,
+  });
+
+  it('serves the repeat GET from the cache and refreshes after a sync invalidation', async () => {
+    const ctx = buildTestApp();
+    ctx.deps.metrics.upsertUtmStats([row('2025-01-01', 'vk', 'spring')]);
+    const first = await ctx.app.inject({ method: 'GET', url: '/api/metrics/utm' });
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toHaveLength(1);
+
+    // The row vanishes from SQLite OUTSIDE the repo (no invalidation ran) — the repeat GET
+    // is still served from the cache: the «повторный GET < 300мс» acceptance criterion.
+    ctx.db.prepare('DELETE FROM utm_stats').run();
+    const second = await ctx.app.inject({ method: 'GET', url: '/api/metrics/utm' });
+    expect(second.json()).toEqual(first.json());
+
+    // A sync invalidates via resetSyncedWindow, then re-seeds the tables — the fresh rows
+    // (here: only tg) are visible on the very next GET, never the pre-sync payload.
+    ctx.deps.metrics.resetSyncedWindow('2025-01-01', '2025-01-31');
+    ctx.deps.metrics.upsertUtmStats([row('2025-01-02', 'tg', 'launch')]);
+    const third = await ctx.app.inject({ method: 'GET', url: '/api/metrics/utm' });
+    expect(third.json()).toHaveLength(1);
+    expect((third.json() as Array<{ utmSource: string }>)[0]?.utmSource).toBe('tg');
+
+    await ctx.app.close();
+    ctx.db.close();
+  });
+
+  it('caches each date range separately (from/to GETs never bleed into each other)', async () => {
+    const ctx = buildTestApp();
+    ctx.deps.metrics.upsertUtmStats([
+      row('2025-01-01', 'vk', 'spring'),
+      row('2025-01-09', 'tg', 'launch'),
+    ]);
+    const url = (from: string, to: string) => `/api/metrics/utm?from=${from}&to=${to}`;
+    const jan01 = await ctx.app.inject({ method: 'GET', url: url('2025-01-01', '2025-01-01') });
+    const jan09 = await ctx.app.inject({ method: 'GET', url: url('2025-01-09', '2025-01-09') });
+    expect((jan01.json() as Array<{ utmSource: string }>).map((r) => r.utmSource)).toEqual(['vk']);
+    expect((jan09.json() as Array<{ utmSource: string }>).map((r) => r.utmSource)).toEqual(['tg']);
+
+    ctx.db.prepare('DELETE FROM utm_stats').run();
+    const repeat01 = await ctx.app.inject({ method: 'GET', url: url('2025-01-01', '2025-01-01') });
+    const repeat09 = await ctx.app.inject({ method: 'GET', url: url('2025-01-09', '2025-01-09') });
+    expect(repeat01.json()).toEqual(jan01.json());
+    expect(repeat09.json()).toEqual(jan09.json());
+
+    await ctx.app.close();
+    ctx.db.close();
+  });
+});

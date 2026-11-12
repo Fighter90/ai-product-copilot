@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { DB } from '../../src/db/connection';
-import { MetricsRepo } from '../../src/db/repositories/metrics-repo';
+import { MetricsRepo, STAT_CACHE_TTL_MS } from '../../src/db/repositories/metrics-repo';
 import { B2bRepo } from '../../src/db/repositories/b2b-repo';
 import { B2cPaymentsRepo } from '../../src/db/repositories/b2c-payments-repo';
 import { freshDb } from './helpers';
@@ -541,5 +541,87 @@ describe('MetricsRepo — demo/live read separation (ANA-142)', () => {
       pages: null,
       exitPages: null,
     });
+  });
+});
+
+// ANA-148: GET /api/metrics/utm answered in ~10s on the 1-CPU prod. The repo keeps a small
+// in-process TTL cache over the derived-stat reads (each table+range key) so repeated GETs —
+// the dashboard polls — never re-query SQLite; every write path (sync window reset, upserts,
+// failed-sync restore, demo cleanup) drops the cache, so data never goes stale past one write.
+describe('MetricsRepo — derived-stats response cache (ANA-148)', () => {
+  /** A repo over a fresh DB with an injectable clock (TTL tests must not sleep). */
+  function cachedRepo(): { db: ReturnType<typeof freshDb>; repo: MetricsRepo; tick: () => void } {
+    let t = 1_000_000;
+    const db = freshDb();
+    return { db, repo: new MetricsRepo(db, () => t), tick: () => (t += STAT_CACHE_TTL_MS + 1) };
+  }
+
+  it('serves repeated reads from the cache and expires after the TTL', () => {
+    const { db, repo, tick } = cachedRepo();
+    try {
+      repo.upsertUtmStats([utm('2025-01-01'), utm('2025-01-09', { utmCampaign: 'summer' })]);
+      const first = repo.listUtmStats();
+      expect(first).toHaveLength(2);
+      // The rows vanish from SQLite OUTSIDE the repo (a raw write bypasses invalidation) —
+      // the repeat read is served from the cache: the <300ms acceptance on repeat GETs.
+      db.prepare('DELETE FROM utm_stats').run();
+      expect(repo.listUtmStats()).toEqual(first);
+      // Past the TTL the cached copy expires and the fresh (now empty) DB shows through.
+      tick();
+      expect(repo.listUtmStats()).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('keys the cache per date range (ranged GETs never bleed into each other)', () => {
+    const { db, repo } = cachedRepo();
+    try {
+      repo.upsertUtmStats([utm('2025-01-01'), utm('2025-01-09', { utmCampaign: 'summer' })]);
+      const day1 = repo.listUtmStats({ from: '2025-01-01', to: '2025-01-01' });
+      const day9 = repo.listUtmStats({ from: '2025-01-09', to: '2025-01-09' });
+      expect(day1.map((r) => r.utmCampaign)).toEqual(['spring']);
+      expect(day9.map((r) => r.utmCampaign)).toEqual(['summer']);
+      db.prepare('DELETE FROM utm_stats').run();
+      expect(repo.listUtmStats({ from: '2025-01-01', to: '2025-01-01' })).toEqual(day1);
+      expect(repo.listUtmStats({ from: '2025-01-09', to: '2025-01-09' })).toEqual(day9);
+      // A range that was never cached reads fresh from the DB.
+      expect(repo.listUtmStats({ from: '2025-01-02', to: '2025-01-03' })).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('every write path invalidates the cache (sync / upserts / demo cleanup)', () => {
+    const { db, repo } = cachedRepo();
+    try {
+      const writePaths: Array<[string, () => void]> = [
+        ['upsertUtmStats', () => repo.upsertUtmStats([utm('2025-01-05', { utmCampaign: 'next' })])],
+        ['upsertChannelStats', () => repo.upsertChannelStats([stat('2025-01-05')])],
+        ['upsertGeoDeviceStats', () => repo.upsertGeoDeviceStats([geo('2025-01-05')])],
+        ['upsertPageStats', () => repo.upsertPageStats([page('2025-01-05')])],
+        ['upsertExitPageStats', () => repo.upsertExitPageStats([page('2025-01-05')])],
+        ['resetSyncedWindow', () => repo.resetSyncedWindow('2025-01-01', '2025-01-31')],
+        ['resetSyncedData', () => repo.resetSyncedData()],
+        [
+          'restoreWindow',
+          () => repo.restoreWindow(repo.snapshotWindow('2025-01-01', '2025-01-31')),
+        ],
+        ['deleteDemoRows', () => repo.deleteDemoRows()],
+      ];
+      for (const [name, write] of writePaths) {
+        db.prepare('DELETE FROM utm_stats').run(); // clean slate (previous iteration leftovers)
+        repo.upsertUtmStats([utm('2025-01-01')]);
+        expect(repo.listUtmStats().map((r) => r.date)).toEqual(['2025-01-01']); // warm the cache
+        // A raw DELETE outside the repo is invisible to a non-invalidated cache.
+        db.prepare('DELETE FROM utm_stats').run();
+        write();
+        const dates = repo.listUtmStats().map((r) => r.date);
+        if (name === 'upsertUtmStats') expect(dates).toEqual(['2025-01-05']);
+        else expect(dates).toEqual([]); // cache invalidated → the DB truth shows through
+      }
+    } finally {
+      db.close();
+    }
   });
 });
