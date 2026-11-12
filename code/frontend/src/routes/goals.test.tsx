@@ -148,6 +148,24 @@ describe('KPI & forecast (GoalsView)', () => {
     expectNoCyrillic(container);
   });
 
+  it('ANA-142: shows the honest data window on the KPI page («данных N дней (с …)»)', () => {
+    // Live counter data starts 2026-11-06 — the seeded 2025 «history» must not stretch it.
+    view({ coverageFrom: '2026-11-06', coverageDays: 7 });
+    expect(screen.getByTestId('kpi-data-window')).toHaveTextContent(/Данных 7 дн\. \(с /);
+  });
+
+  it('ANA-142: no data-window line while coverage is unknown', () => {
+    view({ coverageFrom: null, coverageDays: null });
+    expect(screen.queryByTestId('kpi-data-window')).not.toBeInTheDocument();
+  });
+
+  it('ANA-142: the data-window line renders without Cyrillic in en', () => {
+    setTestLocale('en');
+    const { container } = view({ coverageFrom: '2026-11-06', coverageDays: 7 });
+    expect(screen.getByTestId('kpi-data-window')).toHaveTextContent(/Data for 7 days \(since /);
+    expectNoCyrillic(container);
+  });
+
   it('REG-17 (ANA-105): the forecast note equals the расчёт — deadline, window and base from the same inputs', () => {
     view();
     // Same расчёт the panel runs (forecastGoal on the same points/to/target, zero scenario).

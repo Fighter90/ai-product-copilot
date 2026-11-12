@@ -465,3 +465,81 @@ describe('MetricsRepo — demo marks (ANA-18)', () => {
     expect(repo.demoStatus().demo).toBe(false);
   });
 });
+
+// ANA-142: seeded demo history (is_demo = 1, prod has 2025-04-29..2025-12-31) must never blend
+// into live Metrika reads (the counter only lives from 2026-11-06). Read paths return live rows
+// when any exist in scope; a demo-only scope still serves the demo dataset — flagged isDemo so
+// the UI can badge it («ДЕМО»). Coverage (the KPI base) is measured over live rows first, so the
+// KPI page says «данных N дней (с 2026-11-06)» instead of counting the seeded 2025 «history».
+describe('MetricsRepo — demo/live read separation (ANA-142)', () => {
+  const demo = { isDemo: true } as const;
+
+  it('listChannelStats returns live rows only when the table mixes live and demo', () => {
+    repo.upsertChannelStats([
+      stat('2025-04-29', demo),
+      stat('2026-11-06'),
+      stat('2026-11-07', {
+        channel: 'direct',
+        utmSource: null,
+        utmMedium: null,
+        utmCampaign: null,
+      }),
+    ]);
+    const rows = repo.listChannelStats();
+    expect(rows.map((r) => r.date)).toEqual(['2026-11-06', '2026-11-07']);
+    expect(rows.every((r) => !r.isDemo)).toBe(true);
+    // A range over the live window → live rows only, demo history never leaks in.
+    const ranged = repo.listChannelStats({ from: '2026-11-01', to: '2026-11-30' });
+    expect(ranged.map((r) => r.date)).toEqual(['2026-11-06', '2026-11-07']);
+  });
+
+  it('a demo-only scope still serves demo rows, flagged isDemo (fresh ./run.sh keeps its badge)', () => {
+    repo.upsertChannelStats([stat('2025-04-29', demo), stat('2025-04-30', demo)]);
+    const all = repo.listChannelStats();
+    expect(all).toHaveLength(2);
+    expect(all.every((r) => r.isDemo === true)).toBe(true);
+    const ranged = repo.listChannelStats({ from: '2025-04-29', to: '2025-04-30' });
+    expect(ranged).toHaveLength(2);
+    expect(ranged.every((r) => r.isDemo === true)).toBe(true);
+  });
+
+  it('listUtmStats/listGeoDeviceStats/listPageStats/listExitPageStats hide demo when live exists', () => {
+    repo.upsertUtmStats([utm('2025-04-29', demo), utm('2026-11-06')]);
+    repo.upsertGeoDeviceStats([geo('2025-04-29', demo), geo('2026-11-06')]);
+    repo.upsertPageStats([page('2025-04-29', demo), page('2026-11-06', { page: '/lp' })]);
+    repo.upsertExitPageStats([
+      page('2025-04-29', { ...demo, page: '/checkout' }),
+      page('2026-11-06', { page: '/exit' }),
+    ]);
+    expect(repo.listUtmStats().map((r) => r.date)).toEqual(['2026-11-06']);
+    expect(repo.listGeoDeviceStats().map((r) => r.date)).toEqual(['2026-11-06']);
+    expect(repo.listPageStats().map((r) => r.date)).toEqual(['2026-11-06']);
+    expect(repo.listExitPageStats().map((r) => r.date)).toEqual(['2026-11-06']);
+    // Demo-only range → demo rows come back with the isDemo flag (never silently unmarked).
+    const demoUtm = repo.listUtmStats({ from: '2025-04-29', to: '2025-04-29' });
+    expect(demoUtm).toHaveLength(1);
+    expect(demoUtm[0]?.isDemo).toBe(true);
+  });
+
+  it('statsCoverage measures the KPI base from the first LIVE day (not the seeded 2025 history)', () => {
+    repo.upsertChannelStats([stat('2025-04-29', demo), stat('2026-11-06'), stat('2026-11-12')]);
+    expect(repo.statsCoverage()).toEqual({ from: '2026-11-06', to: '2026-11-12', days: 7 });
+  });
+
+  it('statsCoverage falls back to the demo window on a demo-only DB (./run.sh without a token)', () => {
+    repo.upsertChannelStats([stat('2025-11-01', demo), stat('2025-11-05', demo)]);
+    expect(repo.statsCoverage()).toEqual({ from: '2025-11-01', to: '2025-11-05', days: 5 });
+  });
+
+  it('statsCoverageTables reports per-table windows over live rows (FilterBar «Догрузить»)', () => {
+    repo.upsertChannelStats([stat('2025-04-29', demo), stat('2026-11-06'), stat('2026-11-07')]);
+    repo.upsertUtmStats([utm('2025-04-29', demo), utm('2026-11-06')]);
+    expect(repo.statsCoverageTables()).toEqual({
+      channels: { from: '2026-11-06', to: '2026-11-07' },
+      utm: { from: '2026-11-06', to: '2026-11-06' },
+      geoDevice: null,
+      pages: null,
+      exitPages: null,
+    });
+  });
+});

@@ -314,6 +314,8 @@ export const ru = {
   'kpi.lowUtm': 'Низкое покрытие UTM: {pct}% (порог 70%) — часть трафика не атрибутирована.',
   'kpi.lowUtmShort': 'Низкое покрытие UTM: {pct} (порог 70%)',
   'kpi.ticketGoal': 'Цель (платных билетов)',
+  // ANA-142: честная база KPI — только реальные данные Метрики (с первого реального дня).
+  'kpi.dataWindow': 'Данных {days} дн. (с {date})',
   'kpi.whatif.title': 'Что если',
   'kpi.whatif.hint':
     'Прогноз по линейному темпу достижений цели за выбранный период. Сценарии — прикидка, не факт: Метрика не покрывает шаг заявка→оплата.',
@@ -1698,6 +1700,8 @@ export const en: Record<DictKey, string> = {
   'kpi.lowUtm': 'Low UTM coverage: {pct}% (threshold 70%) — some traffic is not attributed.',
   'kpi.lowUtmShort': 'Low UTM coverage: {pct} (threshold 70%)',
   'kpi.ticketGoal': 'Goal (paid tickets)',
+  // ANA-142: honest KPI base — real Metrika data only (from the first real day).
+  'kpi.dataWindow': 'Data for {days} days (since {date})',
   'kpi.whatif.title': 'What if',
   'kpi.whatif.hint':
     'Linear pace forecast from goal reaches over the selected period. Scenarios are estimates, not facts: Metrika does not track the application→payment step.',

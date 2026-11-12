@@ -371,6 +371,7 @@ export function GoalsView({
   b2cPaid = 0,
   eventDate,
   coverageFrom,
+  coverageDays,
 }: {
   status: QueryStatus;
   target: number;
@@ -393,8 +394,13 @@ export function GoalsView({
   eventDate?: string;
   /** REG-04 (ANA-93): first cached day (GET /api/metrics/coverage); null → coverage unknown. */
   coverageFrom?: string | null;
+  /**
+   * ANA-142: honest KPI-base size in days (GET /api/metrics/coverage) — live rows only, so the
+   * seeded demo «history» never stretches it. Shown next to coverageFrom; null hides the line.
+   */
+  coverageDays?: number | null;
 }): JSX.Element {
-  const { t } = useT();
+  const { t, locale } = useT();
   if (status === 'pending') return <p className="text-slate-500">{t('common.loading')}</p>;
   if (status === 'error')
     return (
@@ -419,7 +425,19 @@ export function GoalsView({
 
   return (
     <section className="space-y-6">
-      <h2 className="text-lg font-semibold">{t('an.kpi.title')}</h2>
+      <div>
+        <h2 className="text-lg font-semibold">{t('an.kpi.title')}</h2>
+        {/* ANA-142: the honest KPI base — real Metrika data only, from its first real day
+            (the seeded demo «history» is hidden by the backend read paths and never counts in). */}
+        {coverageFrom && coverageDays != null && (
+          <p className="mt-1 text-xs text-slate-500" data-testid="kpi-data-window">
+            {t('kpi.dataWindow', {
+              days: formatInt(coverageDays),
+              date: fmtDate(coverageFrom, locale),
+            })}
+          </p>
+        )}
+      </div>
 
       {/* Main goal ring */}
       <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
@@ -698,6 +716,7 @@ export function Goals(): JSX.Element {
       b2cPaid={paymentsQ.data?.b2cPaid ?? 0}
       eventDate={eventDate}
       coverageFrom={coverageQ.data?.from ?? null}
+      coverageDays={coverageQ.data?.days ?? null}
     />
   );
 }
