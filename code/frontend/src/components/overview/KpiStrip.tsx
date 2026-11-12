@@ -118,7 +118,9 @@ export function KpiStrip({
                   <a href="#weak-spots" className="font-semibold text-red-700 hover:underline">
                     {channelName(weakSpot.channel, locale)}
                   </a>{' '}
-                  <span className="whitespace-nowrap text-slate-500">
+                  {/* ANA-146: no whitespace-nowrap here — on a 390px viewport this chunk is the
+                      only unbreakable run on the page; letting it wrap keeps /app scroll-free. */}
+                  <span className="text-slate-500">
                     {t('ov.hero.weakSpotDetail', {
                       cr: formatPercent(weakSpot.conversionRate),
                       visits: formatInt(weakSpot.visits),

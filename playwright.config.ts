@@ -22,10 +22,15 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
       testIgnore: /mobile\.spec\.ts/,
     },
-    // Mobile (iPhone 14, 390×844) runs only the dedicated mobile spec.
+    // Mobile: iPhone 14 profile (390×844, touch, mobile UA) on chromium.
+    // ANA-146: the project used to inherit webkit from devices['iPhone 14'], which made the spec
+    // unrunnable without a locally installed webkit build («Executable webkit-2370 not found»)
+    // and browser-dependent at exactly 390px (the /app overflow reproduced only under webkit;
+    // the same page is clean in the chromium prod build). browserName overrides the device's
+    // defaultBrowserType so the whole spec is deterministic on chromium everywhere.
     {
       name: 'mobile-iphone-14',
-      use: { ...devices['iPhone 14'] },
+      use: { ...devices['iPhone 14'], browserName: 'chromium' },
       testMatch: /mobile\.spec\.ts/,
     },
   ],
