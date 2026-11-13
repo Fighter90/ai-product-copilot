@@ -10,7 +10,11 @@ import type {
 /** How many rows of each breakdown the report keeps (top by visits). */
 export const TOP_N = 5;
 
-/** Aggregate UTM day-rows by source/medium/campaign, top {@link TOP_N} by visits. Deterministic. */
+/**
+ * Aggregate UTM day-rows by source/medium/campaign, top {@link TOP_N} by visits. Deterministic.
+ * `rows` is readonly because the metrics repositories already return readonly day-arrays (frozen
+ * stat cache) and feed them straight in here; this function never mutates its input.
+ */
 export function topUtm(rows: readonly UtmStat[]): UtmBreakdownRow[] {
   const map = new Map<string, UtmBreakdownRow>();
   for (const r of rows) {
