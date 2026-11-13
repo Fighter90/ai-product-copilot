@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, ExternalLink, Plug, XCircle } from 'lucide-react';
-import { v3, type ProviderView } from '../../lib/api-v3';
-import { useT, fmtDate, type DictKey } from '../../i18n';
+import { v3, type ModelInfo, type ProviderView } from '../../lib/api-v3';
+import { useT, fmtDate, fmtNum, type DictKey } from '../../i18n';
+import type { Locale } from '../../store/prefs';
 import { Card, ErrorBox, PageHeader, Pill, Skeleton } from '../../components/ui';
 
 /**
@@ -27,6 +28,17 @@ function extraLabel(ex: { key: string; label: string }, t: Translate): string {
   return key ? t(key) : ex.label;
 }
 
+/** ANA-151: `$in/$out` per 1M tokens, only when the catalog ships both prices. */
+// ANA-151 (review round 3): prices are locale-formatted, not raw template literals.
+const priceTag = (m: ModelInfo, locale: Locale): string =>
+  m.promptPricePerM !== undefined && m.completionPricePerM !== undefined
+    ? `$${fmtNum(m.promptPricePerM, locale, 2)}/$${fmtNum(m.completionPricePerM, locale, 2)}`
+    : '';
+
+/** Datalist option label: human name and per-1M price when the catalog provides them. */
+const optionText = (m: ModelInfo, locale: Locale): string =>
+  [m.name, priceTag(m, locale)].filter(Boolean).join(' · ');
+
 function ProviderCard({ p }: { p: ProviderView }): JSX.Element {
   const { t, locale } = useT();
   const qc = useQueryClient();
@@ -38,6 +50,20 @@ function ProviderCard({ p }: { p: ProviderView }): JSX.Element {
   );
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(p.lastTest);
   const refresh = () => qc.invalidateQueries({ queryKey: ['providers'] });
+
+  // ANA-151: полный каталог моделей провайдера; пока он не загрузился (или недоступен) —
+  // короткий список из PROVIDER_META. Free-text ввод сохраняется в любом случае.
+  const catalog = useQuery({
+    queryKey: ['provider-models', p.id],
+    queryFn: () => v3.providerModels(p.id),
+    // зеркалит 1ч кэш бэкенда — список почти статичен в рамках сессии.
+    staleTime: 60 * 60 * 1000,
+  });
+  const catalogModels = catalog.data?.models ?? [];
+  const options: ModelInfo[] =
+    catalogModels.length > 0 ? catalogModels : p.models.map((id) => ({ id }));
+  const selected = catalogModels.find((m) => m.id === model);
+  const hint = selected ? priceTag(selected, locale) : '';
 
   const save = useMutation({
     mutationFn: (patch: Parameters<typeof v3.updateProvider>[1]) => v3.updateProvider(p.id, patch),
@@ -111,11 +137,20 @@ function ProviderCard({ p }: { p: ProviderView }): JSX.Element {
             value={model}
             onChange={(e) => setModel(e.target.value)}
           />
+          {/* ANA-151: datalist из ПОЛНОГО каталога (для OpenRouter — сотни моделей, native search);
+              name/цена за 1M — подсказка в опциях; свободный ввод кастомных моделей сохранён. */}
           <datalist id={`models-${p.id}`}>
-            {p.models.map((m) => (
-              <option key={m} value={m} />
+            {options.map((m) => (
+              <option key={m.id} value={m.id}>
+                {optionText(m, locale)}
+              </option>
             ))}
           </datalist>
+          {hint && (
+            <span className="mt-1 block text-xs text-muted">
+              {hint} · {t('admin.ai.pricePerM')}
+            </span>
+          )}
         </label>
         <label className="block">
           <span className="label">{t('admin.ai.priority')}</span>

@@ -45,6 +45,16 @@ export interface ProviderView {
   updatedBy: string | null;
 }
 
+/** One entry of a provider's model catalog (ANA-151). */
+export interface ModelInfo {
+  id: string;
+  name?: string;
+  contextLength?: number;
+  /** Price per 1M tokens, USD (live OpenRouter catalog; absent in the static sets). */
+  promptPricePerM?: number;
+  completionPricePerM?: number;
+}
+
 export interface LiveSummary {
   from: string;
   to: string;
@@ -271,6 +281,9 @@ export const v3 = {
     }),
 
   providers: () => http<ProviderView[]>('/admin/ai/providers'),
+  /** ANA-151: полный каталог моделей провайдера (live для OpenRouter, статический для остальных). */
+  providerModels: (id: ProviderView['id']) =>
+    http<{ source: 'live' | 'static'; models: ModelInfo[] }>(`/admin/ai/providers/${id}/models`),
   updateProvider: (
     id: ProviderView['id'],
     patch: {

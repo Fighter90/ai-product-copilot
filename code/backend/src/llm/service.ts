@@ -12,6 +12,7 @@ import {
   type ProviderConfig,
   type ProviderId,
 } from './providers';
+import { ModelCatalog, type ModelInfo } from './model-catalog';
 
 interface ProviderRow {
   id: ProviderId;
@@ -86,6 +87,8 @@ export const PURPOSE_TIMEOUT_MS: Readonly<Record<string, number>> = {
  */
 export class LlmService {
   private readonly retry: Required<RetryOptions>;
+  /** ANA-151: admin-side catalog — live OpenRouter (1h cache) or the extended static sets. */
+  private readonly catalog: ModelCatalog;
 
   constructor(
     private readonly db: DB,
@@ -100,6 +103,7 @@ export class LlmService {
       maxRetryAfterMs: retry.maxRetryAfterMs ?? 10_000,
       sleep: retry.sleep ?? realSleep,
     };
+    this.catalog = new ModelCatalog(fetchFn, () => this.now().getTime());
   }
 
   /** Create rows for all providers; seed secrets from env on first run. */
@@ -201,6 +205,14 @@ export class LlmService {
     return this.rows()
       .filter((r) => this.usable(r))
       .map((r) => ({ id: r.id, name: PROVIDER_META[r.id].name, model: r.model }));
+  }
+
+  /**
+   * ANA-151: full model catalog for the admin combobox — live OpenRouter (public endpoint, no key,
+   * 1h cache) or the extended static set. Read-only, never touches the stored secrets.
+   */
+  providerModels(id: ProviderId): Promise<{ source: 'live' | 'static'; models: ModelInfo[] }> {
+    return this.catalog.get(id);
   }
 
   update(id: ProviderId, patch: ProviderUpdate, by: string): ProviderView | undefined {

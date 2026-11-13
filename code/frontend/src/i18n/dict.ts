@@ -239,6 +239,8 @@ export const ru = {
   // REG-13: бэкенд отдаёт эти подписи только по-русски — UI подменяет их через i18n (EN-паритет).
   'admin.ai.secretYandexGPT': 'API-ключ (секретная часть)',
   'admin.ai.extraFolderId': 'ID каталога (folder ID)',
+  // ANA-151: цена выбранной модели из живого каталога (вход / выход за 1M токенов).
+  'admin.ai.pricePerM': 'цена за 1M токенов (вход / выход)',
 
   'admin.metrika.title': 'Метрика и данные',
   'admin.metrika.subtitle':
@@ -1631,6 +1633,8 @@ export const en: Record<DictKey, string> = {
   // REG-13: `PROVIDER_META` labels arrive from the backend in Russian — re-mapped here for parity.
   'admin.ai.secretYandexGPT': 'API key (secret part)',
   'admin.ai.extraFolderId': 'Folder ID',
+  // ANA-151: price of the selected model from the live catalog (input / output per 1M tokens).
+  'admin.ai.pricePerM': 'price per 1M tokens (input / output)',
 
   'admin.metrika.title': 'Metrika & data',
   'admin.metrika.subtitle':
