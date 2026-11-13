@@ -403,4 +403,76 @@ describe('Hypotheses page', () => {
       ),
     );
   });
+
+  // ---- ANA-152: «Посмотреть» on the card opens a read-only popup with the full description ----
+
+  it('ANA-152: «Посмотреть» opens a read-only popup with the full hypothesis; «Редактировать» hands over to the editor', async () => {
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    const card = await screen.findByTestId('hyp-card-2');
+    fireEvent.click(within(card).getByTestId('hyp-view-btn'));
+
+    const modal = await screen.findByTestId('hyp-view-modal');
+    expect(modal).toHaveTextContent('BBB высокий'); // the full title, not a truncated card one
+    expect(modal).toHaveTextContent('Решение'); // kind pill
+    expect(modal).toHaveTextContent('В проверке'); // status pill
+    expect(modal).toHaveTextContent('Подкаст'); // subject
+    expect(modal).toHaveTextContent('сократим форму'); // action
+    expect(modal).toHaveTextContent('один шаг'); // solution
+    expect(modal).toHaveTextContent('CR вырастет'); // condition = критерий
+    expect(modal).toHaveTextContent('ICE = 729');
+    expect(modal).toHaveTextContent('Зелёный'); // traffic light expanded, not tooltip-only
+    expect(within(modal).getAllByText('Обоснование').length).toBeGreaterThanOrEqual(3);
+    expect(within(modal).getByRole('button', { name: 'Редактировать' })).toBeInTheDocument();
+
+    // «Редактировать» opens the existing editor — the view popup closes, nothing is duplicated.
+    fireEvent.click(within(modal).getByRole('button', { name: 'Редактировать' }));
+    expect(await screen.findByTestId('hypothesis-editor')).toBeInTheDocument();
+    expect(screen.queryByTestId('hyp-view-modal')).not.toBeInTheDocument();
+  });
+
+  it('ANA-152: a problem hypothesis shows the trouble formula and evidence quotes; Esc closes', async () => {
+    mockData({
+      list: [
+        h({
+          id: 9,
+          kind: 'problem',
+          title: 'Подкаст: низкая конверсия',
+          description: 'Подкаст испытывает низкую конверсию при записи, потому что форма длинная.',
+          impactRationale: 'много визитов',
+          confidenceRationale: 'данные Метрики',
+          easeRationale: 'готовый блок',
+          greenCriteria: 'CR ≥ 5% за 2 недели',
+          evidence: [{ type: 'ai', note: 'CR 0,7%', slice: 'snapshot:snap-1' }],
+          status: 'draft',
+        }),
+      ],
+    });
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    fireEvent.click(await screen.findByTestId('hyp-view-btn'));
+
+    const modal = await screen.findByTestId('hyp-view-modal');
+    expect(modal).toHaveTextContent('Проблема'); // kind
+    expect(modal).toHaveTextContent('испытывает низкую конверсию'); // the trouble (description)
+    expect(modal).toHaveTextContent('много визитов'); // ICE rationales expanded in the popup
+    expect(modal).toHaveTextContent('CR ≥ 5% за 2 недели'); // green criterion
+    expect(modal).toHaveTextContent('CR 0,7%'); // evidence quote from the analysis
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('hyp-view-modal')).not.toBeInTheDocument();
+  });
+
+  it('ANA-152: mobile 390px — the popup keeps the fit contract (bottom sheet + inner scroll)', async () => {
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    fireEvent.click((await screen.findAllByTestId('hyp-view-btn'))[0]!);
+    await screen.findByTestId('hyp-view-modal');
+    // jsdom computes no layout, so the 390px fit is asserted as a styling contract here;
+    // the real layout check lives in e2e/mobile.spec.ts (390×844, no horizontal overflow).
+    expect(screen.getByRole('dialog')).toHaveClass('w-full', 'min-w-0', 'max-w-lg');
+    expect(screen.getByRole('dialog').parentElement).toHaveClass('items-end', 'sm:items-center');
+    expect(screen.getByTestId('hyp-view-modal')).toHaveClass(
+      'max-h-[70vh]',
+      'overflow-y-auto',
+      'overflow-x-hidden',
+    );
+  });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowUpDown, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowUpDown, Eye, Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   ASSUMPTION_CATEGORIES,
   iceScore,
@@ -28,6 +28,7 @@ import {
   draftOf,
   type HypothesisDraft,
 } from '../../components/hypotheses/HypothesisEditor';
+import { HypothesisViewModal } from '../../components/hypotheses/HypothesisViewModal';
 import { KANBAN_COLUMNS, STATUS_KEY, statusTone } from '../../components/hypotheses/labels';
 import { hypothesesApi } from '../../lib/hypotheses-api';
 import { api } from '../../lib/api';
@@ -122,6 +123,8 @@ export function Hypotheses(): JSX.Element {
   const [editing, setEditing] = useState<Editing | null>(null);
   // БАГ-15 removal-UX: deletion is confirmed by the styled ConfirmDialog, not window.confirm().
   const [pendingDelete, setPendingDelete] = useState<Hypothesis | null>(null);
+  // ANA-152: the card's «Посмотреть» opens this hypothesis in a read-only popup.
+  const [viewing, setViewing] = useState<Hypothesis | null>(null);
   // ANA-129: the take-into-work checklist — a draft without the full format cannot move.
   const [checklistFor, setChecklistFor] = useState<Hypothesis | null>(null);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'iceScore', dir: -1 });
@@ -328,6 +331,16 @@ export function Hypotheses(): JSX.Element {
                       <span className="flex items-center gap-1">
                         <button
                           type="button"
+                          data-testid="hyp-view-btn"
+                          className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-muted hover:text-accent"
+                          title={t('hyp.view')}
+                          onClick={() => setViewing(h)}
+                        >
+                          <Eye className="h-3.5 w-3.5" aria-hidden />
+                          {t('hyp.view')}
+                        </button>
+                        <button
+                          type="button"
                           aria-label={t('hyp.edit')}
                           title={t('hyp.edit')}
                           className="rounded p-1 text-muted hover:text-accent"
@@ -484,6 +497,17 @@ export function Hypotheses(): JSX.Element {
           onClose={() => setEditing(null)}
           onSave={async (body) => {
             await saveMut.mutateAsync({ id: editing.id, body });
+          }}
+        />
+      )}
+
+      {viewing !== null && (
+        <HypothesisViewModal
+          hypothesis={viewing}
+          onClose={() => setViewing(null)}
+          onEdit={(h) => {
+            setViewing(null);
+            setEditing({ id: h.id, draft: draftOf(h) });
           }}
         />
       )}

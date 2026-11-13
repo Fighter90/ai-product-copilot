@@ -11,7 +11,7 @@ import type {
 export const TOP_N = 5;
 
 /** Aggregate UTM day-rows by source/medium/campaign, top {@link TOP_N} by visits. Deterministic. */
-export function topUtm(rows: UtmStat[]): UtmBreakdownRow[] {
+export function topUtm(rows: readonly UtmStat[]): UtmBreakdownRow[] {
   const map = new Map<string, UtmBreakdownRow>();
   for (const r of rows) {
     const key = `${r.utmSource}\u0000${r.utmMedium}\u0000${r.utmCampaign}`;
@@ -32,7 +32,7 @@ export function topUtm(rows: UtmStat[]): UtmBreakdownRow[] {
 }
 
 /** Aggregate geo/device day-rows by country/device, top {@link TOP_N} by visits. */
-export function topGeoDevice(rows: GeoDeviceStat[]): GeoDeviceBreakdownRow[] {
+export function topGeoDevice(rows: readonly GeoDeviceStat[]): GeoDeviceBreakdownRow[] {
   const map = new Map<string, GeoDeviceBreakdownRow>();
   for (const r of rows) {
     const key = `${r.country}\u0000${r.device}`;
@@ -52,7 +52,7 @@ export function topGeoDevice(rows: GeoDeviceStat[]): GeoDeviceBreakdownRow[] {
 }
 
 /** Aggregate page day-rows by page, visit-weighting bounce rate, top {@link TOP_N} by visits. */
-export function topPages(rows: PageStat[]): PageBreakdownRow[] {
+export function topPages(rows: readonly PageStat[]): PageBreakdownRow[] {
   const map = new Map<string, { visits: number; goalReaches: number; bounceVisits: number }>();
   for (const r of rows) {
     const cur = map.get(r.page) ?? { visits: 0, goalReaches: 0, bounceVisits: 0 };
