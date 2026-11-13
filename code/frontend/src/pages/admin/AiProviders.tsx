@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, ExternalLink, Plug, XCircle } from 'lucide-react';
 import { v3, type ModelInfo, type ProviderView } from '../../lib/api-v3';
-import { useT, fmtDate, type DictKey } from '../../i18n';
+import { useT, fmtDate, fmtNum, type DictKey } from '../../i18n';
+import type { Locale } from '../../store/prefs';
 import { Card, ErrorBox, PageHeader, Pill, Skeleton } from '../../components/ui';
 
 /**
@@ -28,13 +29,15 @@ function extraLabel(ex: { key: string; label: string }, t: Translate): string {
 }
 
 /** ANA-151: `$in/$out` per 1M tokens, only when the catalog ships both prices. */
-const priceTag = (m: ModelInfo): string =>
+// ANA-151 (review round 3): prices are locale-formatted, not raw template literals.
+const priceTag = (m: ModelInfo, locale: Locale): string =>
   m.promptPricePerM !== undefined && m.completionPricePerM !== undefined
-    ? `$${m.promptPricePerM}/$${m.completionPricePerM}`
+    ? `$${fmtNum(m.promptPricePerM, locale, 2)}/$${fmtNum(m.completionPricePerM, locale, 2)}`
     : '';
 
 /** Datalist option label: human name and per-1M price when the catalog provides them. */
-const optionText = (m: ModelInfo): string => [m.name, priceTag(m)].filter(Boolean).join(' · ');
+const optionText = (m: ModelInfo, locale: Locale): string =>
+  [m.name, priceTag(m, locale)].filter(Boolean).join(' · ');
 
 function ProviderCard({ p }: { p: ProviderView }): JSX.Element {
   const { t, locale } = useT();
@@ -60,7 +63,7 @@ function ProviderCard({ p }: { p: ProviderView }): JSX.Element {
   const options: ModelInfo[] =
     catalogModels.length > 0 ? catalogModels : p.models.map((id) => ({ id }));
   const selected = catalogModels.find((m) => m.id === model);
-  const hint = selected ? priceTag(selected) : '';
+  const hint = selected ? priceTag(selected, locale) : '';
 
   const save = useMutation({
     mutationFn: (patch: Parameters<typeof v3.updateProvider>[1]) => v3.updateProvider(p.id, patch),
@@ -139,7 +142,7 @@ function ProviderCard({ p }: { p: ProviderView }): JSX.Element {
           <datalist id={`models-${p.id}`}>
             {options.map((m) => (
               <option key={m.id} value={m.id}>
-                {optionText(m)}
+                {optionText(m, locale)}
               </option>
             ))}
           </datalist>

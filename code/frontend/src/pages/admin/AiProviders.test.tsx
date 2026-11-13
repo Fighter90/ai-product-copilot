@@ -161,7 +161,7 @@ describe('AiProviders model catalog (ANA-151)', () => {
     const nova = container.querySelector(
       '#models-openrouter option[value="vendor/nova-9"]',
     )?.textContent;
-    expect(nova).toBe('Nova 9 · $0.5/$1.5');
+    expect(nova).toBe('Nova 9 · $0,50/$1,50');
   });
 
   it('falls back to the shortlist when the catalog request fails', async () => {
@@ -181,7 +181,7 @@ describe('AiProviders model catalog (ANA-151)', () => {
     await screen.findByText('OpenRouter');
     await waitFor(() => {
       const hint = container.querySelector('label span.mt-1');
-      expect(hint?.textContent).toMatch(/\$5\/\$25 · цена за 1M токенов/);
+      expect(hint?.textContent).toMatch(/\$5[.,]00\/\$25[.,]00 · цена за 1M токенов/);
     });
   });
 
