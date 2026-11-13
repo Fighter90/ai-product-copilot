@@ -716,10 +716,10 @@ describe('MetricsRepo — coverage response cache (ANA-154)', () => {
     const { db, repo } = cachedRepo();
     try {
       repo.upsertChannelStats([stat('2025-01-01'), stat('2025-01-02', { channel: 'direct' })]);
-      repo.upsertUtmStats([utm('2025-01-01')]);
-      repo.upsertGeoDeviceStats([geo('2025-01-01')]);
-      repo.upsertPageStats([page('2025-01-01')]);
-      repo.upsertExitPageStats([page('2025-01-01')]);
+      repo.upsertUtmStats([utm('2025-01-01'), utm('2025-01-02', { utmCampaign: 'summer' })]);
+      repo.upsertGeoDeviceStats([geo('2025-01-01'), geo('2025-01-02', { device: 'desktop' })]);
+      repo.upsertPageStats([page('2025-01-01'), page('2025-01-02')]);
+      repo.upsertExitPageStats([page('2025-01-01'), page('2025-01-02')]);
       const reads = [
         ['channels', () => repo.listChannelStats()],
         ['utm', () => repo.listUtmStats()],

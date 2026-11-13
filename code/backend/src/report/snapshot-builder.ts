@@ -122,7 +122,9 @@ export class SnapshotBuilder {
         b2bPaidTickets,
         gap,
       },
-      channels,
+      // The cache array is shared+frozen (ANA-154) — the snapshot gets its own copy so the
+      // stored payload stays mutable-typed and independent of the cache's identity.
+      channels: [...channels],
       hypotheses: {
         problems: all.filter((h) => h.kind === 'problem'),
         solutions: all.filter((h) => h.kind === 'solution'),

@@ -146,6 +146,18 @@ function toChannelStat(r: ChannelRow): ChannelStat {
   };
 }
 
+/**
+ * ANA-154 (round 2): the cache hands the SAME mapped array — and the same element objects — to
+ * every caller within the TTL, so an in-place caller mutation (rows.sort(), a numeric write)
+ * would silently corrupt every later answer, including the KPI/B2B aggregates. Mapped stat rows
+ * are flat primitives, so a shallow freeze is a complete one: a mutating caller throws (strict
+ * mode) instead of poisoning the shared cache answer.
+ */
+function freezeMapped(rows: readonly unknown[]): void {
+  Object.freeze(rows);
+  for (const r of rows) Object.freeze(r);
+}
+
 /** Inclusive day count between two ISO dates (ANA-49). */
 function coverageWindow(
   minDate: string,
@@ -425,13 +437,14 @@ export class MetricsRepo {
    *
    * ANA-154: the ROW→API mapping (toChannelStat & co.) runs inside the cached path — the cache
    * stores the mapped API rows, so a repeated GET neither re-queries SQLite nor re-maps tens of
-   * thousands of rows (564-day history) per request.
+   * thousands of rows (564-day history) per request. The cached array is frozen (see
+   * freezeMapped): a mutating caller fails loudly instead of corrupting the shared answer.
    */
   private selectMapped<Raw, Out>(
     table: string,
     map: (rows: Raw[]) => Out[],
     range?: { from: string; to: string },
-  ): Out[] {
+  ): readonly Out[] {
     const key = `${table}|${range ? `${range.from}..${range.to}` : 'all'}`;
     const hit = this.statCache.get(key);
     if (hit && this.now() - hit.at < STAT_CACHE_TTL_MS) return hit.rows as Out[];
@@ -444,16 +457,22 @@ export class MetricsRepo {
       range ? this.db.prepare(sql).all(range.from, range.to) : this.db.prepare(sql).all()
     ) as Raw[];
     const rows = map(raw);
+    freezeMapped(rows as unknown[]);
     this.statCache.set(key, { at: this.now(), rows: rows as unknown[] });
     return rows;
   }
 
-  /** ANA-148: every write into the derived stat tables drops the whole read cache. */
+  /**
+   * ANA-148/154: every write into the derived stat tables drops the WHOLE read cache — the
+   * per-table/range keys AND the ANA-154 `coverage|window` / `coverage|tables` answers
+   * (Map.clear, deliberately not key-selective, so a sync's new window is visible to the
+   * coverage/ДЕМО logic on the very next read, not past the TTL).
+   */
   private invalidateStatCache(): void {
     this.statCache.clear();
   }
 
-  listChannelStats(range?: { from: string; to: string }): ChannelStat[] {
+  listChannelStats(range?: { from: string; to: string }): readonly ChannelStat[] {
     return this.selectMapped<ChannelRow, ChannelStat>(
       'channel_stats',
       (rows) => rows.map(toChannelStat),
@@ -530,7 +549,7 @@ export class MetricsRepo {
     this.invalidateStatCache();
   }
 
-  listUtmStats(range?: { from: string; to: string }): UtmStat[] {
+  listUtmStats(range?: { from: string; to: string }): readonly UtmStat[] {
     return this.selectMapped<UtmRow, UtmStat>('utm_stats', (rows) => rows.map(toUtmStat), range);
   }
 
@@ -558,7 +577,7 @@ export class MetricsRepo {
     this.invalidateStatCache();
   }
 
-  listGeoDeviceStats(range?: { from: string; to: string }): GeoDeviceStat[] {
+  listGeoDeviceStats(range?: { from: string; to: string }): readonly GeoDeviceStat[] {
     return this.selectMapped<GeoDeviceRow, GeoDeviceStat>(
       'geo_device_stats',
       (rows) => rows.map(toGeoDeviceStat),
@@ -590,7 +609,7 @@ export class MetricsRepo {
     this.invalidateStatCache();
   }
 
-  listPageStats(range?: { from: string; to: string }): PageStat[] {
+  listPageStats(range?: { from: string; to: string }): readonly PageStat[] {
     return this.selectMapped<PageRow, PageStat>(
       'page_stats',
       (rows) => rows.map(toPageStat),
@@ -622,7 +641,7 @@ export class MetricsRepo {
     this.invalidateStatCache();
   }
 
-  listExitPageStats(range?: { from: string; to: string }): PageStat[] {
+  listExitPageStats(range?: { from: string; to: string }): readonly PageStat[] {
     return this.selectMapped<PageRow, PageStat>(
       'exit_page_stats',
       (rows) => rows.map(toPageStat),
@@ -642,7 +661,8 @@ export class MetricsRepo {
    *
    * ANA-154: the whole-window MIN/MAX scans sit behind every filter-page mount and every snapshot
    * build; with the restored 564-day history each call re-scanned the stat tables on the 1-CPU
-   * prod. The answer shares the ANA-148 statCache — every write path already invalidates it.
+   * prod. The answer shares the ANA-148 statCache — every write path already invalidates it —
+   * and is frozen like the cached stat rows (shared-object hazard, see freezeMapped).
    */
   statsCoverage(): { from: string; to: string; days: number } | null {
     const key = 'coverage|window';
@@ -661,7 +681,7 @@ export class MetricsRepo {
       const any = minMax('');
       if (any.min_date && any.max_date) result = coverageWindow(any.min_date, any.max_date);
     }
-    this.statCache.set(key, { at: this.now(), rows: [result] });
+    this.statCache.set(key, { at: this.now(), rows: [Object.freeze(result)] });
     return result;
   }
 
@@ -675,7 +695,8 @@ export class MetricsRepo {
    * window — same rule as statsCoverage().
    *
    * ANA-154: cached like statsCoverage() — 10 whole-table MIN/MAX scans per call, behind every
-   * FilterBar mount; shared statCache, invalidated by every write path.
+   * FilterBar mount; shared statCache, invalidated by every write path. The answer is frozen
+   * (per-table windows + the record itself) like every cached stat read — see freezeMapped.
    */
   statsCoverageTables(): Record<string, { from: string; to: string } | null> {
     const key = 'coverage|tables';
@@ -701,6 +722,8 @@ export class MetricsRepo {
       out[keyTable] =
         win.min_date && win.max_date ? { from: win.min_date, to: win.max_date } : null;
     }
+    for (const v of Object.values(out)) Object.freeze(v); // per-table windows freeze too
+    Object.freeze(out);
     this.statCache.set(key, { at: this.now(), rows: [out] });
     return out;
   }
