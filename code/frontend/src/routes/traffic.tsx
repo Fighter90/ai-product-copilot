@@ -14,6 +14,7 @@ import {
   channelBarOption,
   channelVisitsVsReachesOption,
   channelRows,
+  untaggedChannelHint,
   LOW_UTM_COVERAGE_RATIO,
   utmCoverage,
   utmRows,
@@ -174,6 +175,7 @@ export function TrafficView({
   const utmTable = utmRows(utm);
   const channelInsights = computeChannelInsights(stats, t, locale);
   const utmInsights = computeUtmInsights(utm, stats, t);
+  const untaggedHint = untaggedChannelHint(stats);
   const channelLabel = (c: string) => channelName(c, locale);
 
   return (
@@ -181,7 +183,19 @@ export function TrafficView({
       {/* ANA-17: в сегменте без UTM-разметки (напр. b2b) оценка покрытия не имеет смысла */}
       {cov.low && utm.length > 0 ? (
         <div role="status" className="rounded bg-amber-100 px-3 py-2 text-sm text-amber-800">
-          {t('kpi.lowUtmShort', { pct: formatPercent(cov.ratio) })}
+          <p>{t('kpi.lowUtmShort', { pct: formatPercent(cov.ratio) })}</p>
+          {/* ANA-149: senior referral/ambassador teams ask WHERE the untagged traffic comes
+              from — show the top channels behind the untagged visits instead of a bare % . */}
+          {untaggedHint.length > 0 ? (
+            <p className="mt-1">
+              {t('kpi.lowUtmChannels', {
+                channels: untaggedHint
+                  .map((h) => `${channelLabel(h.channel)} — ${formatInt(h.visits)}`)
+                  .join(', '),
+              })}
+            </p>
+          ) : null}
+          <p className="mt-1">{t('kpi.lowUtmHowTo')}</p>
         </div>
       ) : null}
       {segment === 'b2b' ? (

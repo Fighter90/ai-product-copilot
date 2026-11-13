@@ -3,6 +3,7 @@ import type { ChannelStat, UtmStat } from '@pca/shared';
 import {
   utmCoverage,
   channelRows,
+  untaggedChannelHint,
   channelBarOption,
   channelVisitsVsReachesOption,
   utmRows,
@@ -75,6 +76,95 @@ describe('utmCoverage (visit-weighted from utm_stats)', () => {
     expect(cov.withoutUtm).toBe(0);
     expect(cov.ratio).toBe(1);
     expect(cov.low).toBe(false);
+  });
+});
+
+describe('untaggedChannelHint (ANA-149)', () => {
+  it('returns top channels by visits, limited', () => {
+    const rows = untaggedChannelHint(
+      [
+        {
+          date: '2026-11-06',
+          channel: 'Messenger traffic',
+          utmSource: null,
+          utmMedium: null,
+          utmCampaign: null,
+          visits: 520,
+          users: 480,
+          goalReaches: 3,
+          conversionRate: 0,
+          bounceRate: 0,
+          avgDuration: 0,
+        },
+        {
+          date: '2026-11-06',
+          channel: 'Direct traffic',
+          utmSource: null,
+          utmMedium: null,
+          utmCampaign: null,
+          visits: 300,
+          users: 280,
+          goalReaches: 1,
+          conversionRate: 0,
+          bounceRate: 0,
+          avgDuration: 0,
+        },
+        {
+          date: '2026-11-06',
+          channel: 'Link traffic',
+          utmSource: null,
+          utmMedium: null,
+          utmCampaign: null,
+          visits: 100,
+          users: 90,
+          goalReaches: 2,
+          conversionRate: 0,
+          bounceRate: 0,
+          avgDuration: 0,
+        },
+        {
+          date: '2026-11-06',
+          channel: 'Search engine traffic',
+          utmSource: null,
+          utmMedium: null,
+          utmCampaign: null,
+          visits: 60,
+          users: 55,
+          goalReaches: 0,
+          conversionRate: 0,
+          bounceRate: 0,
+          avgDuration: 0,
+        },
+      ],
+      3,
+    );
+    expect(rows).toEqual([
+      { channel: 'Messenger traffic', visits: 520 },
+      { channel: 'Direct traffic', visits: 300 },
+      { channel: 'Link traffic', visits: 100 },
+    ]);
+  });
+
+  it('returns fewer entries than the limit when channels are fewer', () => {
+    const rows = untaggedChannelHint(
+      [
+        {
+          date: '2026-11-06',
+          channel: 'Direct traffic',
+          utmSource: null,
+          utmMedium: null,
+          utmCampaign: null,
+          visits: 10,
+          users: 9,
+          goalReaches: 0,
+          conversionRate: 0,
+          bounceRate: 0,
+          avgDuration: 0,
+        },
+      ],
+      3,
+    );
+    expect(rows).toEqual([{ channel: 'Direct traffic', visits: 10 }]);
   });
 });
 

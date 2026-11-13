@@ -63,6 +63,11 @@ describe('TrafficView', () => {
       />,
     );
     expect(screen.getByRole('status')).toHaveTextContent(/Низкое покрытие UTM/);
+    // ANA-149: the banner explains WHERE untagged traffic comes from + how to tag links.
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /Немаркированный трафик в основном приходит через/,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(/UTM-метки/);
     expect(screen.getByText('Каналы — визиты')).toBeInTheDocument();
     expect(screen.getByText('podcast')).toBeInTheDocument();
     expect(screen.getByText('UTM-разбивка')).toBeInTheDocument();
