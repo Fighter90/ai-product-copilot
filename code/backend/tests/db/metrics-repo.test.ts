@@ -706,4 +706,114 @@ describe('MetricsRepo — coverage response cache (ANA-154)', () => {
       db.close();
     }
   });
+
+  // ANA-154 (round 2): the cache hands the SAME mapped array (and the same element objects) to
+  // every caller within the TTL. Previously each call received freshly mapped copies, so an
+  // in-place caller mutation was harmless; now rows.sort() or a numeric write would silently
+  // corrupt the cached KPI/B2B answer for the whole TTL. The mapped rows are frozen at cache
+  // time, so a mutating caller throws instead of poisoning every later read.
+  it('cached stat rows are frozen — a caller mutation cannot corrupt the cache (ANA-154)', () => {
+    const { db, repo } = cachedRepo();
+    try {
+      repo.upsertChannelStats([stat('2025-01-01'), stat('2025-01-02', { channel: 'direct' })]);
+      repo.upsertUtmStats([utm('2025-01-01')]);
+      repo.upsertGeoDeviceStats([geo('2025-01-01')]);
+      repo.upsertPageStats([page('2025-01-01')]);
+      repo.upsertExitPageStats([page('2025-01-01')]);
+      const reads = [
+        ['channels', () => repo.listChannelStats()],
+        ['utm', () => repo.listUtmStats()],
+        ['geoDevice', () => repo.listGeoDeviceStats()],
+        ['pages', () => repo.listPageStats()],
+        ['exitPages', () => repo.listExitPageStats()],
+      ] as const;
+      for (const [name, read] of reads) {
+        const rows = read();
+        expect(Object.isFrozen(rows), `${name}: array`).toBe(true);
+        expect(Object.isFrozen(rows[0]), `${name}: element`).toBe(true);
+        // Array-level mutation attempts throw — sort/push cannot reorder or grow what every
+        // caller (routes, SnapshotBuilder) sees.
+        expect(() => (rows as unknown[]).sort(), `${name}: sort`).toThrow(TypeError);
+        expect(() => (rows as unknown[]).push({}), `${name}: push`).toThrow(TypeError);
+        // Element-level writes throw — cached numbers cannot be silently rewritten.
+        expect(() => {
+          (rows[0] as { visits: number }).visits = 999_999;
+        }, `${name}: element write`).toThrow(TypeError);
+        // Same call, same pristine answer — the mutation attempt changed nothing.
+        expect(read(), `${name}: pristine`).toEqual(rows);
+        expect(read()[0]?.visits, `${name}: visits intact`).not.toBe(999_999);
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  // ANA-154 (round 2): statsCoverage/statsCoverageTables share the statCache — the same
+  // shared-object hazard applies to their answers, so they are frozen too.
+  it('coverage answers are frozen — a mutation cannot corrupt the cache (ANA-154)', () => {
+    const { db, repo } = cachedRepo();
+    try {
+      repo.upsertChannelStats([stat('2025-01-01'), stat('2025-01-09')]);
+      const cov = repo.statsCoverage();
+      expect(cov).toEqual({ from: '2025-01-01', to: '2025-01-09', days: 9 });
+      expect(() => {
+        (cov as { days: number }).days = 999;
+      }).toThrow(TypeError);
+      const tables = repo.statsCoverageTables();
+      expect(() => {
+        (tables.channels as { from: string }).from = '1999-01-01';
+      }).toThrow(TypeError);
+      // Same call, same pristine answers.
+      expect(repo.statsCoverage()).toEqual({ from: '2025-01-01', to: '2025-01-09', days: 9 });
+      expect(repo.statsCoverageTables().channels).toEqual({ from: '2025-01-01', to: '2025-01-09' });
+    } finally {
+      db.close();
+    }
+  });
+
+  // ANA-154 (round 2): invalidateStatCache() must clear the ENTIRE statCache — the
+  // `coverage|window` / `coverage|tables` keys included — or a sync's new window would stay
+  // hidden behind the coverage answers until the TTL (the ДЕМО-window logic lags behind the data).
+  it('every write path drops the coverage keys too — the whole statCache clears (ANA-154)', () => {
+    const { db, repo } = cachedRepo();
+    try {
+      const writePaths: Array<[string, () => void]> = [
+        ['upsertChannelStats', () => repo.upsertChannelStats([stat('2025-03-01')])],
+        ['upsertUtmStats', () => repo.upsertUtmStats([utm('2025-01-05', { utmCampaign: 'next' })])],
+        ['upsertGeoDeviceStats', () => repo.upsertGeoDeviceStats([geo('2025-01-05')])],
+        ['upsertPageStats', () => repo.upsertPageStats([page('2025-01-05')])],
+        ['upsertExitPageStats', () => repo.upsertExitPageStats([page('2025-01-05')])],
+        ['resetSyncedWindow', () => repo.resetSyncedWindow('2025-01-01', '2025-01-31')],
+        ['resetSyncedData', () => repo.resetSyncedData()],
+        [
+          'restoreWindow',
+          () => repo.restoreWindow(repo.snapshotWindow('2025-01-01', '2025-01-31')),
+        ],
+        ['deleteDemoRows', () => repo.deleteDemoRows()],
+      ];
+      for (const [name, write] of writePaths) {
+        db.prepare('DELETE FROM channel_stats').run(); // clean slate (previous iteration leftovers)
+        repo.upsertChannelStats([stat('2025-01-01')]);
+        // Warm BOTH coverage caches while the DB only knows 2025-01-01…
+        expect(repo.statsCoverage()?.from).toBe('2025-01-01');
+        expect(repo.statsCoverageTables().channels?.from).toBe('2025-01-01');
+        // …then the real window start appears OUTSIDE the repo; the warmed answers hide it.
+        rawChannelRow(db, '2024-12-01');
+        expect(repo.statsCoverage()?.from).toBe('2025-01-01');
+        expect(repo.statsCoverageTables().channels?.from).toBe('2025-01-01');
+        write();
+        if (name === 'resetSyncedData') {
+          // Everything is wiped → no coverage at all (not a stale cached window).
+          expect(repo.statsCoverage()).toBeNull();
+          expect(repo.statsCoverageTables().channels).toBeNull();
+        } else {
+          // Fresh DB truth shows through in BOTH cached answers.
+          expect(repo.statsCoverage()?.from, name).toBe('2024-12-01');
+          expect(repo.statsCoverageTables().channels?.from, name).toBe('2024-12-01');
+        }
+      }
+    } finally {
+      db.close();
+    }
+  });
 });
