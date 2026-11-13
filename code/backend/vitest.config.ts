@@ -23,6 +23,7 @@ export default defineConfig({
         'src/db/cli-migrate.ts',
         'src/db/cli-seed.ts',
         'src/metrika/cli-sync.ts',
+        'src/metrika/cli-recover.ts',
         'src/metrika/cli-auth.ts',
         'src/setup/cli-init.ts',
         'src/metrika/production-sync.ts',

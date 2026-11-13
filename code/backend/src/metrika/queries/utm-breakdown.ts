@@ -33,7 +33,11 @@ function dim(row: Row, i: number): string {
   return row.dimensions[i]?.name ?? UTM_NONE;
 }
 
-function mapRow(row: Row, opts: UtmQueryOptions): UtmStat {
+/** Row → UtmStat. Exported for the raw-payload history recovery (ANA-150), same mapping as sync. */
+export function mapRow(
+  row: Row,
+  opts: Pick<UtmQueryOptions, 'from' | 'goalId' | 'dateDimension'>,
+): UtmStat {
   const m = row.metrics;
   const hasGoal = opts.goalId !== undefined;
   return {

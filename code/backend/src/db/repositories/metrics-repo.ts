@@ -247,6 +247,28 @@ export class MetricsRepo {
     };
   }
 
+  /**
+   * ANA-150: stream raw responses fully inside [from, to] (id order), payloads parsed lazily —
+   * read-only access to the audit trail for the one-off history recovery, so thousands of stored
+   * chunks never sit in memory at once. Never writes to raw_responses.
+   */
+  *iterateRawResponsesBetween(from: string, to: string): Generator<RawResponse> {
+    const stmt = this.db.prepare(
+      'SELECT * FROM raw_responses WHERE date_from >= ? AND date_to <= ? ORDER BY id',
+    );
+    for (const r of stmt.iterate(from, to) as IterableIterator<RawRow>) {
+      yield {
+        id: r.id,
+        endpoint: r.endpoint,
+        queryHash: r.query_hash,
+        dateFrom: r.date_from,
+        dateTo: r.date_to,
+        payload: JSON.parse(r.payload),
+        fetchedAt: r.fetched_at,
+      };
+    }
+  }
+
   /** Derived per-period stat tables — all re-fetched on each sync. */
   private static readonly DERIVED_STAT_TABLES = [
     'channel_stats',
@@ -423,6 +445,49 @@ export class MetricsRepo {
 
   listChannelStats(range?: { from: string; to: string }): ChannelStat[] {
     return (this.selectStatRows('channel_stats', range) as ChannelRow[]).map(toChannelStat);
+  }
+
+  /**
+   * ANA-150: NULL-safe channel_stats upsert. SQLite treats NULLs as DISTINCT inside the
+   * (date, channel, utm_source, utm_medium, utm_campaign) key, so plain INSERT OR REPLACE cannot
+   * match an existing row whose UTM columns are NULL — writing the same chunk twice (the recovery
+   * re-run) would double every channel row instead of replacing it. The matching row is removed
+   * with an IS ? (NULL-safe) comparison before the insert; rows with any other key are untouched,
+   * so unlike resetSyncedWindow() this never wipes dates it does not restore.
+   */
+  upsertChannelStatsNullSafe(rows: readonly ChannelStat[]): void {
+    const del = this.db.prepare(
+      `DELETE FROM channel_stats
+       WHERE date = ? AND channel = ?
+         AND utm_source IS ? AND utm_medium IS ? AND utm_campaign IS ?`,
+    );
+    const ins = this.db.prepare(
+      `INSERT INTO channel_stats
+         (date, channel, utm_source, utm_medium, utm_campaign, visits, users,
+          bounce_rate, avg_duration, goal_reaches, conversion_rate, is_demo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const tx = this.db.transaction((items: readonly ChannelStat[]) => {
+      for (const c of items) {
+        del.run(c.date, c.channel, c.utmSource ?? null, c.utmMedium ?? null, c.utmCampaign ?? null);
+        ins.run(
+          c.date,
+          c.channel,
+          c.utmSource,
+          c.utmMedium,
+          c.utmCampaign,
+          c.visits,
+          c.users,
+          c.bounceRate,
+          c.avgDuration,
+          c.goalReaches,
+          c.conversionRate,
+          c.isDemo ? 1 : 0,
+        );
+      }
+    });
+    tx(rows);
+    this.invalidateStatCache();
   }
 
   upsertUtmStats(rows: readonly UtmStat[]): void {

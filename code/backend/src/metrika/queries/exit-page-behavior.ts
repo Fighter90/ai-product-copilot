@@ -10,7 +10,8 @@ import { ratio } from './ratio';
 
 type Row = StatDataResponse['data'][number];
 
-function mapRow(row: Row, opts: PageQueryOptions): PageStat {
+/** Row → PageStat (exit variant). Exported for the raw-payload history recovery (ANA-150). */
+export function mapRow(row: Row, opts: Pick<PageQueryOptions, 'from' | 'goalId'>): PageStat {
   const m = row.metrics;
   const hasGoal = opts.goalId !== undefined;
   return {
