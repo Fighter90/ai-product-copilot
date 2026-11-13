@@ -33,7 +33,11 @@ function dim(row: Row, i: number): string {
   return row.dimensions[i]?.name ?? DIMENSION_NONE;
 }
 
-function mapRow(row: Row, opts: GeoDeviceQueryOptions): GeoDeviceStat {
+/** Row → GeoDeviceStat. Exported for the raw-payload history recovery (ANA-150). */
+export function mapRow(
+  row: Row,
+  opts: Pick<GeoDeviceQueryOptions, 'from' | 'goalId' | 'dateDimension'>,
+): GeoDeviceStat {
   const m = row.metrics;
   const hasGoal = opts.goalId !== undefined;
   return {

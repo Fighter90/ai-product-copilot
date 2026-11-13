@@ -11,6 +11,7 @@
     "auth": "tsx src/metrika/cli-auth.ts",
     "configure": "tsx src/setup/cli-init.ts",
     "sync": "tsx src/metrika/cli-sync.ts",
+    "recover": "tsx src/metrika/cli-recover.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

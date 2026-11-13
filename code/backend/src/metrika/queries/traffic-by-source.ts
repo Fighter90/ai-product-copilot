@@ -27,7 +27,14 @@ export interface TrafficQueryOptions {
 
 type Row = StatDataResponse['data'][number];
 
-function mapRow(row: Row, opts: TrafficQueryOptions): ChannelStat {
+/**
+ * Row → ChannelStat. Exported for the raw-payload history recovery (ANA-150), which replays saved
+ * responses through the same mapping the sync used — one source of truth for the metric order.
+ */
+export function mapRow(
+  row: Row,
+  opts: Pick<TrafficQueryOptions, 'from' | 'goalId' | 'dateDimension'>,
+): ChannelStat {
   const m = row.metrics;
   const hasGoal = opts.goalId !== undefined;
   return {
