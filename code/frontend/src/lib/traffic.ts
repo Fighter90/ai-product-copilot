@@ -44,6 +44,21 @@ export function utmCoverage(channels: ChannelStat[], utm: UtmStat[] = []): UtmCo
   };
 }
 
+/**
+ * ANA-149: top channels behind the untagged («(none)») UTM traffic — the senior
+ * referral/ambassador team reads the low-coverage banner and asks WHERE the untagged
+ * visits come from. Channel mix is the honest approximation available: Metrika reports
+ * the traffic source category even when no UTM tags were set.
+ */
+export function untaggedChannelHint(
+  channels: ChannelStat[],
+  limit = 3,
+): Array<{ channel: string; visits: number }> {
+  return channelRows(channels)
+    .slice(0, limit)
+    .map((r) => ({ channel: r.channel, visits: r.visits }));
+}
+
 /** Aggregate per channel, highest visits first; conversionRate = reaches / visits. */
 export function channelRows(stats: ChannelStat[]): ChannelRow[] {
   const map = new Map<string, { visits: number; users: number; goalReaches: number }>();

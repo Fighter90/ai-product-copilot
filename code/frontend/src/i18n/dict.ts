@@ -315,6 +315,9 @@ export const ru = {
   'onboarding.step3': 'Соберите отчёт на странице «Отчёт» и зафиксируйте гипотезы.',
   'kpi.lowUtm': 'Низкое покрытие UTM: {pct}% (порог 70%) — часть трафика не атрибутирована.',
   'kpi.lowUtmShort': 'Низкое покрытие UTM: {pct} (порог 70%)',
+  'kpi.lowUtmChannels': 'Немаркированный трафик в основном приходит через: {channels}.',
+  'kpi.lowUtmHowTo':
+    'Чтобы визиты атрибутировались, добавляйте UTM-метки (utm_source / utm_medium / utm_campaign) в ссылки кампаний — включая ambassador- и referral-ссылки.',
   'kpi.ticketGoal': 'Цель (платных билетов)',
   // ANA-142: честная база KPI — только реальные данные Метрики (с первого реального дня).
   'kpi.dataWindow': 'Данных {days} дн. (с {date})',
@@ -1703,6 +1706,9 @@ export const en: Record<DictKey, string> = {
   'onboarding.step3': 'Build a report on the "Report" page and record hypotheses.',
   'kpi.lowUtm': 'Low UTM coverage: {pct}% (threshold 70%) — some traffic is not attributed.',
   'kpi.lowUtmShort': 'Low UTM coverage: {pct} (threshold 70%)',
+  'kpi.lowUtmChannels': 'Untagged traffic mostly arrives via: {channels}.',
+  'kpi.lowUtmHowTo':
+    'For visits to be attributed, add UTM tags (utm_source / utm_medium / utm_campaign) to campaign links — including ambassador and referral links.',
   'kpi.ticketGoal': 'Goal (paid tickets)',
   // ANA-142: honest KPI base — real Metrika data only (from the first real day).
   'kpi.dataWindow': 'Data for {days} days (since {date})',
