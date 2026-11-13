@@ -23,6 +23,13 @@ export async function llmRoutes(app: FastifyInstance, opts: LlmRouteOptions): Pr
 
   app.get('/admin/ai/providers', async () => opts.llm.list());
 
+  // ANA-151: полный каталог моделей провайдера для combobox в карточке (live для OpenRouter).
+  app.get('/admin/ai/providers/:id/models', async (req, reply) => {
+    const id = (req.params as { id: string }).id as ProviderId;
+    if (!PROVIDER_IDS.includes(id)) return reply.code(404).send({ error: 'unknown provider' });
+    return opts.llm.providerModels(id);
+  });
+
   app.put('/admin/ai/providers/:id', async (req, reply) => {
     const id = (req.params as { id: string }).id as ProviderId;
     if (!PROVIDER_IDS.includes(id)) return reply.code(404).send({ error: 'unknown provider' });

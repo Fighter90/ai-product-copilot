@@ -98,21 +98,49 @@ export const PROVIDER_META: Record<
     name: 'Anthropic',
     secretLabel: 'API key',
     extras: [],
-    models: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5', 'claude-sonnet-4-6'],
+    // ANA-151: полный набор актуальных алиасов без дат (иначе дашборд предлагает устаревшие
+    // модели). ID сверены с docs.claude.com/models/overview 2026-11-14. Статический снимок
+    // дрейфует: полный живой каталог есть только у OpenRouter; свободный ввод покрывает новые ID.
+    models: [
+      'claude-sonnet-5-5',
+      'claude-opus-5-5',
+      'claude-haiku-5-5',
+      'claude-sonnet-4-6',
+      'claude-fable-5-1',
+      'claude-opus-4-8',
+      'claude-opus-4-7',
+      'claude-opus-4-6',
+      'claude-opus-4-5',
+      'claude-haiku-4-5',
+    ],
     docs: 'https://docs.claude.com',
   },
   yandexgpt: {
     name: 'YandexGPT (AI Studio)',
     secretLabel: 'API-ключ (секретная часть)',
     extras: [{ key: 'folderId', label: 'ID каталога (folder ID)' }],
-    models: ['yandexgpt/latest', 'yandexgpt-lite/latest', 'yandexgpt/rc'],
+    // ANA-151: каталог AI Studio, ID сверены с aistudio.yandex.ru/docs 2026-11-14 (Pro 5.1 /
+    // Alice AI / открытые модели). `yandexgpt-5-lite` исключён — официально отключается
+    // 2026-11-15 (замена по докам: deepseek-v4.1-flash / qwen3.6-35b-a3b). Снимок дрейфует:
+    // живой полный каталог — только OpenRouter; свободный ввод сохранён для новых ID.
+    models: [
+      'yandexgpt/latest',
+      'yandexgpt-lite/latest',
+      'yandexgpt/rc',
+      'yandexgpt-5.1',
+      'yandexgpt-5-pro',
+      'aliceai-llm',
+      'aliceai-llm-flash',
+      'deepseek-v4.1-flash',
+      'qwen3.6-35b-a3b',
+    ],
     docs: 'https://aistudio.yandex.ru',
   },
   gigachat: {
     name: 'GigaChat',
     secretLabel: 'Authorization Key',
     extras: [{ key: 'scope', label: 'Scope (GIGACHAT_API_PERS / _B2B / _CORP)' }],
-    models: ['GigaChat-2', 'GigaChat-2-Pro', 'GigaChat-2-Max'],
+    models: ['GigaChat-2', 'GigaChat-2-Pro', 'GigaChat-2-Max', 'GigaChat-2-Lite'],
     docs: 'https://developers.sber.ru/docs/ru/gigachat/api/overview',
   },
 };
