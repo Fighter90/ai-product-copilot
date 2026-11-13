@@ -422,19 +422,29 @@ export class MetricsRepo {
    * polls /metrics/utm repeatedly and the 1-CPU prod served each poll with a fresh query. The
    * cache holds exactly what a fresh read returned (anti-hallucination: numbers stay traceable
    * to SQLite), and every write path drops it via invalidateStatCache().
+   *
+   * ANA-154: the ROW→API mapping (toChannelStat & co.) runs inside the cached path — the cache
+   * stores the mapped API rows, so a repeated GET neither re-queries SQLite nor re-maps tens of
+   * thousands of rows (564-day history) per request.
    */
-  private selectStatRows(table: string, range?: { from: string; to: string }): unknown[] {
+  private selectMapped<Raw, Out>(
+    table: string,
+    map: (rows: Raw[]) => Out[],
+    range?: { from: string; to: string },
+  ): Out[] {
     const key = `${table}|${range ? `${range.from}..${range.to}` : 'all'}`;
     const hit = this.statCache.get(key);
-    if (hit && this.now() - hit.at < STAT_CACHE_TTL_MS) return hit.rows;
+    if (hit && this.now() - hit.at < STAT_CACHE_TTL_MS) return hit.rows as Out[];
     const live = this.hasLiveRows(table, range);
-    const sql = range
-      ? `SELECT * FROM ${table} WHERE date >= ? AND date <= ?${live ? ' AND is_demo = 0' : ''} ORDER BY date`
-      : `SELECT * FROM ${table}${live ? ' WHERE is_demo = 0' : ''} ORDER BY date`;
-    const rows = range
-      ? this.db.prepare(sql).all(range.from, range.to)
-      : this.db.prepare(sql).all();
-    this.statCache.set(key, { at: this.now(), rows });
+    const demoFilter = live ? 'is_demo = 0' : '';
+    const rangeFilter = range ? 'date >= ? AND date <= ?' : '';
+    const where = [demoFilter, rangeFilter].filter(Boolean).join(' AND ');
+    const sql = `SELECT * FROM ${table}${where ? ` WHERE ${where}` : ''} ORDER BY date`;
+    const raw = (
+      range ? this.db.prepare(sql).all(range.from, range.to) : this.db.prepare(sql).all()
+    ) as Raw[];
+    const rows = map(raw);
+    this.statCache.set(key, { at: this.now(), rows: rows as unknown[] });
     return rows;
   }
 
@@ -444,7 +454,11 @@ export class MetricsRepo {
   }
 
   listChannelStats(range?: { from: string; to: string }): ChannelStat[] {
-    return (this.selectStatRows('channel_stats', range) as ChannelRow[]).map(toChannelStat);
+    return this.selectMapped<ChannelRow, ChannelStat>(
+      'channel_stats',
+      (rows) => rows.map(toChannelStat),
+      range,
+    );
   }
 
   /**
@@ -517,7 +531,7 @@ export class MetricsRepo {
   }
 
   listUtmStats(range?: { from: string; to: string }): UtmStat[] {
-    return (this.selectStatRows('utm_stats', range) as UtmRow[]).map(toUtmStat);
+    return this.selectMapped<UtmRow, UtmStat>('utm_stats', (rows) => rows.map(toUtmStat), range);
   }
 
   upsertGeoDeviceStats(rows: readonly GeoDeviceStat[]): void {
@@ -545,7 +559,11 @@ export class MetricsRepo {
   }
 
   listGeoDeviceStats(range?: { from: string; to: string }): GeoDeviceStat[] {
-    return (this.selectStatRows('geo_device_stats', range) as GeoDeviceRow[]).map(toGeoDeviceStat);
+    return this.selectMapped<GeoDeviceRow, GeoDeviceStat>(
+      'geo_device_stats',
+      (rows) => rows.map(toGeoDeviceStat),
+      range,
+    );
   }
 
   upsertPageStats(rows: readonly PageStat[]): void {
@@ -573,7 +591,11 @@ export class MetricsRepo {
   }
 
   listPageStats(range?: { from: string; to: string }): PageStat[] {
-    return (this.selectStatRows('page_stats', range) as PageRow[]).map(toPageStat);
+    return this.selectMapped<PageRow, PageStat>(
+      'page_stats',
+      (rows) => rows.map(toPageStat),
+      range,
+    );
   }
 
   upsertExitPageStats(rows: readonly PageStat[]): void {
@@ -601,7 +623,11 @@ export class MetricsRepo {
   }
 
   listExitPageStats(range?: { from: string; to: string }): PageStat[] {
-    return (this.selectStatRows('exit_page_stats', range) as PageRow[]).map(toPageStat);
+    return this.selectMapped<PageRow, PageStat>(
+      'exit_page_stats',
+      (rows) => rows.map(toPageStat),
+      range,
+    );
   }
 
   /**
@@ -613,17 +639,30 @@ export class MetricsRepo {
    * «history» (prod had 2025-04-29..2025-12-31 while the counter only lives from its first real
    * day) must not stretch «данных N дней». A demo-only DB (fresh ./run.sh without a token) falls
    * back to the demo window so the cabinet keeps working, flagged by the ДЕМО banner.
+   *
+   * ANA-154: the whole-window MIN/MAX scans sit behind every filter-page mount and every snapshot
+   * build; with the restored 564-day history each call re-scanned the stat tables on the 1-CPU
+   * prod. The answer shares the ANA-148 statCache — every write path already invalidates it.
    */
   statsCoverage(): { from: string; to: string; days: number } | null {
+    const key = 'coverage|window';
+    const hit = this.statCache.get(key);
+    if (hit && this.now() - hit.at < STAT_CACHE_TTL_MS) {
+      return (hit.rows[0] as { from: string; to: string; days: number } | null) ?? null;
+    }
     const minMax = (where: string): { min_date: string | null; max_date: string | null } =>
       this.db
         .prepare(`SELECT MIN(date) AS min_date, MAX(date) AS max_date FROM channel_stats ${where}`)
         .get() as { min_date: string | null; max_date: string | null };
     const live = minMax('WHERE is_demo = 0');
-    if (live.min_date && live.max_date) return coverageWindow(live.min_date, live.max_date);
-    const any = minMax('');
-    if (!any.min_date || !any.max_date) return null;
-    return coverageWindow(any.min_date, any.max_date);
+    let result: { from: string; to: string; days: number } | null = null;
+    if (live.min_date && live.max_date) result = coverageWindow(live.min_date, live.max_date);
+    else {
+      const any = minMax('');
+      if (any.min_date && any.max_date) result = coverageWindow(any.min_date, any.max_date);
+    }
+    this.statCache.set(key, { at: this.now(), rows: [result] });
+    return result;
   }
 
   /**
@@ -634,8 +673,16 @@ export class MetricsRepo {
    *
    * ANA-142: per table, live (is_demo = 0) rows win; a demo-only table falls back to its demo
    * window — same rule as statsCoverage().
+   *
+   * ANA-154: cached like statsCoverage() — 10 whole-table MIN/MAX scans per call, behind every
+   * FilterBar mount; shared statCache, invalidated by every write path.
    */
   statsCoverageTables(): Record<string, { from: string; to: string } | null> {
+    const key = 'coverage|tables';
+    const hit = this.statCache.get(key);
+    if (hit && this.now() - hit.at < STAT_CACHE_TTL_MS) {
+      return hit.rows[0] as Record<string, { from: string; to: string } | null>;
+    }
     const sources: Array<[string, string]> = [
       ['channels', 'channel_stats'],
       ['utm', 'utm_stats'],
@@ -644,15 +691,17 @@ export class MetricsRepo {
       ['exitPages', 'exit_page_stats'],
     ];
     const out: Record<string, { from: string; to: string } | null> = {};
-    for (const [key, table] of sources) {
+    for (const [keyTable, table] of sources) {
       const minMax = (where: string): { min_date: string | null; max_date: string | null } =>
         this.db
           .prepare(`SELECT MIN(date) AS min_date, MAX(date) AS max_date FROM ${table} ${where}`)
           .get() as { min_date: string | null; max_date: string | null };
       const live = minMax('WHERE is_demo = 0');
       const win = live.min_date && live.max_date ? live : minMax('');
-      out[key] = win.min_date && win.max_date ? { from: win.min_date, to: win.max_date } : null;
+      out[keyTable] =
+        win.min_date && win.max_date ? { from: win.min_date, to: win.max_date } : null;
     }
+    this.statCache.set(key, { at: this.now(), rows: [out] });
     return out;
   }
 

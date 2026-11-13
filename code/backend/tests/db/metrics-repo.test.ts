@@ -625,3 +625,85 @@ describe('MetricsRepo — derived-stats response cache (ANA-148)', () => {
     }
   });
 });
+
+// ANA-154: the coverage answers (whole-window MIN/MAX, 12 queries per /metrics/coverage call)
+// sit behind every filter-page mount and every snapshot build; with the restored 564-day history
+// each call re-scanned the stat tables on the 1-CPU prod (147ms locally ≈ seconds there). They
+// share the ANA-148 statCache now — every write path already invalidates it.
+describe('MetricsRepo — coverage response cache (ANA-154)', () => {
+  /** A repo over a fresh DB with an injectable clock (TTL tests must not sleep). */
+  function cachedRepo(): { db: ReturnType<typeof freshDb>; repo: MetricsRepo; tick: () => void } {
+    let t = 1_000_000;
+    const db = freshDb();
+    return { db, repo: new MetricsRepo(db, () => t), tick: () => (t += STAT_CACHE_TTL_MS + 1) };
+  }
+
+  /** Out-of-band channel row (bypasses the repo → bypasses invalidation) to shift the window. */
+  function rawChannelRow(db: ReturnType<typeof freshDb>, date: string): void {
+    db.prepare(
+      `INSERT INTO channel_stats
+         (date, channel, utm_source, utm_medium, utm_campaign, visits, users,
+          bounce_rate, avg_duration, goal_reaches, conversion_rate, is_demo)
+       VALUES (?, 'podcast', NULL, NULL, NULL, 1, 1, 0, 0, 0, 0, 0)`,
+    ).run(date);
+  }
+
+  it('serves statsCoverage from the cache and expires after the TTL', () => {
+    const { db, repo, tick } = cachedRepo();
+    try {
+      repo.upsertChannelStats([stat('2025-01-01'), stat('2025-01-09')]);
+      const first = repo.statsCoverage();
+      expect(first).toEqual({ from: '2025-01-01', to: '2025-01-09', days: 9 });
+      // The real window widens OUTSIDE the repo — within the TTL the cached answer hides it.
+      rawChannelRow(db, '2024-12-01');
+      expect(repo.statsCoverage()).toEqual(first);
+      // Past the TTL the DB truth shows through.
+      tick();
+      expect(repo.statsCoverage()).toEqual({ from: '2024-12-01', to: '2025-01-09', days: 40 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('serves statsCoverageTables from the cache and expires after the TTL', () => {
+    const { db, repo, tick } = cachedRepo();
+    try {
+      repo.upsertChannelStats([stat('2025-02-01'), stat('2025-02-05')]);
+      const first = repo.statsCoverageTables();
+      expect(first.channels).toEqual({ from: '2025-02-01', to: '2025-02-05' });
+      rawChannelRow(db, '2025-02-09');
+      expect(repo.statsCoverageTables().channels).toEqual(first.channels);
+      tick();
+      expect(repo.statsCoverageTables().channels).toEqual({ from: '2025-02-01', to: '2025-02-09' });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('a repo write invalidates the coverage cache (DB truth shows through immediately)', () => {
+    const { db, repo } = cachedRepo();
+    try {
+      repo.upsertChannelStats([stat('2025-01-01')]);
+      expect(repo.statsCoverage()).toEqual({ from: '2025-01-01', to: '2025-01-01', days: 1 });
+      rawChannelRow(db, '2024-12-01'); // cached now
+      expect(repo.statsCoverage()?.from).toBe('2025-01-01');
+      // Any write path (upsert here, the full loop is covered by the ANA-148 suite — the
+      // invalidation is the same invalidateStatCache()) drops the coverage cache too.
+      repo.upsertChannelStats([stat('2025-01-15')]);
+      expect(repo.statsCoverage()?.from).toBe('2024-12-01');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('list* reads serve the cached mapped array — no per-call re-mapping (ANA-154)', () => {
+    const { db, repo } = cachedRepo();
+    try {
+      repo.upsertChannelStats([stat('2025-01-01'), stat('2025-01-02')]);
+      const first = repo.listChannelStats();
+      expect(repo.listChannelStats()).toBe(first); // identity — mapping ran exactly once
+    } finally {
+      db.close();
+    }
+  });
+});
