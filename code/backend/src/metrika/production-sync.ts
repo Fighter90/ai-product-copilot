@@ -68,6 +68,6 @@ export function makeSyncRunner(creds: MetrikaCredentials = envCredentials): Sync
       });
       key = next;
     }
-    return svc.syncAll(body.from, body.to, body.goalId);
+    return svc.syncAll(body.from, body.to, body.goalId, body.force ? { force: true } : undefined);
   };
 }

@@ -288,6 +288,9 @@ describe('MetricsRepo — resetSyncedWindow', () => {
       repo.upsertPageStats([page(d, { page: '/lp' })]);
       repo.upsertExitPageStats([page(d, { page: '/checkout' })]);
     }
+    // ANA-153: zero-visits rows are re-fetchable junk — the protected wipe still removes them.
+    repo.upsertChannelStats([stat('2025-01-11', { visits: 0 })]);
+    repo.upsertUtmStats([utm('2025-01-11', { visits: 0 })]);
     repo.upsertGoals([goal(100)]);
     repo.saveRawResponse({
       endpoint: '/stat/v1/data',
@@ -309,6 +312,9 @@ describe('MetricsRepo — resetSyncedWindow', () => {
 
     repo.resetSyncedWindow('2025-01-05', '2025-01-31');
 
+    // ANA-153: the wipe may not delete non-zero rows inside the window (the counter was RESET —
+    // a wide sync must not erase the restored history before the protected upserts run); zero
+    // rows go, history outside survives, the goals catalog is reloaded, user data is untouched.
     for (const rows of [
       repo.listChannelStats(),
       repo.listUtmStats(),
@@ -316,12 +322,21 @@ describe('MetricsRepo — resetSyncedWindow', () => {
       repo.listPageStats(),
       repo.listExitPageStats(),
     ]) {
-      expect(rows.map((r) => r.date)).toEqual(['2025-01-01']);
+      expect(rows.map((r) => r.date)).toEqual(['2025-01-01', '2025-01-10', '2025-01-20']);
+      expect(rows.every((r) => r.visits > 0)).toBe(true);
     }
     expect(count('raw_responses')).toBe(1);
     expect(repo.listGoals(true)).toHaveLength(0);
     expect(count('b2b_manual')).toBe(1);
     expect(count('report_snapshots')).toBe(1);
+  });
+
+  it('force wipes the non-zero rows of the window too (admin-explicit re-sync)', () => {
+    repo.upsertChannelStats([stat('2025-01-10')]);
+    repo.upsertUtmStats([utm('2025-01-10')]);
+    repo.resetSyncedWindow('2025-01-05', '2025-01-31', { force: true });
+    expect(repo.listChannelStats()).toHaveLength(0);
+    expect(repo.listUtmStats()).toHaveLength(0);
   });
 });
 
@@ -815,5 +830,112 @@ describe('MetricsRepo — coverage response cache (ANA-154)', () => {
     } finally {
       db.close();
     }
+  });
+});
+
+// ANA-153: the counter's statistics were RESET (~2026-11-06) while the real history had been
+// restored into SQLite from raw_responses (ANA-150). Metrika now answers zero rows for every
+// pre-reset date, so a wide sync (365-day backfill, FilterBar re-sync) would replace the
+// restored rows with zeros via INSERT OR REPLACE. Zero-protection: a zero-visits row never
+// overwrites a stored row that still carries real visits — except through an explicit force.
+// Every defended date is audited (protected_days) and reported via countProtectedDays().
+describe('MetricsRepo — zero-protection (ANA-153)', () => {
+  it('channel_stats: a zero-visits update leaves the 35-visit row untouched and audited', () => {
+    repo.upsertChannelStats([stat('2026-05-01', { visits: 35, users: 30 })]);
+    const out = repo.upsertChannelStats([stat('2026-05-01', { visits: 0, users: 0 })]);
+    expect(out).toEqual({ written: 0, skippedZero: 1 });
+    const rows = repo.listChannelStats();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.visits).toBe(35);
+    expect(rows[0]?.users).toBe(30);
+    expect(repo.countProtectedDays()).toBe(1);
+  });
+
+  it('channel_stats: NULL-UTM keys are protected too (the sync always writes NULL keys)', () => {
+    const nulled = { utmSource: null, utmMedium: null, utmCampaign: null } as const;
+    repo.upsertChannelStats([stat('2026-05-01', { ...nulled, visits: 35 })]);
+    const out = repo.upsertChannelStats([stat('2026-05-01', { ...nulled, visits: 0 })]);
+    expect(out.skippedZero).toBe(1);
+    expect(repo.listChannelStats()[0]?.visits).toBe(35);
+  });
+
+  it('channel_stats: force overwrites the restored row with zeros', () => {
+    repo.upsertChannelStats([stat('2026-05-01', { visits: 35 })]);
+    const out = repo.upsertChannelStats([stat('2026-05-01', { visits: 0 })], { force: true });
+    expect(out).toEqual({ written: 1, skippedZero: 0 });
+    expect(repo.listChannelStats()[0]?.visits).toBe(0);
+  });
+
+  it('utm_stats: a zero update cannot overwrite the 35-visit row; force can', () => {
+    repo.upsertUtmStats([utm('2026-05-01', { visits: 35 })]);
+    expect(repo.upsertUtmStats([utm('2026-05-01', { visits: 0 })]).skippedZero).toBe(1);
+    expect(repo.listUtmStats()[0]?.visits).toBe(35);
+    expect(repo.upsertUtmStats([utm('2026-05-01', { visits: 0 })], { force: true }).written).toBe(
+      1,
+    );
+    expect(repo.listUtmStats()[0]?.visits).toBe(0);
+  });
+
+  it('geo_device_stats: protected from zeros, overwritable with force', () => {
+    repo.upsertGeoDeviceStats([geo('2026-05-01', { visits: 35 })]);
+    expect(repo.upsertGeoDeviceStats([geo('2026-05-01', { visits: 0 })]).skippedZero).toBe(1);
+    expect(repo.listGeoDeviceStats()[0]?.visits).toBe(35);
+    repo.upsertGeoDeviceStats([geo('2026-05-01', { visits: 0 })], { force: true });
+    expect(repo.listGeoDeviceStats()[0]?.visits).toBe(0);
+  });
+
+  it('page_stats: protected from zeros, overwritable with force', () => {
+    repo.upsertPageStats([page('2026-05-01', { visits: 35 })]);
+    expect(repo.upsertPageStats([page('2026-05-01', { visits: 0 })]).skippedZero).toBe(1);
+    expect(repo.listPageStats()[0]?.visits).toBe(35);
+    repo.upsertPageStats([page('2026-05-01', { visits: 0 })], { force: true });
+    expect(repo.listPageStats()[0]?.visits).toBe(0);
+  });
+
+  it('exit_page_stats: protected from zeros, overwritable with force', () => {
+    repo.upsertExitPageStats([page('2026-05-01', { page: '/checkout', visits: 35 })]);
+    expect(
+      repo.upsertExitPageStats([page('2026-05-01', { page: '/checkout', visits: 0 })]).skippedZero,
+    ).toBe(1);
+    expect(repo.listExitPageStats()[0]?.visits).toBe(35);
+    repo.upsertExitPageStats([page('2026-05-01', { page: '/checkout', visits: 0 })], {
+      force: true,
+    });
+    expect(repo.listExitPageStats()[0]?.visits).toBe(0);
+  });
+
+  it('a non-zero update still replaces (protection guards zeros only)', () => {
+    repo.upsertUtmStats([utm('2026-05-01', { visits: 35 })]);
+    const out = repo.upsertUtmStats([utm('2026-05-01', { visits: 40 })]);
+    expect(out).toEqual({ written: 1, skippedZero: 0 });
+    expect(repo.listUtmStats()[0]?.visits).toBe(40);
+    expect(repo.countProtectedDays()).toBe(0);
+  });
+
+  it('a zero row over an empty key writes (nothing to protect yet)', () => {
+    const out = repo.upsertUtmStats([utm('2026-05-01', { visits: 0 })]);
+    expect(out).toEqual({ written: 1, skippedZero: 0 });
+    expect(repo.listUtmStats()[0]?.visits).toBe(0);
+    expect(repo.countProtectedDays()).toBe(0);
+  });
+
+  it('zero over zero stays a plain replace (idempotent re-sync of dead days)', () => {
+    repo.upsertPageStats([page('2026-05-01', { visits: 0 })]);
+    const out = repo.upsertPageStats([page('2026-05-01', { visits: 0, users: 1 })]);
+    expect(out.written).toBe(1);
+    expect(repo.listPageStats()[0]?.users).toBe(1);
+    expect(repo.countProtectedDays()).toBe(0);
+  });
+
+  it('countProtectedDays counts distinct defended dates across tables and calls', () => {
+    repo.upsertChannelStats([stat('2026-05-01', { visits: 5 }), stat('2026-05-02', { visits: 6 })]);
+    repo.upsertUtmStats([utm('2026-05-03', { visits: 7 })]);
+    repo.upsertChannelStats([
+      stat('2026-05-01', { visits: 0 }),
+      stat('2026-05-02', { visits: 0 }),
+      stat('2026-05-02', { visits: 0 }), // same date twice — one audit row (INSERT OR IGNORE)
+    ]);
+    repo.upsertUtmStats([utm('2026-05-03', { visits: 0 })]);
+    expect(repo.countProtectedDays()).toBe(3);
   });
 });

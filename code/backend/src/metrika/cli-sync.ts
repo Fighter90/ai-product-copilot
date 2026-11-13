@@ -10,8 +10,9 @@ import { makeSyncRunner } from './production-sync';
 // carries per-step errors, not an unconditional «ok».
 import { outcomeOf } from '../routes/sync';
 
-/** CLI: `pnpm --filter @pca/backend sync [--from=YYYY-MM-DD] [--to=YYYY-MM-DD] [--days=N] [--goalId=ID]`.
- *  Excluded from coverage. */
+/** CLI: `pnpm --filter @pca/backend sync [--from=YYYY-MM-DD] [--to=YYYY-MM-DD] [--days=N] [--goalId=ID] [--force]`.
+ *  `--force` bypasses zero-protection (ANA-153) — an admin-conscious overwrite of the restored
+ *  history after the counter reset; never needed for a routine sync. Excluded from coverage. */
 function arg(name: string): string | undefined {
   const flag = `--${name}=`;
   return process.argv.find((a) => a.startsWith(flag))?.slice(flag.length);
@@ -28,6 +29,8 @@ async function main(): Promise<void> {
   // --days=N (ANA-74): окно = последние N дней включая сегодня. Явные from/to имеют приоритет.
   const days = arg('days') ? Number(arg('days')) : undefined;
   const window = days ? windowFor(days) : { from, to };
+  // ANA-153: --force — осознанный админский перезапись-режим поверх zero-protection.
+  const force = process.argv.includes('--force');
 
   // Прогон фиксируется в sync_runs — «Админ → Метрика и данные» и /api/sync/status показывают
   // свежесть данных даже для крон-запусков (ANA-74).
@@ -41,6 +44,7 @@ async function main(): Promise<void> {
       from: window.from,
       to: window.to,
       goalId: goalIdRaw ? Number(goalIdRaw) : undefined,
+      ...(force ? { force: true } : {}),
     });
     // REG-05: failed optional steps (summary.errors) → «partial», not «ok»; only a clean run is ok.
     runs.finish(

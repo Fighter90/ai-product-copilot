@@ -37,6 +37,7 @@ describe('migrate', () => {
       '020_decision_type.sql',
       '021_ana147_prelaunch_cleanup.sql',
       '022_ana148_stat_date_indexes.sql',
+      '023_ana153_protected_days.sql',
     ]);
   });
 
@@ -221,6 +222,7 @@ describe('migrate', () => {
       '020_decision_type.sql',
       '021_ana147_prelaunch_cleanup.sql',
       '022_ana148_stat_date_indexes.sql',
+      '023_ana153_protected_days.sql',
     ]);
 
     const typeOf = (number: string): string | null =>
@@ -315,6 +317,7 @@ describe('migrate', () => {
     expect(applied).toEqual([
       '021_ana147_prelaunch_cleanup.sql',
       '022_ana148_stat_date_indexes.sql',
+      '023_ana153_protected_days.sql',
     ]);
 
     const dates = (table: string): string[] =>

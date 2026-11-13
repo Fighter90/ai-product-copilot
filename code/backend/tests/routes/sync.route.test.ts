@@ -46,6 +46,19 @@ describe('POST /api/sync', () => {
     expect(res.json().error).toBe('invalid body');
     await app.close();
   });
+
+  it('accepts force in the body and passes it to the runner (ANA-153)', async () => {
+    const runSync = vi.fn().mockResolvedValue({ goals: 0, days: 0 });
+    const app = appWith(runSync as unknown as SyncRunner);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sync',
+      payload: { from: '2025-01-01', to: '2025-01-07', force: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(runSync).toHaveBeenCalledWith({ from: '2025-01-01', to: '2025-01-07', force: true });
+    await app.close();
+  });
 });
 
 describe('withDefaultGoal (runtime GOAL_ID)', () => {
@@ -85,6 +98,15 @@ describe('withDefaultGoal (runtime GOAL_ID)', () => {
       { from: 'a', to: 'b' },
       { from: 'a', to: 'b', goalId: 99 },
     ]);
+  });
+
+  it('passes force through to the runner (ANA-153 zero-protection bypass)', async () => {
+    const run = vi.fn().mockResolvedValue(summary);
+    await withDefaultGoal(run, () => 42)({ from: 'a', to: 'b', force: true });
+    expect(run).toHaveBeenCalledWith({ from: 'a', to: 'b', goalId: 42, force: true });
+    // no force flag → the protection stays on (force key omitted, not just false)
+    await withDefaultGoal(run, () => 42)({ from: 'a', to: 'b' });
+    expect(run).toHaveBeenLastCalledWith({ from: 'a', to: 'b', goalId: 42 });
   });
 });
 
