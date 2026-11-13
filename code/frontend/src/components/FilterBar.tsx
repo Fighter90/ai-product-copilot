@@ -15,6 +15,11 @@ interface Coverage {
   days: number;
   /** ANA-139: per-table min/max — derived tables can lag behind channel_stats. */
   tables?: Record<string, { from: string; to: string } | null>;
+  /**
+   * ANA-153: distinct days the sync's zero-protection defended against the reset counter's
+   * zeros (undefined = old backend response → no badge).
+   */
+  protectedDays?: number;
 }
 
 /** Derived stat tables the ANA-139 staleness check watches (channels drive the gap banner). */
@@ -107,6 +112,8 @@ export function FilterBar(): JSX.Element {
     ? Math.max(0, Math.round((Date.parse(coverageFrom) - Date.parse(from)) / 86_400_000))
     : 0;
   const needsBackfill = coverageFrom !== null && missingDays > 0;
+  // ANA-153: days the zero-protection defended — shown honestly next to the period.
+  const protectedDays = coverage?.protectedDays ?? 0;
 
   // ANA-139: derived datasets whose last synced day is older than the selected end — the period
   // contains days these tables are missing (utm_stats/geo/pages are best-effort sync steps and
@@ -193,6 +200,16 @@ export function FilterBar(): JSX.Element {
       <span className="hidden text-xs text-slate-400 sm:block" title={t('dq.prevPeriodHint')}>
         {t('dq.prevPeriodVs', { from: fmtDate(prevFrom, locale), to: fmtDate(prevTo, locale) })}
       </span>
+
+      {/* ANA-153: the sync's zero-protection defended these days from the reset counter's zeros */}
+      {protectedDays > 0 && (
+        <span
+          className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600"
+          title={t('dq.protectedDaysHint')}
+        >
+          {t('dq.protectedDays', { n: protectedDays })}
+        </span>
+      )}
 
       {/* Mobile trigger: opens the controls as a bottom-sheet (<768px only) */}
       <button

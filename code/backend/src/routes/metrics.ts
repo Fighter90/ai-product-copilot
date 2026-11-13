@@ -128,6 +128,9 @@ export async function metricsRoutes(
     async () => ({
       ...(opts.repo.statsCoverage() ?? { from: null, to: null, days: 0 }),
       tables: opts.repo.statsCoverageTables(),
+      // ANA-153: distinct days the sync's zero-protection defended against the reset counter's
+      // zeros — the FilterBar badge «N дней защищены от перезаписи» reads this.
+      protectedDays: opts.repo.countProtectedDays(),
     }),
   );
 }

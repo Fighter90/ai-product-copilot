@@ -1,6 +1,6 @@
 import { selectPrimaryGoal, type Goal } from '@pca/shared';
 import type { ChannelStat, GeoDeviceStat, PageStat, SyncStepError, UtmStat } from '@pca/shared';
-import type { MetricsRepo } from '../db/repositories/metrics-repo';
+import type { MetricsRepo, UpsertOptions } from '../db/repositories/metrics-repo';
 import { dayChunks } from '../utils/date-range';
 import { RANGE_MAX_DAYS } from './queries/date-dimension';
 import { stableHash } from '../utils/hash';
@@ -57,6 +57,13 @@ export interface SyncSummary {
   readonly browserOsRows?: number;
   readonly newReturningRows?: number;
   /**
+   * ANA-153: zero-visits rows skipped by zero-protection across the five stat tables — a wide
+   * sync over the reset counter (Metrika answers zeros for the pre-reset dates) leaves the
+   * restored non-zero history intact; `0`/undefined = nothing needed protection. The defended
+   * dates are audited in `protected_days` and surfaced via /metrics/coverage protectedDays.
+   */
+  readonly skippedZero?: number;
+  /**
    * ANA-15: per-step failures of the optional (`best`) steps — surfaced in the sync status UI
    * (GET /api/sync/status) instead of living only in console output. Empty when every step passed.
    */
@@ -111,7 +118,8 @@ export class SyncService {
     from: string,
     to: string,
     goalId?: number,
-  ): Promise<{ days: number; rows: number; truncated?: boolean }> {
+    opts: UpsertOptions = {},
+  ): Promise<{ days: number; rows: number; truncated?: boolean; skippedZero: number }> {
     const chunks = dayChunks(from, to);
     const acc: ChannelStat[] = [];
     let truncated = false;
@@ -163,15 +171,16 @@ export class SyncService {
       }
     }
     const merged = mergeChannelStats(acc);
-    this.deps.metrics.upsertChannelStats(merged);
-    return { days: chunks.length, rows: merged.length, truncated };
+    const { skippedZero } = this.deps.metrics.upsertChannelStats(merged, opts);
+    return { days: chunks.length, rows: merged.length, truncated, skippedZero };
   }
 
   async syncUtm(
     from: string,
     to: string,
     goalId?: number,
-  ): Promise<{ rows: number; truncated?: boolean }> {
+    opts: UpsertOptions = {},
+  ): Promise<{ rows: number; truncated?: boolean; skippedZero: number }> {
     const chunks = dayChunks(from, to);
     const acc: UtmStat[] = [];
     let truncated = false;
@@ -223,15 +232,16 @@ export class SyncService {
       }
     }
     const merged = mergeUtmStats(acc);
-    this.deps.metrics.upsertUtmStats(merged);
-    return { rows: merged.length, truncated };
+    const { skippedZero } = this.deps.metrics.upsertUtmStats(merged, opts);
+    return { rows: merged.length, truncated, skippedZero };
   }
 
   async syncGeoDevice(
     from: string,
     to: string,
     goalId?: number,
-  ): Promise<{ rows: number; truncated?: boolean }> {
+    opts: UpsertOptions = {},
+  ): Promise<{ rows: number; truncated?: boolean; skippedZero: number }> {
     const chunks = dayChunks(from, to);
     const acc: GeoDeviceStat[] = [];
     let truncated = false;
@@ -283,11 +293,16 @@ export class SyncService {
       }
     }
     const merged = mergeGeoDeviceStats(acc);
-    this.deps.metrics.upsertGeoDeviceStats(merged);
-    return { rows: merged.length, truncated };
+    const { skippedZero } = this.deps.metrics.upsertGeoDeviceStats(merged, opts);
+    return { rows: merged.length, truncated, skippedZero };
   }
 
-  async syncPages(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
+  async syncPages(
+    from: string,
+    to: string,
+    goalId?: number,
+    opts: UpsertOptions = {},
+  ): Promise<{ rows: number; skippedZero: number }> {
     const chunks = dayChunks(from, to);
     const acc: PageStat[] = [];
     for (const chunk of chunks) {
@@ -308,11 +323,16 @@ export class SyncService {
       acc.push(...stats);
     }
     const merged = mergePageStats(acc);
-    this.deps.metrics.upsertPageStats(merged);
-    return { rows: merged.length };
+    const { skippedZero } = this.deps.metrics.upsertPageStats(merged, opts);
+    return { rows: merged.length, skippedZero };
   }
 
-  async syncExitPages(from: string, to: string, goalId?: number): Promise<{ rows: number }> {
+  async syncExitPages(
+    from: string,
+    to: string,
+    goalId?: number,
+    opts: UpsertOptions = {},
+  ): Promise<{ rows: number; skippedZero: number }> {
     const chunks = dayChunks(from, to);
     const acc: PageStat[] = [];
     for (const chunk of chunks) {
@@ -333,8 +353,8 @@ export class SyncService {
       acc.push(...stats);
     }
     const merged = mergePageStats(acc);
-    this.deps.metrics.upsertExitPageStats(merged);
-    return { rows: merged.length };
+    const { skippedZero } = this.deps.metrics.upsertExitPageStats(merged, opts);
+    return { rows: merged.length, skippedZero };
   }
 
   /**
@@ -496,9 +516,9 @@ export class SyncService {
    */
   private async best(
     label: string,
-    fn: () => Promise<{ rows: number; truncated?: boolean }>,
+    fn: () => Promise<{ rows: number; truncated?: boolean; skippedZero?: number }>,
     errors: SyncStepError[] = [],
-  ): Promise<{ rows: number }> {
+  ): Promise<{ rows: number; skippedZero?: number }> {
     try {
       const res = await fn();
       // ANA-113: усечённый range-ответ (row-cap 10000) — данные частичные; делает это видимым
@@ -518,7 +538,12 @@ export class SyncService {
     }
   }
 
-  async syncAll(from: string, to: string, goalId?: number): Promise<SyncSummary> {
+  async syncAll(
+    from: string,
+    to: string,
+    goalId?: number,
+    opts: UpsertOptions = {},
+  ): Promise<SyncSummary> {
     // Validate connectivity + auth with the (required) goals call BEFORE wiping anything, so a
     // failed sync (e.g. expired token) leaves the existing dataset intact instead of an empty DB.
     const goals = await this.fetchGoals();
@@ -527,34 +552,40 @@ export class SyncService {
     // INSERT OR REPLACE alone can't dedupe), while history outside the window survives — the
     // scheduled 14-day sync used to erase everything older (only 14 days were ever available).
     // User-entered data (b2b/hypotheses/decisions/snapshots) is never touched.
+    // ANA-153: the wipe only removes ZERO rows (force restores the unrestricted wipe) — the
+    // restored pre-reset history must survive until the protected upserts decide per row.
     // Keep an in-memory copy of the window: if the required traffic step fails (e.g. Metrika 429
     // quota) everything is restored; optional steps that come back empty after a failure get their
     // own table restored below. A failed sync must never leave less data than before.
     const backup = this.deps.metrics.snapshotWindow(from, to);
-    this.deps.metrics.resetSyncedWindow(from, to);
+    this.deps.metrics.resetSyncedWindow(from, to, opts);
     this.deps.metrics.upsertGoals(goals);
     // Auto-detect the KPI goal when the caller didn't pin one — so the user never hand-picks a
     // GOAL_ID. An explicit goalId always wins; otherwise pick the payment/purchase goal.
     const resolvedGoalId = goalId ?? selectPrimaryGoal(goals)?.id;
-    let traffic: { days: number; rows: number };
+    let traffic: { days: number; rows: number; skippedZero: number };
     try {
-      traffic = await this.syncTraffic(from, to, resolvedGoalId);
+      traffic = await this.syncTraffic(from, to, resolvedGoalId, opts);
     } catch (err) {
       this.deps.metrics.restoreWindow(backup);
       throw err;
     }
     const { days, rows } = traffic;
     const errors: SyncStepError[] = [];
-    const utm = await this.best('utm', () => this.syncUtm(from, to, resolvedGoalId), errors);
+    const utm = await this.best('utm', () => this.syncUtm(from, to, resolvedGoalId, opts), errors);
     const geo = await this.best(
       'geo-device',
-      () => this.syncGeoDevice(from, to, resolvedGoalId),
+      () => this.syncGeoDevice(from, to, resolvedGoalId, opts),
       errors,
     );
-    const pages = await this.best('pages', () => this.syncPages(from, to, resolvedGoalId), errors);
+    const pages = await this.best(
+      'pages',
+      () => this.syncPages(from, to, resolvedGoalId, opts),
+      errors,
+    );
     const exitPages = await this.best(
       'exit-pages',
-      () => this.syncExitPages(from, to, resolvedGoalId),
+      () => this.syncExitPages(from, to, resolvedGoalId, opts),
       errors,
     );
     const goalReaches = await this.best(
@@ -605,6 +636,13 @@ export class SyncService {
       goalReachesRows: goalReaches.rows,
       browserOsRows: browserOs.rows,
       newReturningRows: newReturning.rows,
+      // ANA-153: how many zero rows the protection skipped across the five stat tables.
+      skippedZero:
+        traffic.skippedZero +
+        (utm.skippedZero ?? 0) +
+        (geo.skippedZero ?? 0) +
+        (pages.skippedZero ?? 0) +
+        (exitPages.skippedZero ?? 0),
       errors,
     };
   }

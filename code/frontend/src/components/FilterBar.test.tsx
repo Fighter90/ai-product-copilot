@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   coverageFrom: new Date(Date.now() - 15 * 86_400_000).toISOString().slice(0, 10),
   // ANA-139: per-table coverage from GET /metrics/coverage (undefined = old backend response).
   coverageTables: undefined as Record<string, { from: string; to: string } | null> | undefined,
+  // ANA-153: days zero-protection defended (undefined = old backend response → no badge).
+  protectedDays: undefined as number | undefined,
   sync: vi.fn(),
 }));
 vi.mock('../auth/AuthContext', () => ({
@@ -40,6 +42,7 @@ vi.mock('../lib/api', () => ({
         to: new Date(Date.now()).toISOString().slice(0, 10),
         days: 15,
         ...(mocks.coverageTables ? { tables: mocks.coverageTables } : {}),
+        ...(mocks.protectedDays !== undefined ? { protectedDays: mocks.protectedDays } : {}),
       };
     }
     throw new Error(`unexpected fetch in FilterBar tests: ${path}`);
@@ -335,6 +338,54 @@ describe('FilterBar — partial data coverage (REG-04/ANA-93)', () => {
 
     const banner = await screen.findByRole('status');
     expect(banner).toHaveTextContent(/only partially covered/);
+    expectNoCyrillic(container);
+  });
+});
+
+// ANA-153: the Metrika counter was RESET, the real history lives only in SQLite (restored from
+// raw_responses). The sync's zero-protection defends those days — the FilterBar says so honestly
+// («N дней защищены от перезаписи») using GET /metrics/coverage protectedDays.
+describe('FilterBar — zero-protection badge (ANA-153)', () => {
+  afterEach(() => {
+    mocks.coverageFrom = new Date(Date.now() - 15 * 86_400_000).toISOString().slice(0, 10);
+    mocks.coverageTables = undefined;
+    mocks.protectedDays = undefined;
+    setTestLocale('ru');
+  });
+
+  it('shows the badge when the backend reports protected days', async () => {
+    mocks.protectedDays = 12;
+    renderBar();
+    await act(async () => {}); // let the coverage probe resolve
+
+    expect(screen.getByText('12 дн. защищены от перезаписи')).toBeInTheDocument();
+  });
+
+  it('explains the protection in the tooltip', async () => {
+    mocks.protectedDays = 12;
+    renderBar();
+    await act(async () => {});
+
+    expect(screen.getByText(/защищены от перезаписи/)).toHaveAttribute(
+      'title',
+      expect.stringContaining('Счётчик Метрики сброшен'),
+    );
+  });
+
+  it('hides the badge while no days are protected (old backend response or 0)', async () => {
+    renderBar(); // protectedDays stays undefined
+    await act(async () => {});
+
+    expect(screen.queryByText(/защищены от перезаписи/)).not.toBeInTheDocument();
+  });
+
+  it('localises the badge in en', async () => {
+    setTestLocale('en');
+    mocks.protectedDays = 12;
+    const { container } = renderBar();
+    await act(async () => {});
+
+    expect(screen.getByText('12 days protected from overwrite')).toBeInTheDocument();
     expectNoCyrillic(container);
   });
 });

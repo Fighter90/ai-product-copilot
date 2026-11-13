@@ -183,6 +183,26 @@ export interface SyncedWindowBackup {
   readonly tables: Record<string, Record<string, unknown>[]>;
 }
 
+/**
+ * ANA-153: options for the protected derived-stat writes. By default the zero-protection is ON:
+ * the counter's statistics were RESET (~2026-11-06) while the real history was restored into
+ * SQLite from raw_responses, so Metrika answers zeros for the pre-reset dates and a wide sync
+ * must not turn them into the stored rows. Only an explicit admin action (CLI `pnpm sync
+ * --force`, POST /api/sync `"force": true`) may bypass it.
+ */
+export interface UpsertOptions {
+  /** Overwrite even a non-zero row with a zero one — admin-explicit only. */
+  readonly force?: boolean;
+}
+
+/** ANA-153: what a protected stat-table upsert did. */
+export interface UpsertOutcome {
+  /** Rows actually written (inserted or replaced). */
+  readonly written: number;
+  /** Zero-visits rows skipped because the stored row for the same key carries real visits. */
+  readonly skippedZero: number;
+}
+
 export class MetricsRepo {
   /** ANA-148: table+range → last computed rows; dropped by every write path below. */
   private readonly statCache = new Map<string, { at: number; rows: unknown[] }>();
@@ -192,6 +212,42 @@ export class MetricsRepo {
     /** Injectable clock (tests); keeps the TTL deterministic without sleeping. */
     private readonly now: () => number = Date.now,
   ) {}
+
+  /**
+   * ANA-153 zero-protection decision: may the incoming row replace the stored one? A zero-visits
+   * row (what Metrika answers for a date whose statistics were RESET) must never overwrite a
+   * stored row that still carries real visits — that row is the ANA-150-restored history, and
+   * once zeroed it is unrecoverable (the counter no longer serves those dates). Everything else
+   * writes normally: a missing row, zero→zero, and any non-zero incoming row (a real re-sync
+   * replacing old values by key stays a plain replace).
+   */
+  private mayWrite(
+    existing: { visits: number } | undefined,
+    incomingVisits: number,
+    force: boolean,
+  ): boolean {
+    if (force || incomingVisits !== 0) return true;
+    return existing === undefined || existing.visits === 0;
+  }
+
+  /**
+   * ANA-153 audit: record a defended DATE (append-only, INSERT OR IGNORE — a date is protected
+   * once no matter how many of its rows were skipped). GET /metrics/coverage reports the count
+   * as protectedDays; the FilterBar shows «N дней защищены от перезаписи».
+   */
+  private noteProtectedDate(date: string): void {
+    this.db.prepare('INSERT OR IGNORE INTO protected_days (date) VALUES (?)').run(date);
+  }
+
+  /** ANA-153: distinct dates zero-protection has defended (see the 023 migration). */
+  countProtectedDays(): number {
+    const key = 'coverage|protectedDays';
+    const hit = this.statCache.get(key);
+    if (hit && this.now() - hit.at < STAT_CACHE_TTL_MS) return hit.rows[0] as number;
+    const row = this.db.prepare('SELECT COUNT(*) AS n FROM protected_days').get() as { n: number };
+    this.statCache.set(key, { at: this.now(), rows: [row.n] });
+    return row.n;
+  }
 
   upsertGoals(goals: readonly Goal[]): void {
     const stmt = this.db.prepare(
@@ -313,11 +369,22 @@ export class MetricsRepo {
    * catalog (always reloaded in full). History OUTSIDE the window is preserved, so a scheduled
    * 14-day sync no longer erases a one-off 365-day backfill. Dedupe inside the window is still
    * guaranteed (the NULL-UTM composite-key caveat only matters for rows we re-insert).
+   *
+   * ANA-153: by default the stat-table part of the wipe only removes ZERO rows — the wipe runs
+   * BEFORE the upserts, so an unrestricted delete would erase the restored non-zero history for
+   * the pre-reset dates before the zero-protection in the upserts even gets a chance to defend
+   * it. Every re-fetched row still replaces its stored predecessor by key (INSERT OR REPLACE /
+   * the NULL-safe channel upsert), so the sync result is unchanged for live dates; only rows
+   * Metrika stopped serving (or now serves as zeros) survive instead of being destroyed.
+   * `{ force: true }` restores the unrestricted wipe for an admin-explicit re-sync.
    */
-  resetSyncedWindow(from: string, to: string): void {
+  resetSyncedWindow(from: string, to: string, opts: UpsertOptions = {}): void {
+    const visitsGuard = opts.force === true ? '' : ' AND visits = 0';
     const tx = this.db.transaction(() => {
       for (const t of MetricsRepo.DERIVED_STAT_TABLES) {
-        this.db.prepare(`DELETE FROM ${t} WHERE date >= ? AND date <= ?`).run(from, to);
+        this.db
+          .prepare(`DELETE FROM ${t} WHERE date >= ? AND date <= ?${visitsGuard}`)
+          .run(from, to);
       }
       this.db
         .prepare('DELETE FROM raw_responses WHERE date_from >= ? AND date_to <= ?')
@@ -380,34 +447,75 @@ export class MetricsRepo {
     for (const t of Object.keys(backup.tables)) this.restoreWindowTable(backup, t);
   }
 
-  upsertChannelStats(rows: readonly ChannelStat[]): void {
-    const stmt = this.db.prepare(
-      `INSERT OR REPLACE INTO channel_stats
+  /**
+   * ANA-153: protected channel_stats upsert. The sync's rows are NULL-UTM keyed (traffic-by-source
+   * queries carry no UTM dimensions) and SQLite treats NULLs as DISTINCT inside the
+   * (date, channel, utm_source, utm_medium, utm_campaign) key, so plain INSERT OR REPLACE can
+   * never match an existing row — every write here first deletes the matching NULL-safe key row
+   * (the former upsertChannelStatsNullSafe behaviour, ANA-150) and then inserts. With the ANA-153
+   * protected wipe (resetSyncedWindow keeps non-zero rows) this is what makes a re-sync replace
+   * the stored rows instead of doubling them.
+   *
+   * Zero-protection: a zero-visits row skips BOTH the delete and the insert when the stored row
+   * for the same key carries real visits (the ANA-150-restored history), and the defended date
+   * is audited (protected_days). `{ force: true }` writes unconditionally.
+   */
+  upsertChannelStats(rows: readonly ChannelStat[], opts: UpsertOptions = {}): UpsertOutcome {
+    const force = opts.force === true;
+    const existing = this.db.prepare(
+      `SELECT visits FROM channel_stats
+       WHERE date = ? AND channel = ?
+         AND utm_source IS ? AND utm_medium IS ? AND utm_campaign IS ?`,
+    );
+    const del = this.db.prepare(
+      `DELETE FROM channel_stats
+       WHERE date = ? AND channel = ?
+         AND utm_source IS ? AND utm_medium IS ? AND utm_campaign IS ?`,
+    );
+    const ins = this.db.prepare(
+      `INSERT INTO channel_stats
          (date, channel, utm_source, utm_medium, utm_campaign, visits, users,
           bounce_rate, avg_duration, goal_reaches, conversion_rate, is_demo)
-       VALUES (@date, @channel, @utm_source, @utm_medium, @utm_campaign, @visits, @users,
-          @bounce_rate, @avg_duration, @goal_reaches, @conversion_rate, @is_demo)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
+    let written = 0;
+    let skippedZero = 0;
     const tx = this.db.transaction((items: readonly ChannelStat[]) => {
       for (const c of items) {
-        stmt.run({
-          date: c.date,
-          channel: c.channel,
-          utm_source: c.utmSource,
-          utm_medium: c.utmMedium,
-          utm_campaign: c.utmCampaign,
-          visits: c.visits,
-          users: c.users,
-          bounce_rate: c.bounceRate,
-          avg_duration: c.avgDuration,
-          goal_reaches: c.goalReaches,
-          conversion_rate: c.conversionRate,
-          is_demo: c.isDemo ? 1 : 0,
-        });
+        const key = [
+          c.date,
+          c.channel,
+          c.utmSource ?? null,
+          c.utmMedium ?? null,
+          c.utmCampaign ?? null,
+        ];
+        const cur = existing.get(...key) as { visits: number } | undefined;
+        if (!this.mayWrite(cur, c.visits, force)) {
+          skippedZero += 1;
+          this.noteProtectedDate(c.date);
+          continue;
+        }
+        del.run(...key);
+        ins.run(
+          c.date,
+          c.channel,
+          c.utmSource,
+          c.utmMedium,
+          c.utmCampaign,
+          c.visits,
+          c.users,
+          c.bounceRate,
+          c.avgDuration,
+          c.goalReaches,
+          c.conversionRate,
+          c.isDemo ? 1 : 0,
+        );
+        written += 1;
       }
     });
     tx(rows);
     this.invalidateStatCache();
+    return { written, skippedZero };
   }
 
   /**
@@ -483,55 +591,49 @@ export class MetricsRepo {
   /**
    * ANA-150: NULL-safe channel_stats upsert. SQLite treats NULLs as DISTINCT inside the
    * (date, channel, utm_source, utm_medium, utm_campaign) key, so plain INSERT OR REPLACE cannot
-   * match an existing row whose UTM columns are NULL — writing the same chunk twice (the recovery
-   * re-run) would double every channel row instead of replacing it. The matching row is removed
-   * with an IS ? (NULL-safe) comparison before the insert; rows with any other key are untouched,
-   * so unlike resetSyncedWindow() this never wipes dates it does not restore.
+   * match an existing row whose UTM columns are NULL. ANA-153: the plain upsert IS the NULL-safe
+   * one now (see {@link upsertChannelStats}) — this alias stays for the history recovery call
+   * site (and its ANA-150 tests); protection and the optional force bypass apply identically.
    */
-  upsertChannelStatsNullSafe(rows: readonly ChannelStat[]): void {
-    const del = this.db.prepare(
-      `DELETE FROM channel_stats
-       WHERE date = ? AND channel = ?
-         AND utm_source IS ? AND utm_medium IS ? AND utm_campaign IS ?`,
-    );
-    const ins = this.db.prepare(
-      `INSERT INTO channel_stats
-         (date, channel, utm_source, utm_medium, utm_campaign, visits, users,
-          bounce_rate, avg_duration, goal_reaches, conversion_rate, is_demo)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
-    const tx = this.db.transaction((items: readonly ChannelStat[]) => {
-      for (const c of items) {
-        del.run(c.date, c.channel, c.utmSource ?? null, c.utmMedium ?? null, c.utmCampaign ?? null);
-        ins.run(
-          c.date,
-          c.channel,
-          c.utmSource,
-          c.utmMedium,
-          c.utmCampaign,
-          c.visits,
-          c.users,
-          c.bounceRate,
-          c.avgDuration,
-          c.goalReaches,
-          c.conversionRate,
-          c.isDemo ? 1 : 0,
-        );
-      }
-    });
-    tx(rows);
-    this.invalidateStatCache();
+  upsertChannelStatsNullSafe(
+    rows: readonly ChannelStat[],
+    opts: UpsertOptions = {},
+  ): UpsertOutcome {
+    return this.upsertChannelStats(rows, opts);
   }
 
-  upsertUtmStats(rows: readonly UtmStat[]): void {
+  /**
+   * ANA-153: zero-protection on the NOT-NULL-key stat tables (utm/geo/pages/exits): a zero-visits
+   * row skips the write when the stored row for the same key carries real visits (restored
+   * history), and the defended date is audited. `{ force: true }` writes unconditionally.
+   */
+  upsertUtmStats(rows: readonly UtmStat[], opts: UpsertOptions = {}): UpsertOutcome {
+    const force = opts.force === true;
+    const existing = this.db.prepare(
+      `SELECT visits FROM utm_stats
+       WHERE date = ? AND utm_source IS ? AND utm_medium IS ? AND utm_campaign IS ?`,
+    );
     const stmt = this.db.prepare(
       `INSERT OR REPLACE INTO utm_stats
          (date, utm_source, utm_medium, utm_campaign, visits, users, goal_reaches, conversion_rate, is_demo)
        VALUES (@date, @utm_source, @utm_medium, @utm_campaign, @visits, @users,
           @goal_reaches, @conversion_rate, @is_demo)`,
     );
+    let written = 0;
+    let skippedZero = 0;
     const tx = this.db.transaction((items: readonly UtmStat[]) => {
       for (const u of items) {
+        const cur = existing.get(
+          u.date,
+          u.utmSource ?? null,
+          u.utmMedium ?? null,
+          u.utmCampaign ?? null,
+        ) as { visits: number } | undefined;
+        if (!this.mayWrite(cur, u.visits, force)) {
+          skippedZero += 1;
+          this.noteProtectedDate(u.date);
+          continue;
+        }
         stmt.run({
           date: u.date,
           utm_source: u.utmSource,
@@ -543,24 +645,38 @@ export class MetricsRepo {
           conversion_rate: u.conversionRate,
           is_demo: u.isDemo ? 1 : 0,
         });
+        written += 1;
       }
     });
     tx(rows);
     this.invalidateStatCache();
+    return { written, skippedZero };
   }
 
   listUtmStats(range?: { from: string; to: string }): readonly UtmStat[] {
     return this.selectMapped<UtmRow, UtmStat>('utm_stats', (rows) => rows.map(toUtmStat), range);
   }
 
-  upsertGeoDeviceStats(rows: readonly GeoDeviceStat[]): void {
+  upsertGeoDeviceStats(rows: readonly GeoDeviceStat[], opts: UpsertOptions = {}): UpsertOutcome {
+    const force = opts.force === true;
+    const existing = this.db.prepare(
+      'SELECT visits FROM geo_device_stats WHERE date = ? AND country = ? AND device = ?',
+    );
     const stmt = this.db.prepare(
       `INSERT OR REPLACE INTO geo_device_stats
          (date, country, device, visits, users, goal_reaches, conversion_rate, is_demo)
        VALUES (@date, @country, @device, @visits, @users, @goal_reaches, @conversion_rate, @is_demo)`,
     );
+    let written = 0;
+    let skippedZero = 0;
     const tx = this.db.transaction((items: readonly GeoDeviceStat[]) => {
       for (const g of items) {
+        const cur = existing.get(g.date, g.country, g.device) as { visits: number } | undefined;
+        if (!this.mayWrite(cur, g.visits, force)) {
+          skippedZero += 1;
+          this.noteProtectedDate(g.date);
+          continue;
+        }
         stmt.run({
           date: g.date,
           country: g.country,
@@ -571,10 +687,12 @@ export class MetricsRepo {
           conversion_rate: g.conversionRate,
           is_demo: g.isDemo ? 1 : 0,
         });
+        written += 1;
       }
     });
     tx(rows);
     this.invalidateStatCache();
+    return { written, skippedZero };
   }
 
   listGeoDeviceStats(range?: { from: string; to: string }): readonly GeoDeviceStat[] {
@@ -585,14 +703,24 @@ export class MetricsRepo {
     );
   }
 
-  upsertPageStats(rows: readonly PageStat[]): void {
+  upsertPageStats(rows: readonly PageStat[], opts: UpsertOptions = {}): UpsertOutcome {
+    const force = opts.force === true;
+    const existing = this.db.prepare('SELECT visits FROM page_stats WHERE date = ? AND page = ?');
     const stmt = this.db.prepare(
       `INSERT OR REPLACE INTO page_stats
          (date, page, visits, users, bounce_rate, goal_reaches, conversion_rate, is_demo)
        VALUES (@date, @page, @visits, @users, @bounce_rate, @goal_reaches, @conversion_rate, @is_demo)`,
     );
+    let written = 0;
+    let skippedZero = 0;
     const tx = this.db.transaction((items: readonly PageStat[]) => {
       for (const p of items) {
+        const cur = existing.get(p.date, p.page) as { visits: number } | undefined;
+        if (!this.mayWrite(cur, p.visits, force)) {
+          skippedZero += 1;
+          this.noteProtectedDate(p.date);
+          continue;
+        }
         stmt.run({
           date: p.date,
           page: p.page,
@@ -603,10 +731,12 @@ export class MetricsRepo {
           conversion_rate: p.conversionRate,
           is_demo: p.isDemo ? 1 : 0,
         });
+        written += 1;
       }
     });
     tx(rows);
     this.invalidateStatCache();
+    return { written, skippedZero };
   }
 
   listPageStats(range?: { from: string; to: string }): readonly PageStat[] {
@@ -617,14 +747,26 @@ export class MetricsRepo {
     );
   }
 
-  upsertExitPageStats(rows: readonly PageStat[]): void {
+  upsertExitPageStats(rows: readonly PageStat[], opts: UpsertOptions = {}): UpsertOutcome {
+    const force = opts.force === true;
+    const existing = this.db.prepare(
+      'SELECT visits FROM exit_page_stats WHERE date = ? AND page = ?',
+    );
     const stmt = this.db.prepare(
       `INSERT OR REPLACE INTO exit_page_stats
          (date, page, visits, users, bounce_rate, goal_reaches, conversion_rate, is_demo)
        VALUES (@date, @page, @visits, @users, @bounce_rate, @goal_reaches, @conversion_rate, @is_demo)`,
     );
+    let written = 0;
+    let skippedZero = 0;
     const tx = this.db.transaction((items: readonly PageStat[]) => {
       for (const p of items) {
+        const cur = existing.get(p.date, p.page) as { visits: number } | undefined;
+        if (!this.mayWrite(cur, p.visits, force)) {
+          skippedZero += 1;
+          this.noteProtectedDate(p.date);
+          continue;
+        }
         stmt.run({
           date: p.date,
           page: p.page,
@@ -635,10 +777,12 @@ export class MetricsRepo {
           conversion_rate: p.conversionRate,
           is_demo: p.isDemo ? 1 : 0,
         });
+        written += 1;
       }
     });
     tx(rows);
     this.invalidateStatCache();
+    return { written, skippedZero };
   }
 
   listExitPageStats(range?: { from: string; to: string }): readonly PageStat[] {

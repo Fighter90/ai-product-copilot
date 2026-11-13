@@ -260,6 +260,7 @@ describe('SyncService.syncAll', () => {
       browserOsRows: 7,
       newReturningRows: 7,
       errors: [], // ANA-15: every optional step passed
+      skippedZero: 0, // ANA-153: nothing needed protection on a live counter
     });
   });
 
@@ -509,5 +510,81 @@ describe('SyncService.syncAll — demo wipe + error surface (ANA-18, ANA-15)', (
     const summary = await partial.syncAll('2025-01-01', '2025-01-07', 80);
     warn.mockRestore();
     expect(summary.errors).toEqual([{ step: 'utm', message: 'Metrika 400: bad attr' }]);
+  });
+});
+
+// ANA-153 zero-protection round-trip: the counter's statistics were RESET (~2026-11-06) after the
+// real history was restored from raw_responses (ANA-150). Metrika now answers zero rows for the
+// pre-reset dates, so a wide sync would INSERT OR REPLACE the restored rows with zeros. The sync
+// must leave every non-zero row intact, count the defended rows in summary.skippedZero, and only
+// an explicit force may overwrite the history.
+describe('SyncService.syncAll — zero-protection round-trip (ANA-153)', () => {
+  /** Same response shapes as statResponder, but every metric zeroed (the reset counter). */
+  function zeroResponder() {
+    return (_path: string, params?: Record<string, unknown>) => {
+      const dims = String(params?.['dimensions'] ?? '');
+      if (dims.startsWith('ym:s:date')) {
+        const from = String(params?.['date1'] ?? '');
+        const to = String(params?.['date2'] ?? '');
+        return {
+          data: statRangeFixture.data
+            .filter((r) => {
+              const d = String(r.dimensions[0]?.name ?? '');
+              return d >= from && d <= to;
+            })
+            .map((r) => ({ ...r, metrics: [0, 0, 0, 0] })),
+        };
+      }
+      return { data: [{ dimensions: [{ name: 'podcast' }], metrics: [0, 0, 0, 0] }] };
+    };
+  }
+
+  function zeroSvc(): SyncService {
+    return new SyncService({
+      client: {
+        get: vi.fn(async (path: string, params?: Record<string, unknown>) =>
+          path.includes('/goals')
+            ? goalsFixture
+            : path.includes('bytime')
+              ? bytimeFixture
+              : zeroResponder()(path, params),
+        ),
+      } as unknown as MetrikaClient,
+      metrics,
+      counterId: 12345678,
+      archivedThreshold: 77,
+      now: () => '2025-01-20T00:00:00.000Z',
+    });
+  }
+
+  it('a wide sync over the reset counter keeps every restored non-zero row', async () => {
+    // Round 1: a normal sync fills the window with real (non-zero) Metrika data.
+    await svc.syncAll('2025-01-01', '2025-01-07', 80);
+    expect(metrics.listChannelStats().every((r) => r.visits === 100)).toBe(true);
+
+    // Round 2: the counter is reset — every response carries zeros now, with the same keys.
+    const summary = await zeroSvc().syncAll('2025-01-01', '2025-01-07', 80);
+
+    // 7 days × 5 stat tables defended against the zero overwrite.
+    expect(summary.skippedZero).toBe(35);
+    expect(metrics.listChannelStats().every((r) => r.visits === 100)).toBe(true);
+    expect(metrics.listUtmStats().every((r) => r.visits === 100)).toBe(true);
+    expect(metrics.listGeoDeviceStats().every((r) => r.visits === 100)).toBe(true);
+    expect(metrics.listPageStats().every((r) => r.visits === 100)).toBe(true);
+    expect(metrics.listExitPageStats().every((r) => r.visits === 100)).toBe(true);
+    expect(metrics.countProtectedDays()).toBe(7); // the audited defended dates
+  });
+
+  it('force lets the admin deliberately overwrite the restored history with the zeros', async () => {
+    await svc.syncAll('2025-01-01', '2025-01-07', 80);
+    const summary = await zeroSvc().syncAll('2025-01-01', '2025-01-07', 80, { force: true });
+
+    expect(summary.skippedZero).toBe(0);
+    expect(metrics.listChannelStats().every((r) => r.visits === 0)).toBe(true);
+    expect(metrics.listUtmStats().every((r) => r.visits === 0)).toBe(true);
+    expect(metrics.listGeoDeviceStats().every((r) => r.visits === 0)).toBe(true);
+    expect(metrics.listPageStats().every((r) => r.visits === 0)).toBe(true);
+    expect(metrics.listExitPageStats().every((r) => r.visits === 0)).toBe(true);
+    expect(metrics.countProtectedDays()).toBe(0);
   });
 });

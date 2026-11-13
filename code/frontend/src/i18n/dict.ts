@@ -437,6 +437,10 @@ export const ru = {
   'dq.coverageStale':
     'Данные {tables} обрываются {date}: часть выбранного периода не синхронизирована',
   'dq.staleBackfillAction': 'Догрузить период',
+  // ANA-153: zero-protection — дни, восстановленные из raw_responses после сброса счётчика.
+  'dq.protectedDays': '{n} дн. защищены от перезаписи',
+  'dq.protectedDaysHint':
+    'Счётчик Метрики сброшен: синк не перезапишет ненулевую историю этих дней нулями. Перезапись возможна только явным force-режимом (pnpm sync --force).',
   'flt.segment': 'Сегмент',
   'flt.error.max': 'Максимальный период — {n} дней (1 год).',
   'flt.error.order': 'Дата окончания не может быть раньше даты начала.',
@@ -1840,6 +1844,10 @@ export const en: Record<DictKey, string> = {
   'dq.table.exitPages': 'exit pages',
   'dq.coverageStale': 'Data for {tables} stops {date}: part of the selected period is not synced',
   'dq.staleBackfillAction': 'Backfill the period',
+  // ANA-153: zero-protection — days restored from raw_responses after the counter reset.
+  'dq.protectedDays': '{n} days protected from overwrite',
+  'dq.protectedDaysHint':
+    'The Metrika counter was reset: a sync will not overwrite these days’ non-zero history with zeros. Overwriting requires an explicit force run (pnpm sync --force).',
   'flt.segment': 'Segment',
   'flt.error.max': 'Maximum period is {n} days (1 year).',
   'flt.error.order': 'End date cannot be before the start date.',

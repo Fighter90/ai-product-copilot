@@ -7,6 +7,12 @@ const SyncBody = z.object({
   from: z.string(),
   to: z.string(),
   goalId: z.number().int().optional(),
+  /**
+   * ANA-153: bypass zero-protection — overwrite the restored non-zero history with whatever
+   * Metrika returns (even zeros). Admin-explicit only: an ordinary re-sync never zeroes the
+   * stored history after the counter reset.
+   */
+  force: z.boolean().optional(),
 });
 
 export type SyncRunner = (body: z.infer<typeof SyncBody>) => Promise<SyncSummary>;
@@ -44,10 +50,13 @@ export interface SyncRunRecorder {
  */
 export function withDefaultGoal(run: SyncRunner, pinnedGoalId: () => number): SyncRunner {
   const valid = (n: number | undefined): n is number => Number.isInteger(n) && (n as number) > 0;
-  return ({ from, to, goalId }) => {
+  return ({ from, to, goalId, force }) => {
     const pinned = pinnedGoalId();
     const resolved = valid(goalId) ? goalId : valid(pinned) ? pinned : undefined;
-    return run(resolved === undefined ? { from, to } : { from, to, goalId: resolved });
+    const body = resolved === undefined ? { from, to } : { from, to, goalId: resolved };
+    // ANA-153: force is admin-explicit — pass it through only when actually requested, so the
+    // runner never sees a stray `force: false` where a plain body is expected.
+    return run(force === true ? { ...body, force: true } : body);
   };
 }
 

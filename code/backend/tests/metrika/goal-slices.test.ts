@@ -254,6 +254,8 @@ describe('SyncService new slices', () => {
       goalReachesRows: 3,
       browserOsRows: 3,
       newReturningRows: 3,
+      // ANA-153 zero-protection: the fixtures carry real visits, nothing gets skipped.
+      skippedZero: 0,
       errors: [], // ANA-15: every slice passed
     });
   });
