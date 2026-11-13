@@ -60,3 +60,68 @@ test.describe('Mobile (iPhone 14) — no horizontal scroll on any page', () => {
     await expectNoHorizontalScroll(page);
   });
 });
+
+/** ANA-152: a complete hypothesis to open in the «Посмотреть» popup on the 390×844 viewport. */
+const VIEW_HYPOTHESIS = {
+  id: 100,
+  diamondPhase: 'develop',
+  kind: 'solution',
+  subject: 'Слушатели подкаста',
+  action: 'упростим регистрацию',
+  solution: 'короткая форма в один шаг',
+  condition: 'CR вырастет до 5%',
+  title: 'Гипотеза про подкаст: короткая форма регистрации вместо длинной',
+  description: 'Слушатели испытывают низкую конверсию при регистрации, потому что форма длинная.',
+  hiddenAssumptions: [
+    { category: 'behavior', text: 'слушатели ленятся заполнять длинные формы' },
+    { category: 'market', text: 'конкуренты уже упростили онбординг' },
+    { category: 'tech', text: 'форма переиспользуется с лендинга' },
+  ],
+  validationMethods: [
+    { type: 'quantitative', plan: 'A/B-тест формы' },
+    { type: 'synthetic', plan: '5 интервью со слушателями' },
+  ],
+  impact: 5,
+  confidence: 5,
+  ease: 5,
+  impactRationale: 'крупный канал с низкой конверсией',
+  confidenceRationale: 'данные Метрики подтверждают',
+  easeRationale: 'готовые компоненты формы',
+  greenCriteria: 'CR ≥ 5% за две недели',
+  yellowCriteria: 'CR 3–5%',
+  redCriteria: 'CR < 3%',
+  deadlineDays: 14,
+  source: 'manual',
+  iceScore: 125,
+  status: 'in_progress',
+  deadlineAt: '2026-11-28T00:00:00.000Z',
+  createdAt: '2025-01-01T00:00:00.000Z',
+  updatedAt: '2025-01-01T00:00:00.000Z',
+};
+
+test.describe('Mobile — hypothesis «Посмотреть» popup (ANA-152)', () => {
+  test.setTimeout(60_000);
+
+  test('the popup fits the 390px viewport: no horizontal overflow, dialog inside the screen', async ({
+    page,
+  }) => {
+    await installMocks(page, { user: ADMIN, hypotheses: [VIEW_HYPOTHESIS] });
+    await page.goto('/app/hypotheses');
+    await page.getByTestId('hyp-card-100').getByTestId('hyp-view-btn').click();
+
+    const modal = page.getByTestId('hyp-view-modal');
+    await expect(modal).toBeVisible();
+    // The full description renders — nothing replaced by the card's small heading.
+    await expect(modal).toContainText('короткая форма в один шаг');
+    await expect(modal).toContainText('CR вырастет до 5%');
+    // Nothing pushes the page wider than the phone screen, and the dialog stays inside it.
+    await expectNoHorizontalScroll(page);
+    const box = (await modal.boundingBox()) as { x: number; width: number };
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+    // The content scrolls inside the popup, not the page.
+    await expect(modal).toContainText('CR ≥ 5% за две недели');
+    await page.keyboard.press('Escape');
+    await expect(modal).toHaveCount(0);
+  });
+});

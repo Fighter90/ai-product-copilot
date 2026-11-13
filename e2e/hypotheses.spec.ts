@@ -141,6 +141,43 @@ test.describe('Hypotheses workspace (ANA-37)', () => {
     await expect(page.getByTestId('hyp-card-100')).toHaveCount(0);
   });
 
+  test('ANA-152: «Посмотреть» opens the read-only popup; «Редактировать» hands over to the editor', async ({
+    page,
+  }) => {
+    await mockWorkspace(page, { hypotheses: [SEEDED_HYPOTHESIS] });
+    await page.goto('/app/hypotheses');
+    const card = page.getByTestId('hyp-card-100');
+    await card.getByTestId('hyp-view-btn').click();
+
+    const modal = page.getByTestId('hyp-view-modal');
+    await expect(modal).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Гипотеза' })).toBeVisible();
+    // Full title + structured fields (the card shows only a small heading).
+    await expect(modal).toContainText('Гипотеза про подкаст');
+    await expect(modal).toContainText('Решение'); // kind
+    await expect(modal).toContainText('короткая форма в один шаг'); // solution
+    await expect(modal).toContainText('CR вырастет до 5%'); // condition = критерий
+    await expect(modal).toContainText('крупный канал'); // impact rationale — was tooltip-only
+    await expect(modal).toContainText('CR ≥ 5%'); // green criterion
+    await expect(modal).toContainText('A/B-тест формы'); // validation method
+    await expect(modal).toContainText('14 дн.'); // deadline
+
+    // «Редактировать» opens the existing editor — the view popup closes.
+    await modal.getByRole('button', { name: 'Редактировать' }).click();
+    await expect(page.getByTestId('hypothesis-editor')).toBeVisible();
+    await expect(modal).toHaveCount(0);
+  });
+
+  test('ANA-152: Esc closes the view popup', async ({ page }) => {
+    await mockWorkspace(page, { hypotheses: [SEEDED_HYPOTHESIS] });
+    await page.goto('/app/hypotheses');
+    await page.getByTestId('hyp-card-100').getByTestId('hyp-view-btn').click();
+    const modal = page.getByTestId('hyp-view-modal');
+    await expect(modal).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(modal).toHaveCount(0);
+  });
+
   test('ICE table sorts by the clicked column', async ({ page }) => {
     await mockWorkspace(page, {
       hypotheses: [
