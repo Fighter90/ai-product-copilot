@@ -11,7 +11,9 @@ export default defineConfig({
     include: ['src/**/*.test.{ts,tsx}'],
     // Full-app renders (App/Landing, CabinetLayout) are heavy on a cold run and blow the 5 s
     // default on a loaded box — vitest 4 fails them even when the overrun is one-off JIT/import.
-    testTimeout: 20_000,
+    // 60 s: the ANA-165 gate saw the ANA-145 full-app kanban test overrun the 20 s ceiling at
+    // 42.5 s while backend+frontend coverage ran in parallel on one box (ANA-125 precedent).
+    testTimeout: 60_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

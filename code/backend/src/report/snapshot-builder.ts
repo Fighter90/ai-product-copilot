@@ -3,7 +3,9 @@ import type { MetricsRepo } from '../db/repositories/metrics-repo';
 import type { HypothesesRepo } from '../db/repositories/hypotheses-repo';
 import type { DecisionsRepo } from '../db/repositories/decisions-repo';
 import type { B2bRepo } from '../db/repositories/b2b-repo';
+import type { MarketingRepo } from '../db/repositories/marketing-repo';
 import { topUtm, topGeoDevice, topPages } from './breakdowns';
+import { buildMarketingSummary } from './marketing-summary';
 import { resolvePrimaryGoal } from '../metrika/primary-goal';
 
 export interface SnapshotBuilderDeps {
@@ -11,6 +13,8 @@ export interface SnapshotBuilderDeps {
   readonly hypotheses: HypothesesRepo;
   readonly decisions: DecisionsRepo;
   readonly b2b: B2bRepo;
+  /** ANA-165: the Marketing page's weekly grid — aggregated into snapshot.marketing. */
+  readonly marketing?: Pick<MarketingRepo, 'list'>;
   /** Raw «Цель по оплатам» setting (runtime KPI_TARGET); normalised, defaults to 300. */
   readonly kpiTarget?: () => number | string;
   /** Admin-pinned KPI goal (runtime GOAL_ID; 0 = auto-detect) — same goal the sync used. */
@@ -109,6 +113,12 @@ export class SnapshotBuilder {
       b2bPaidTickets,
     });
 
+    // ANA-165: the Marketing page's weekly grid rides in the snapshot (real, non-demo cells
+    // whose campaign week intersects the period) so DOCX/PDF and the AI analysis can use it.
+    const marketingSummary = this.deps.marketing
+      ? buildMarketingSummary(this.deps.marketing.list(), range)
+      : undefined;
+
     return {
       id: opts.id,
       generatedAt: opts.generatedAt,
@@ -143,6 +153,7 @@ export class SnapshotBuilder {
         entryPages: topPages(pageStats),
         exitPages: topPages(exitPageStats),
       },
+      ...(marketingSummary ? { marketing: marketingSummary } : {}),
       goalLabel,
     };
   }

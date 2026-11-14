@@ -5,6 +5,7 @@ import { HypothesesRepo } from '../../src/db/repositories/hypotheses-repo';
 import { DecisionsRepo } from '../../src/db/repositories/decisions-repo';
 import { B2bRepo } from '../../src/db/repositories/b2b-repo';
 import { B2cPaymentsRepo } from '../../src/db/repositories/b2c-payments-repo';
+import { MarketingRepo } from '../../src/db/repositories/marketing-repo';
 import { SnapshotBuilder } from '../../src/report/snapshot-builder';
 import { freshDb, validHypothesis } from '../db/helpers';
 
@@ -294,5 +295,68 @@ describe('SnapshotBuilder', () => {
     const paidStage = snap.b2bSummary.byStage.find((s) => s.stage === 'paid');
     expect(paidStage?.tickets).toBe(30);
     expect(paidStage?.deals).toBe(2); // two deals with 'paid' stage
+  });
+
+  it('ANA-165: aggregates the Marketing page weekly grid into snapshot.marketing for the period', () => {
+    const marketing = new MarketingRepo(db);
+    marketing.upsert(
+      { weekStart: '2026-08-01', metricKey: 'tg_clicks', value: 120 },
+      { source: 'manual', now: () => 'T' },
+    );
+    marketing.upsert(
+      { weekStart: '2026-08-08', metricKey: 'tg_clicks', value: 80 },
+      { source: 'import', now: () => 'T' },
+    );
+    // Week 2026-08-24 (Aug 24–30) does not intersect the period → excluded.
+    marketing.upsert(
+      { weekStart: '2026-08-24', metricKey: 'tg_clicks', value: 999 },
+      { source: 'import', now: () => 'T' },
+    );
+    const withMarketing = new SnapshotBuilder({
+      metrics,
+      hypotheses: new HypothesesRepo(db),
+      decisions: new DecisionsRepo(db),
+      b2b: new B2bRepo(db),
+      marketing,
+    });
+    const snap = withMarketing.build({
+      id: 'mk',
+      generatedAt: 'T',
+      from: '2026-08-01',
+      to: '2026-08-20',
+    });
+    expect(snap.marketing?.weeks.map((w) => w.key)).toEqual(['2026-08-01', '2026-08-08']);
+    expect(snap.marketing?.byMetric.find((m) => m.metricKey === 'tg_clicks')).toMatchObject({
+      total: 200,
+      weeks: 2,
+      section: 'content',
+    });
+  });
+
+  it('ANA-165: demo marketing cells stay out of snapshot.marketing (anti-hallucination)', () => {
+    const marketing = new MarketingRepo(db);
+    marketing.upsert(
+      { weekStart: '2026-08-01', metricKey: 'ambassadors', value: 99 },
+      { source: 'manual', isDemo: true, now: () => 'T' },
+    );
+    const withMarketing = new SnapshotBuilder({
+      metrics,
+      hypotheses: new HypothesesRepo(db),
+      decisions: new DecisionsRepo(db),
+      b2b: new B2bRepo(db),
+      marketing,
+    });
+    const snap = withMarketing.build({
+      id: 'mkd',
+      generatedAt: 'T',
+      from: '2026-08-01',
+      to: '2026-08-20',
+    });
+    expect(snap.marketing).toBeUndefined();
+  });
+
+  it('ANA-165: snapshot.marketing is absent without the marketing dep (legacy snapshots)', () => {
+    const snap = builder.build({ id: 'x', generatedAt: 'T', from: '2026-08-01', to: '2026-08-20' });
+    expect(snap.marketing).toBeUndefined();
   });
 });

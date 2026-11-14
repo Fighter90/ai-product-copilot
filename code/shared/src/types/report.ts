@@ -4,6 +4,7 @@ import type { Decision } from './decisions';
 import type { GeneratedHypotheses } from './generated-hypotheses';
 import type { GeneratedDecisions } from './generated-decisions';
 import type { GoalLabel } from '../format-goal';
+import type { MarketingSummary } from './marketing';
 
 /** Aggregated top-N breakdown rows for the report appendix (summed across the period). */
 export interface UtmBreakdownRow {
@@ -161,4 +162,10 @@ export interface ReportSnapshot {
    * stays deterministic — it only reads these bytes. Absent → report renders text/tables only.
    */
   readonly charts?: ReportCharts;
+  /**
+   * ANA-165: the Marketing page's weekly grid aggregated over the report period — per-metric
+   * totals of the real (non-demo) cells. Absent in legacy snapshots, without the marketing repo
+   * wired into the builder, or when no real cell intersects the period.
+   */
+  readonly marketing?: MarketingSummary;
 }

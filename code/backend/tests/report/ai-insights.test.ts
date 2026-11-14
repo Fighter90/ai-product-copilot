@@ -43,6 +43,41 @@ describe('snapshotFacts', () => {
     });
     expect(empty).toContain('Топ UTM: —');
   });
+
+  it('ANA-165: adds the marketing weekly-grid totals when the snapshot carries them', () => {
+    const withMarketing: ReportSnapshot = {
+      ...snapshot,
+      marketing: {
+        weeks: [{ key: '2026-08-01', start: '2026-08-01', end: '2026-08-14' }],
+        byMetric: [
+          {
+            metricKey: 'tg_clicks',
+            labelRu: 'переходы по ссылкам тг',
+            labelEn: 'Telegram link clicks',
+            section: 'content',
+            total: 120,
+            weeks: 1,
+          },
+          {
+            metricKey: 'partner_posts',
+            labelRu: 'сколько вышло партнерских постов',
+            labelEn: 'Partner posts published',
+            section: 'influence',
+            total: 6,
+            weeks: 1,
+          },
+        ],
+      },
+    };
+    const facts = snapshotFacts(withMarketing);
+    expect(facts).toContain('Маркетинг (недели 2026-08-01..2026-08-14)');
+    expect(facts).toContain('Контент-маркетинг — переходы по ссылкам тг: 120 (1 нед.)');
+    expect(facts).toContain('Инфопартнёры — сколько вышло партнерских постов: 6 (1 нед.)');
+  });
+
+  it('ANA-165: no «Маркетинг» line without marketing data in the snapshot', () => {
+    expect(snapshotFacts(snapshot)).not.toContain('Маркетинг');
+  });
 });
 
 describe('buildInsightsRequest', () => {

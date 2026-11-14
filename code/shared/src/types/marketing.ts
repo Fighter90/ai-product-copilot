@@ -76,3 +76,30 @@ export interface MarketingSyncSummary {
   /** Present when a Metrika backfill window was requested. */
   pulled?: unknown;
 }
+
+/**
+ * ANA-165: one metric of the marketing weekly grid totalled over the report period.
+ * `total` sums only real (non-demo) cells; `weeks` counts the distinct campaign weeks
+ * that contributed at least one cell.
+ */
+export interface MarketingMetricTotal {
+  metricKey: string;
+  labelRu: string;
+  labelEn: string;
+  /** Catalog section; 'other' only for keys outside the metric catalog (defensive). */
+  section: 'content' | 'influence' | 'other';
+  total: number;
+  weeks: number;
+}
+
+/**
+ * ANA-165: the Marketing page's weekly grid (sheet «стата») aggregated for the report
+ * snapshot — per-metric totals over the campaign weeks intersecting the report period.
+ * Lets DOCX/PDF and the AI analysis reason about marketing activities without a live API.
+ */
+export interface MarketingSummary {
+  /** Contributing weeks (grid order; unknown weekStarts last, sorted, as single days). */
+  weeks: Array<{ key: string; start: string; end: string }>;
+  /** Catalog-order metrics with at least one contributing cell (unknown keys last, sorted). */
+  byMetric: MarketingMetricTotal[];
+}

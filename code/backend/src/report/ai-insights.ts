@@ -104,6 +104,31 @@ export function snapshotFacts(s: ReportSnapshot): string {
     lines.push('B2B сделок нет.');
   }
 
+  // ANA-165: marketing weekly grid totals (Marketing page) — real (non-demo) cells only.
+  const marketing = s.marketing;
+  if (marketing && marketing.byMetric.length > 0) {
+    const first = marketing.weeks[0];
+    const last = marketing.weeks[marketing.weeks.length - 1];
+    if (first && last) {
+      const range = `Маркетинг (недели ${first.start}..${last.end})`;
+      const fmt = (m: { labelRu: string; total: number; weeks: number }): string =>
+        `${m.labelRu}: ${m.total} (${m.weeks} нед.)`;
+      const sectionLine = (section: 'content' | 'influence' | 'other', title: string): string => {
+        const rows = marketing.byMetric
+          .filter((m) => m.section === section)
+          .map(fmt)
+          .join('; ');
+        return rows ? `${range}: ${title} — ${rows}.` : '';
+      };
+      const contentLine = sectionLine('content', 'Контент-маркетинг');
+      const influenceLine = sectionLine('influence', 'Инфопартнёры');
+      const otherLine = sectionLine('other', 'Прочее');
+      for (const line of [contentLine, influenceLine, otherLine]) {
+        if (line) lines.push(line);
+      }
+    }
+  }
+
   lines.push(
     `Гипотезы: ${s.hypotheses.problems.length} проблемных, ` +
       `${s.hypotheses.solutions.length} решенческих. ` +
@@ -192,9 +217,11 @@ const ANALYSIS_CHUNKS: AnalysisChunk[] = [
     systemPrompt:
       'Ты — аналитик трафика и аудитории. Пиши по-русски, детально. Используй ТОЛЬКО приведённые числа. ' +
       'Проанализируй каждый канал: объём, CR, качество трафика. Проанализируй UTM-кампании, ' +
-      'гео и устройства. Выдели лучшие и худшие. Напиши 3–5 абзацев на каждый значимый аспект.',
+      'гео и устройства. Выдели лучшие и худшие. Если в данных есть блок «Маркетинг» ' +
+      '(контент-маркетинг и инфопартнёры — посты, рассылки, амбассадоры, переходы), проанализируй и его: ' +
+      'какие активности дали переходы, заявки и оплаты, где отдача максимальная. Напиши 3–5 абзацев на каждый значимый аспект.',
     userPrompt: (facts) =>
-      `Данные:\n${facts}\n\nДетальный анализ каналов, UTM, гео и устройств: какой трафик конвертирует, какой — пустые визиты.`,
+      `Данные:\n${facts}\n\nДетальный анализ каналов, UTM, гео, устройств и маркетинговых активностей: какой трафик конвертирует, какой — пустые визиты.`,
   },
   {
     section: 'Страницы и Воронка',
