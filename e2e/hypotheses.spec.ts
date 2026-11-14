@@ -211,6 +211,26 @@ test.describe('Hypotheses workspace (ANA-37)', () => {
   });
 });
 
+test.describe('Hypothesis card «Посмотреть» button fit (ANA-158)', () => {
+  // The admin's screenshot: at 1440px the six kanban lanes are ~220px wide and the footer row
+  // (status select + «Посмотреть» + icon buttons) overflowed the card edge.
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test('at 1440px the «Посмотреть» button stays fully inside the kanban card', async ({ page }) => {
+    await mockWorkspace(page, { hypotheses: [SEEDED_HYPOTHESIS] });
+    await page.goto('/app/hypotheses');
+    const card = page.getByTestId('hyp-card-100');
+    await expect(card).toBeVisible();
+    const btn = card.getByTestId('hyp-view-btn');
+    await expect(btn).toBeVisible();
+    // The card clips overflow (overflow-hidden), so containment proves the button is not cut.
+    const b = (await btn.boundingBox()) as { x: number; width: number };
+    const c = (await card.boundingBox()) as { x: number; width: number };
+    expect(b.x).toBeGreaterThanOrEqual(c.x);
+    expect(b.x + b.width).toBeLessThanOrEqual(c.x + c.width + 1); // 1px rounding allowance
+  });
+});
+
 test.describe('«→ гипотеза» deep link (ANA-24)', () => {
   test('click → prefilled editor → save → the hypothesis lands in the kanban', async ({ page }) => {
     await mockWorkspace(page);

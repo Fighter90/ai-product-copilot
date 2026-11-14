@@ -461,6 +461,21 @@ describe('Hypotheses page', () => {
     expect(screen.queryByTestId('hyp-view-modal')).not.toBeInTheDocument();
   });
 
+  it('ANA-158: narrow card — the footer row wraps and «Посмотреть» never overflows the card (styling contract)', async () => {
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    const card = await screen.findByTestId('hyp-card-2');
+    // jsdom computes no layout, so the narrow-card fit is asserted as a styling contract here;
+    // the real pixel containment checks live in e2e (1440px desktop lanes + 390px mobile).
+    const footer = within(card).getByRole('combobox', { name: 'Изменить статус' })
+      .parentElement as HTMLElement;
+    expect(footer).toHaveClass('flex-wrap'); // the row wraps instead of pushing buttons past the edge
+    const view = within(card).getByTestId('hyp-view-btn');
+    expect(view).toHaveClass('min-w-0', 'max-w-full'); // the button shrinks, never exceeds the card
+    const svg = view.querySelector('svg');
+    expect(svg).toHaveClass('shrink-0'); // the eye icon stays whole while the label truncates
+    expect(view.querySelector('span.truncate')).toHaveTextContent('Посмотреть');
+  });
+
   it('ANA-152: mobile 390px — the popup keeps the fit contract (bottom sheet + inner scroll)', async () => {
     renderWithProviders(<Hypotheses />, '/app/hypotheses');
     fireEvent.click((await screen.findAllByTestId('hyp-view-btn'))[0]!);

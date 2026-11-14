@@ -315,10 +315,13 @@ export function Hypotheses(): JSX.Element {
                       />
                       <UnverifiedBadge numbers={h.unverifiedNumbers} />
                     </div>
-                    <div className="mt-2 flex items-center justify-between gap-1 text-xs text-muted">
+                    {/* ANA-158: flex-wrap + min-w-0 on every flex child — with a long status label
+                        or a narrow lane the row wraps and «Посмотреть» truncates instead of being
+                        pushed past the card edge (overflow-hidden would clip it). */}
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-1 text-xs text-muted">
                       <select
                         aria-label={t('hyp.changeStatus')}
-                        className="rounded border border-line bg-surface px-1 py-0.5 text-xs"
+                        className="min-w-0 max-w-full rounded border border-line bg-surface px-1 py-0.5 text-xs"
                         value={h.status}
                         onChange={(e) => onStatusChange(h, e.target.value as HypothesisStatus)}
                       >
@@ -328,16 +331,16 @@ export function Hypotheses(): JSX.Element {
                           </option>
                         ))}
                       </select>
-                      <span className="flex items-center gap-1">
+                      <span className="flex min-w-0 max-w-full items-center gap-1">
                         <button
                           type="button"
                           data-testid="hyp-view-btn"
-                          className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-muted hover:text-accent"
+                          className="inline-flex min-w-0 max-w-full items-center gap-1 rounded px-1 py-0.5 text-muted hover:text-accent"
                           title={t('hyp.view')}
                           onClick={() => setViewing(h)}
                         >
-                          <Eye className="h-3.5 w-3.5" aria-hidden />
-                          {t('hyp.view')}
+                          <Eye className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          <span className="truncate">{t('hyp.view')}</span>
                         </button>
                         <button
                           type="button"

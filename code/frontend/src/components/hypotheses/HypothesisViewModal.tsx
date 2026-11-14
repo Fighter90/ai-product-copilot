@@ -174,7 +174,8 @@ export function HypothesisViewModal({
           {t('hyp.deadlineIn', { n: h.deadlineDays })} · {fmtDate(h.deadlineAt, locale)}
         </Row>
 
-        <div className="flex justify-end gap-2 pt-1">
+        {/* ANA-158: flex-wrap keeps the button row inside the popup on a 390px phone. */}
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
           <button
             type="button"
             data-testid="hyp-view-close"
