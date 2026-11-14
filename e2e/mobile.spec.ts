@@ -22,6 +22,7 @@ const PAGES: ReadonlyArray<readonly [path: string, marker: RegExp]> = [
   ['/app/report', /Собрать отчёт/],
   ['/app/history', /Отчётов пока нет|История/],
   ['/app/marketing', /Контент-маркетинг|Маркетинг/],
+  ['/app/b2b', /Добавить|Лид/],
   ['/app/admin/metrika', /Метрика и данные/],
   ['/help', /Справка/],
 ];
