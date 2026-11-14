@@ -4,6 +4,7 @@ import type { ChannelStat } from '@pca/shared';
 import { KpiStrip } from './KpiStrip';
 import { goalPace } from './goal-pace';
 import { summarizeChannels, type WeakSpot } from '../../lib/overview';
+import { setTestLocale } from '../../test/i18n-utils';
 
 const ch = (date: string, channel: string, visits: number, goalReaches: number): ChannelStat => ({
   date,
@@ -41,5 +42,26 @@ describe('KpiStrip (ANA-146 mobile no-overflow)', () => {
     const detail = screen.getByText(/при 420 визитах/);
     // The class must not appear un-prefixed: `sm:whitespace-nowrap` (or none) keeps ≤640px wrappable.
     expect(detail.className).not.toMatch(/(^|\s)whitespace-nowrap(\s|$)/);
+  });
+
+  it('ANA-168: the target tile shows the deadline date («до {дата}»)', () => {
+    setTestLocale('ru');
+    const kpi = summarizeChannels([ch('2025-01-01', 'podcast', 420, 12)], [], false, 300, 0);
+    const pace = goalPace({
+      points: [{ date: '2025-01-01', visits: 420, reaches: 12 }],
+      to: '2025-01-01',
+      target: kpi.target,
+      current: kpi.paid,
+      goalIsPaid: false,
+    });
+    render(
+      <KpiStrip kpi={kpi} pace={pace} goalIsPaid={false} showApplicationsCaveat weakSpot={weak} />,
+    );
+    // 1 fact day → deadline = 2025-01-01 + 2 = 2025-01-03; the «Цель» tile repeats the date.
+    const date = new Date('2025-01-03T00:00:00').toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'short',
+    });
+    expect(screen.getByText(`до ${date}`)).toBeInTheDocument();
   });
 });

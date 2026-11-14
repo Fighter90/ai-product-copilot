@@ -208,4 +208,25 @@ describe('KPI & forecast (GoalsView)', () => {
     expect(note).toHaveTextContent(`${fmtDate('2025-01-01', 'en')}–${fmtDate('2025-01-02', 'en')}`);
     expectNoCyrillic(container);
   });
+
+  it('ANA-168: the main goal shows the deadline date (period end + 2× fact window)', () => {
+    view();
+    // The same resolveKpiDeadline расчёт as the Overview hero and «Что если»: 2 fact days →
+    // horizon 4 → deadline = 2025-01-02 + 4 = 2025-01-06.
+    expect(screen.getByTestId('kpi-deadline')).toHaveTextContent(fmtDate('2025-01-06', 'ru'));
+  });
+
+  it('ANA-168: with EVENT_DATE the main goal shows the event date as the deadline', () => {
+    view({ eventDate: '2026-04-15' });
+    expect(screen.getByTestId('kpi-deadline')).toHaveTextContent(fmtDate('2026-04-15', 'ru'));
+  });
+
+  it('ANA-168: the main-goal deadline keeps English wording (no Cyrillic)', () => {
+    setTestLocale('en');
+    const { container } = view({ eventDate: '2026-04-15' });
+    const line = screen.getByTestId('kpi-deadline');
+    expect(line).toHaveTextContent('Deadline:');
+    expect(line).toHaveTextContent(fmtDate('2026-04-15', 'en'));
+    expectNoCyrillic(container);
+  });
 });

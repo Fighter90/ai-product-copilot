@@ -135,7 +135,14 @@ export function KpiStrip({
         </div>
 
         <div className="grid grid-cols-2 gap-3" data-testid="kpi-tiles">
-          <Kpi label={t('kpi.ticketGoal')} value={target} define={t('hint.metric.target')} />
+          <Kpi
+            label={t('kpi.ticketGoal')}
+            value={target}
+            define={t('hint.metric.target')}
+            /* ANA-168: the deadline date accompanies the goal everywhere — the tile repeats
+               the same date as the hero forecast line. */
+            note={t('ov.kpi.targetDeadline', { date: deadline })}
+          />
           <Kpi
             label={goalIsPaid ? t('ov.kpi.orders') : t('ov.kpi.applications')}
             value={formatInt(kpi.applications)}
@@ -164,12 +171,15 @@ function Kpi({
   value,
   hint,
   define,
+  note,
 }: {
   label: string;
   value: string;
   hint?: string;
   /** Metric definition + formula + source, shown in the «i» popover (ANA-47). */
   define?: string;
+  /** ANA-168: a neutral extra line under the value (e.g. the goal deadline date). */
+  note?: string;
 }): JSX.Element {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm lg:p-3">
@@ -179,6 +189,7 @@ function Kpi({
       </div>
       <div className="text-xl font-bold lg:text-2xl">{value}</div>
       {hint ? <div className="text-xs leading-tight text-amber-700">{hint}</div> : null}
+      {note ? <div className="text-xs leading-tight text-slate-500">{note}</div> : null}
     </div>
   );
 }
