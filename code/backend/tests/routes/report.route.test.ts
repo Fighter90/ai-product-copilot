@@ -303,6 +303,132 @@ describe('report routes', () => {
     await app.close();
   });
 
+  // ANA-156: the admin checklist runs at the API level — POST /report/insights → done →
+  // GET /api/hypotheses must show AI drafts. That requires the insights job itself to drive
+  // the hypotheses runner (ANA-128 auto-populate), not only the browser's fire-and-forget.
+  it('ANA-156: a successful insights job also runs the hypotheses runner (auto-populate reaches the backlog without the UI)', async () => {
+    const fakeHypotheses: GeneratedHypotheses = { problems: [], solutions: [] };
+    const runner: ReportRunner = {
+      build: vi.fn(),
+      get: vi.fn(() => snap),
+      list: vi.fn(),
+      generate: vi.fn(),
+      remove: vi.fn(),
+      download: vi.fn(),
+      insights: vi.fn(async () => ({ ok: true as const, narrative: 'анализ' })),
+      hypotheses: vi.fn(async () => ({ ok: true as const, hypotheses: fakeHypotheses })),
+    };
+    const app = appWith(runner);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok', providerId: 'anthropic' },
+    });
+    expect(res.statusCode).toBe(202);
+    await settle();
+    // Same snapshot, same pinned provider as the narrative — the UI's own follow-up does this.
+    expect(runner.hypotheses).toHaveBeenCalledWith('ok', 'anthropic');
+    // The job result contract is unchanged: the narrative, not the hypotheses payload.
+    const { jobId } = res.json() as { jobId: string };
+    const done = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${jobId}` });
+    expect(done.json()).toMatchObject({
+      kind: 'insights',
+      status: 'done',
+      result: { narrative: 'анализ' },
+    });
+    await app.close();
+  });
+
+  it('ANA-156: hypotheses auto-populate after insights is best-effort — a runner refusal keeps the narrative job done', async () => {
+    const runner: ReportRunner = {
+      build: vi.fn(),
+      get: vi.fn(() => snap),
+      list: vi.fn(),
+      generate: vi.fn(),
+      remove: vi.fn(),
+      download: vi.fn(),
+      insights: vi.fn(async () => ({ ok: true as const, narrative: 'анализ' })),
+      hypotheses: vi.fn(async () => ({
+        ok: false as const,
+        reason: 'unavailable' as const,
+        message: 'no key',
+      })),
+    };
+    const app = appWith(runner);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok' },
+    });
+    await settle();
+    const { jobId } = res.json() as { jobId: string };
+    const done = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${jobId}` });
+    expect(done.json()).toMatchObject({ status: 'done', result: { narrative: 'анализ' } });
+    await app.close();
+  });
+
+  it('ANA-156: a thrown hypotheses-runner failure also keeps the insights job done (ANA-128: auto-populate never breaks the analysis)', async () => {
+    const runner: ReportRunner = {
+      build: vi.fn(),
+      get: vi.fn(() => snap),
+      list: vi.fn(),
+      generate: vi.fn(),
+      remove: vi.fn(),
+      download: vi.fn(),
+      insights: vi.fn(async () => ({ ok: true as const, narrative: 'анализ' })),
+      hypotheses: vi.fn(async () => {
+        throw new Error('provider exploded');
+      }),
+    };
+    const app = appWith(runner);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok' },
+    });
+    await settle();
+    const { jobId } = res.json() as { jobId: string };
+    const done = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${jobId}` });
+    expect(done.json()).toMatchObject({ status: 'done', result: { narrative: 'анализ' } });
+    await app.close();
+  });
+
+  it('ANA-156: a failed insights analysis does not trigger the hypotheses runner', async () => {
+    const runner: ReportRunner = {
+      build: vi.fn(),
+      get: vi.fn(() => snap),
+      list: vi.fn(),
+      generate: vi.fn(),
+      remove: vi.fn(),
+      download: vi.fn(),
+      insights: vi.fn(async () => ({
+        ok: false as const,
+        reason: 'unavailable' as const,
+        message: 'no key',
+      })),
+      hypotheses: vi.fn(async () => ({
+        ok: true as const,
+        hypotheses: { problems: [], solutions: [] },
+      })),
+    };
+    const app = appWith(runner);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok' },
+    });
+    await settle();
+    const { jobId } = res.json() as { jobId: string };
+    const done = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${jobId}` });
+    expect(done.json()).toMatchObject({ status: 'failed', error: 'no key' });
+    expect(runner.hypotheses).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it('ANA-133: 3 concurrent AI requests → 1 job runs, 2 get 429 with Retry-After', async () => {
     let release!: (r: InsightsResult) => void;
     const gate = new Promise<InsightsResult>((resolve) => {
