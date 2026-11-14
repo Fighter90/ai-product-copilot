@@ -1,7 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { B2bDeal, ChannelStat, GoalLabel } from '@pca/shared';
-import { paidAndGap, periodTotals, formatGoalLabel, readEventDate } from '@pca/shared';
+import {
+  paidAndGap,
+  periodTotals,
+  formatGoalLabel,
+  readEventDate,
+  resolveKpiDeadline,
+} from '@pca/shared';
 import { api, http } from '../lib/api';
 import { v3 } from '../lib/api-v3';
 import { useFilters } from '../store/filters';
@@ -418,6 +424,13 @@ export function GoalsView({
     b2cPaidTickets: b2cPaid,
     b2bPaidTickets: b2bPaid,
   });
+  // ANA-168: the deadline accompanies the main goal everywhere — the same resolveKpiDeadline
+  // расчёт as the Overview hero and «Что если» (EVENT_DATE wins; else period end + 2× window).
+  const kpiDeadline = resolveKpiDeadline({
+    to,
+    windowDays: Math.max(points.length, 1),
+    eventDate,
+  });
   const progress = target > 0 ? Math.min((current / target) * 100, 100) : 0;
   // formatGoalLabel (shared) titles the goal in Russian — localise by its isPaid flag instead.
   const goalTitle = goalLabel?.isPaid ? t('an.kpi.orders') : t('an.fn.b2cAppsCount');
@@ -447,6 +460,11 @@ export function GoalsView({
             <h3 className="text-lg font-semibold">
               {t('an.kpi.mainGoal', { n: formatInt(target) })}
             </h3>
+            {/* ANA-168: the deadline date sits right with the main goal, on every screen that
+                names it — the same date the hero, «Что если» and the caveat show. */}
+            <p className="text-sm text-slate-500" data-testid="kpi-deadline">
+              {t('an.kpi.deadline', { date: fmtDate(kpiDeadline.deadline, locale) })}
+            </p>
             <div className="space-y-1 text-sm text-slate-600">
               <p>
                 {t('an.kpi.remaining')}{' '}
