@@ -125,4 +125,21 @@ test.describe('Mobile — hypothesis «Посмотреть» popup (ANA-152)', 
     await page.keyboard.press('Escape');
     await expect(modal).toHaveCount(0);
   });
+
+  test('ANA-158: the «Посмотреть» button stays fully inside the card at 390px', async ({
+    page,
+  }) => {
+    await installMocks(page, { user: ADMIN, hypotheses: [VIEW_HYPOTHESIS] });
+    await page.goto('/app/hypotheses');
+    const card = page.getByTestId('hyp-card-100');
+    await expect(card).toBeVisible();
+    const btn = card.getByTestId('hyp-view-btn');
+    await expect(btn).toBeVisible();
+    // The card clips overflow (overflow-hidden), so containment proves the button is not cut.
+    const b = (await btn.boundingBox()) as { x: number; width: number };
+    const c = (await card.boundingBox()) as { x: number; width: number };
+    expect(b.x).toBeGreaterThanOrEqual(c.x);
+    expect(b.x + b.width).toBeLessThanOrEqual(c.x + c.width + 1); // 1px rounding allowance
+    await expectNoHorizontalScroll(page);
+  });
 });
