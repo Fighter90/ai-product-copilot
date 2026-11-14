@@ -9,6 +9,7 @@ import {
 } from '@pca/shared';
 import type { UsersRepo } from '../auth/users-repo';
 import { reportAiJobs, type AiJobQueue } from '../report/ai-job-queue';
+import { logger } from '../utils/logger';
 
 const SnapshotBody = z.object({ from: z.string(), to: z.string() });
 const GenerateBody = z.object({ snapshotId: z.string(), format: z.enum(['docx', 'pdf']) });
@@ -174,6 +175,22 @@ export async function reportRoutes(app: FastifyInstance, opts: ReportRouteOption
       // A runner failure («no key», provider error) fails the job with its message instead
       // of the old synchronous 503 — the poll reports it as {status:'failed', error}.
       if (!result.ok) throw new Error(result.message);
+      // ANA-156: the analysis must leave AI drafts in the backlog (ANA-128) — «после AI-анализа
+      // 0 гипотез с source=ai» on prod had this contract gap: only the browser's fire-and-forget
+      // (БАГ-21) drove POST /report/hypotheses, so a pure-API analysis (the admin checklist) or
+      // a closed tab silently skipped auto-population. Run the runner right here, in the same
+      // job and slot: it returns the already-generated hypotheses without regenerating (ANA-128
+      // backfill) and dedupes drafts by content hash. Best-effort (ANA-128: auto-population
+      // must never break the report) — a failure here keeps the narrative job done, the
+      // browser follow-up stays as a second chance, and the miss is observable in the log.
+      try {
+        await opts.runner.hypotheses(parsed.data.snapshotId, parsed.data.providerId);
+      } catch (err) {
+        logger.warn(
+          { err, snapshotId: parsed.data.snapshotId },
+          'ai-autopopulate after insights failed — narrative kept, backlog left without AI drafts',
+        );
+      }
       return { narrative: result.narrative, generatedBy: result.generatedBy };
     });
     if (jobId === null) {
