@@ -1,6 +1,6 @@
 import type { DB } from '../connection';
 import type { Decision, NewDecision } from '@pca/shared';
-import { isDecisionType } from '@pca/shared';
+import { isDecisionStatus, isDecisionType } from '@pca/shared';
 
 /** Thrown when a Decision Log entry lacks its required evidence base. */
 export class DecisionValidationError extends Error {
@@ -15,6 +15,8 @@ interface DecRow {
   number: string;
   hypothesis_id: number;
   date: string;
+  decision: string | null;
+  status: string;
   method: Decision['method'];
   scope: string;
   period_days: number;
@@ -43,6 +45,10 @@ function toDecision(r: DecRow): Decision {
     number: r.number,
     hypothesisId: r.hypothesis_id,
     date: r.date,
+    // ANA-169: legacy tolerance — a row predating the 024 backfill falls back to next_step,
+    // the same rule the migration used; an unknown/garbage status degrades to accepted.
+    decision: r.decision ?? r.next_step,
+    status: isDecisionStatus(r.status) ? r.status : 'accepted',
     method: r.method,
     scope: r.scope,
     periodDays: r.period_days,
@@ -105,12 +111,12 @@ export class DecisionsRepo {
     const now = new Date().toISOString();
     const insert = this.db.prepare(
       `INSERT INTO decisions (
-         number, hypothesis_id, date, method, scope, period_days, findings, evidence,
+         number, hypothesis_id, date, decision, status, method, scope, period_days, findings, evidence,
          outcome, outcome_rationale, next_step, responsible, next_deadline,
          previous_decision_id, spawned_hypothesis_ids, decided_by, participants,
          is_demo, source, decision_type, created_at, updated_at
        ) VALUES (
-         @number, @hypothesis_id, @date, @method, @scope, @period_days, @findings, @evidence,
+         @number, @hypothesis_id, @date, @decision, @status, @method, @scope, @period_days, @findings, @evidence,
          @outcome, @outcome_rationale, @next_step, @responsible, @next_deadline,
          @previous_decision_id, @spawned_hypothesis_ids, @decided_by, @participants,
          @is_demo, @source, @decision_type, @created_at, @updated_at
@@ -125,6 +131,10 @@ export class DecisionsRepo {
         number: this.nextNumber(),
         hypothesis_id: d.hypothesisId,
         date: d.date,
+        decision: d.decision,
+        // ANA-169: a manual decision is accepted by default; an AI draft lands in the
+        // «в работе» lane — taking the proposal is a human decision, never an automatic one.
+        status: d.status ?? (source === 'ai' ? 'in_progress' : 'accepted'),
         method: d.method,
         scope: d.scope,
         period_days: d.periodDays,
@@ -160,6 +170,17 @@ export class DecisionsRepo {
   getById(id: number): Decision | undefined {
     const r = this.db.prepare('SELECT * FROM decisions WHERE id = ?').get(id) as DecRow | undefined;
     return r ? toDecision(r) : undefined;
+  }
+
+  /**
+   * ANA-169: move a decision to another kanban lane (drag-and-drop / status select).
+   * Returns the updated decision, or undefined when the id does not exist.
+   */
+  setStatus(id: number, status: Decision['status']): Decision | undefined {
+    const updated = this.db
+      .prepare('UPDATE decisions SET status = @status, updated_at = @u WHERE id = @id RETURNING *')
+      .get({ status, u: new Date().toISOString(), id }) as DecRow | undefined;
+    return updated ? toDecision(updated) : undefined;
   }
 
   listByHypothesis(hypothesisId: number): Decision[] {

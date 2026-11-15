@@ -5,6 +5,7 @@ function filled() {
   return {
     ...emptyDecisionForm(),
     hypothesisId: 3,
+    decision: 'включаем онлайн-оплату',
     scope: '5 интервью',
     findingText: 'подкаст хуже',
     evidenceQuote: 'отложу на потом',
@@ -20,6 +21,8 @@ describe('decisionFormValid', () => {
     expect(decisionFormValid(emptyDecisionForm())).toBe(false);
     expect(decisionFormValid({ ...filled(), evidenceSource: '' })).toBe(false);
     expect(decisionFormValid({ ...filled(), hypothesisId: 0 })).toBe(false);
+    // ANA-169: a вывод without the formulation «что делаем» is not a valid decision.
+    expect(decisionFormValid({ ...filled(), decision: '  ' })).toBe(false);
     expect(decisionFormValid(filled())).toBe(true);
   });
 });
@@ -28,6 +31,7 @@ describe('decisionFormToInput', () => {
   it('wraps a single finding + evidence and coerces the hypothesis id', () => {
     const input = decisionFormToInput(filled());
     expect(input.hypothesisId).toBe(3);
+    expect(input.decision).toBe('включаем онлайн-оплату');
     expect(input.findings).toHaveLength(1);
     expect(input.evidence[0]).toEqual({ quote: 'отложу на потом', source: 'synthetic CTO' });
   });

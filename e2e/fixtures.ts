@@ -303,6 +303,8 @@ export async function installMocks(page: Page, opts: MockOptions = {}): Promise<
         id: nextDecId,
         number: `DL-${String(nextDecId - 99).padStart(3, '0')}`,
         ...body,
+        // ANA-169: the backend defaults the kanban lane by source; a manual POST → accepted.
+        status: body.status ?? 'accepted',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };

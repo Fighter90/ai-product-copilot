@@ -3,6 +3,7 @@ import type { DecisionMethod, DecisionOutcome, FindingConfidence, NewDecision } 
 export interface DecisionForm {
   hypothesisId: number; // 0 = none selected
   date: string;
+  decision: string; // ANA-169: the formulation «что делаем»
   method: DecisionMethod;
   scope: string;
   periodDays: number;
@@ -20,6 +21,7 @@ export function emptyDecisionForm(): DecisionForm {
   return {
     hypothesisId: 0,
     date: new Date().toISOString().slice(0, 10),
+    decision: '',
     method: 'mixed',
     scope: '',
     periodDays: 5,
@@ -34,10 +36,11 @@ export function emptyDecisionForm(): DecisionForm {
   };
 }
 
-/** A Decision Log entry needs a linked hypothesis, evidence (backend-required) and the next step. */
+/** A Decision Log entry needs a linked hypothesis, a formulation, evidence and the next step. */
 export function decisionFormValid(f: DecisionForm): boolean {
   return (
     f.hypothesisId > 0 &&
+    f.decision.trim().length > 0 &&
     f.scope.trim().length > 0 &&
     f.periodDays >= 1 &&
     f.findingText.trim().length > 0 &&
@@ -53,6 +56,7 @@ export function decisionFormToInput(f: DecisionForm): NewDecision {
   return {
     hypothesisId: f.hypothesisId,
     date: f.date,
+    decision: f.decision,
     method: f.method,
     scope: f.scope,
     periodDays: f.periodDays,

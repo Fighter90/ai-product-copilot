@@ -9,6 +9,7 @@ import {
   type DecisionFinding,
   type DecisionMethod,
   type DecisionOutcome,
+  type DecisionStatus,
   type FindingConfidence,
   type Hypothesis,
   type NewDecision,
@@ -20,18 +21,32 @@ import { SourceBadge } from '../../components/hypotheses/SourceBadge';
 import { Modal } from '../../components/ui';
 import {
   CONFIDENCE_KEY,
+  DECISION_KANBAN_COLUMNS,
   DECISION_METHOD_KEY,
+  DECISION_STATUS_KEY,
   DECISION_TYPE_KEY,
   OUTCOME_KEY,
 } from '../../components/hypotheses/labels';
 import { decisionsApi, hypothesesApi } from '../../lib/hypotheses-api';
 import { useAuth } from '../../auth/AuthContext';
 
-/** Decision Log (ANA-37): every validated hypothesis ends with a data-backed decision. */
+/** Decision Log (ANA-37): every validated hypothesis ends with a data-backed decision.
+    ANA-169: decision kanban (lanes = workflow statuses, drag-and-drop moves a decision)
+    next to the original list view — the switcher keeps both. */
 
 const OUTCOMES: readonly DecisionOutcome[] = ['green', 'yellow', 'red'];
 const CONFIDENCES: readonly FindingConfidence[] = ['high', 'medium', 'low'];
 const METHODS: readonly DecisionMethod[] = ['synthetic', 'live', 'quantitative', 'market', 'mixed'];
+
+type ViewMode = 'kanban' | 'list';
+
+/** ANA-169: read the dragged decision id out of a drop event; empty/garbage payloads are ignored. */
+function draggedDecisionId(e: React.DragEvent<HTMLElement>): number | null {
+  const raw = (e.dataTransfer?.getData('text/plain') ?? '').trim();
+  if (raw === '') return null;
+  const id = Number(raw);
+  return Number.isInteger(id) ? id : null;
+}
 
 const input =
   'w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm text-ink outline-none focus:border-accent';
@@ -136,6 +151,8 @@ function DecisionEditor({
   const today = new Date().toISOString().slice(0, 10);
   const [hypothesisId, setHypothesisId] = useState<number | ''>('');
   const [date, setDate] = useState(today);
+  // ANA-169: the formulation «что делаем» — the decision itself, required like the evidence.
+  const [decision, setDecision] = useState('');
   const [method, setMethod] = useState<DecisionMethod>('quantitative');
   const [scope, setScope] = useState('');
   const [periodDays, setPeriodDays] = useState(14);
@@ -155,6 +172,7 @@ function DecisionEditor({
     const e: Record<string, string> = {};
     if (hypothesisId === '') e.hypothesisId = t('hyp.err.required');
     for (const [f, v] of [
+      ['decision', decision],
       ['scope', scope],
       ['outcomeRationale', outcomeRationale],
       ['nextStep', nextStep],
@@ -170,7 +188,7 @@ function DecisionEditor({
       e.evidence = t('dec.err.evidence');
     }
     return e;
-  }, [hypothesisId, scope, outcomeRationale, nextStep, decidedBy, findings, evidence, t]);
+  }, [hypothesisId, decision, scope, outcomeRationale, nextStep, decidedBy, findings, evidence, t]);
 
   const valid = Object.keys(errors).length === 0 && !busy;
   /** Per-field errors as displayed: gated behind the first user input (БАГ-14 dirty tracking). */
@@ -184,6 +202,7 @@ function DecisionEditor({
       await onSave({
         hypothesisId,
         date,
+        decision: decision.trim(),
         method,
         scope: scope.trim(),
         periodDays,
@@ -240,6 +259,19 @@ function DecisionEditor({
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={label} htmlFor="dec-decision">
+              {t('dec.f.decision')}
+            </label>
+            <textarea
+              id="dec-decision"
+              rows={2}
+              className={`${input} min-h-16 resize-none`}
+              value={decision}
+              onChange={(e) => setDecision(e.target.value)}
+            />
+            <FieldError>{shownErrors.decision}</FieldError>
           </div>
           <div>
             <label className={label} htmlFor="dec-method">
@@ -489,6 +521,8 @@ export function Decisions(): JSX.Element {
   const { t, locale } = useT();
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
+  // ANA-169: kanban is the default view; the original list lives behind the switcher.
+  const [view, setView] = useState<ViewMode>('kanban');
 
   const decisions = useQuery({ queryKey: ['decisions'], queryFn: decisionsApi.list });
   const hypotheses = useQuery({ queryKey: ['hypotheses'], queryFn: hypothesesApi.list });
@@ -509,6 +543,12 @@ export function Decisions(): JSX.Element {
       ]);
     },
   });
+  // ANA-169: a drop on another lane (or a status change) patches the decision status.
+  const statusMut = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: DecisionStatus }) =>
+      decisionsApi.setStatus(id, status),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['decisions'] }),
+  });
 
   const titleOf = (id: number): string =>
     (hypotheses.data ?? []).find((h) => h.id === id)?.title ?? `#${id}`;
@@ -518,6 +558,24 @@ export function Decisions(): JSX.Element {
     return <ErrorBox error={decisions.error} onRetry={() => decisions.refetch()} />;
 
   const rows = decisions.data ?? [];
+  const byStatus = (status: DecisionStatus): typeof rows => rows.filter((d) => d.status === status);
+
+  const viewBtn = (mode: ViewMode): JSX.Element => (
+    <button
+      key={mode}
+      type="button"
+      data-testid={`dec-view-${mode}`}
+      aria-pressed={view === mode}
+      onClick={() => setView(mode)}
+      className={
+        view === mode
+          ? 'bg-accent px-3 py-1 text-sm text-onaccent'
+          : 'bg-surface px-3 py-1 text-sm text-muted hover:text-ink'
+      }
+    >
+      {t(mode === 'kanban' ? 'dec.view.kanban' : 'dec.view.list')}
+    </button>
+  );
 
   return (
     <div className="space-y-6">
@@ -536,13 +594,113 @@ export function Decisions(): JSX.Element {
         }
       />
 
-      <Card>
-        {rows.length === 0 ? (
+      {/* ANA-169: «Канбан / Список» switcher — the list is the pre-ANA-169 view. */}
+      <div
+        role="group"
+        aria-label={t('dec.viewSwitch')}
+        className="inline-flex overflow-hidden rounded-lg border border-line"
+      >
+        {viewBtn('kanban')}
+        {viewBtn('list')}
+      </div>
+
+      {/* ANA-169: one empty state for both views — no decisions yet. */}
+      {rows.length === 0 ? (
+        <Card>
           <EmptyState
             message={t('dec.empty')}
             action={{ label: t('dec.new'), onClick: () => setCreating(true) }}
           />
-        ) : (
+        </Card>
+      ) : view === 'kanban' ? (
+        /* Mobile 390: the board scrolls horizontally inside this container — the page
+           itself never overflows (ANA-135 regression-guard pattern). */
+        <div data-testid="dec-kanban" className="flex gap-3 overflow-x-auto pb-2">
+          {DECISION_KANBAN_COLUMNS.map((col) => {
+            const cards = byStatus(col.id);
+            return (
+              <section
+                key={col.id}
+                data-testid={`dec-col-${col.id}`}
+                aria-label={t(col.key)}
+                // HTML5 DnD: allow drops, then hand the dragged decision id to the caller.
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const id = draggedDecisionId(e);
+                  const target = rows.find((d) => d.id === id);
+                  if (target && target.status !== col.id) {
+                    statusMut.mutate({ id: target.id, status: col.id });
+                  }
+                }}
+                // Mobile 390: fixed-width lanes scroll horizontally inside the board
+                // (Trello-style, same as the b2b pipeline); from sm up they share the width.
+                className="min-w-[16rem] shrink-0 rounded-xl border border-line bg-surface/60 p-2 sm:min-w-0 sm:flex-1"
+              >
+                <h2 className="mb-2 flex items-center justify-between px-1 text-xs font-semibold uppercase tracking-wide text-muted">
+                  {t(col.key)}
+                  <span
+                    data-testid={`dec-col-${col.id}-count`}
+                    className="rounded-full bg-raised px-1.5 text-[11px]"
+                  >
+                    {cards.length}
+                  </span>
+                </h2>
+                <div className="space-y-2">
+                  {cards.map((d) => (
+                    <article
+                      key={d.id}
+                      draggable
+                      data-testid={`dec-card-${d.id}`}
+                      onDragStart={(e) => {
+                        e.dataTransfer?.setData('text/plain', String(d.id));
+                        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      className="card min-w-0 overflow-hidden p-3 text-sm animate-fade-up active:cursor-grabbing"
+                    >
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-xs font-bold text-accent">{d.number}</span>
+                        <SourceBadge source={d.source} />
+                        <Pill
+                          tone={
+                            d.outcome === 'green'
+                              ? 'green'
+                              : d.outcome === 'yellow'
+                                ? 'amber'
+                                : 'red'
+                          }
+                        >
+                          {t(OUTCOME_KEY[d.outcome])}
+                        </Pill>
+                      </div>
+                      {/* ANA-169: the formulation «что делаем» is the card's main line. */}
+                      <p className="mt-1.5 min-w-0 break-words font-medium leading-snug">
+                        {d.decision}
+                      </p>
+                      <p className="mt-1 min-w-0 break-words text-xs text-muted">
+                        {titleOf(d.hypothesisId)}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1 text-xs text-muted">
+                        <span>{fmtDate(d.date, locale)}</span>
+                        <span className="min-w-0 max-w-full truncate">
+                          {t('dec.f.decidedBy')}: {d.decidedBy}
+                        </span>
+                      </div>
+                    </article>
+                  ))}
+                  {cards.length === 0 && (
+                    <p className="px-1 py-2 text-xs text-muted">{t('dec.columnEmpty')}</p>
+                  )}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      ) : (
+        <Card>
           <ul className="space-y-3" data-testid="dec-list">
             {rows.map((d) => (
               <li key={d.id} className="rounded-lg border border-line p-3 text-sm animate-fade-up">
@@ -559,12 +717,18 @@ export function Decisions(): JSX.Element {
                   >
                     {t(OUTCOME_KEY[d.outcome])}
                   </Pill>
+                  {/* ANA-169: the kanban lane next to the outcome светофор. */}
+                  <Pill tone={d.status === 'rejected' ? 'red' : 'neutral'}>
+                    {t(DECISION_STATUS_KEY[d.status])}
+                  </Pill>
                   <span className="text-xs text-muted">{fmtDate(d.date, locale)}</span>
                   <span className="ml-auto text-xs text-muted">
                     {t('dec.f.decidedBy')}: {d.decidedBy}
                   </span>
                 </div>
-                <p className="mt-1.5 font-medium">{titleOf(d.hypothesisId)}</p>
+                {/* ANA-169: the formulation leads, the conclusion (rationale) follows. */}
+                <p className="mt-1.5 font-medium">{d.decision}</p>
+                <p className="mt-1">{titleOf(d.hypothesisId)}</p>
                 <p className="mt-1 text-muted">{d.outcomeRationale}</p>
                 <p className="mt-1 text-xs text-muted">
                   {t('dec.f.nextStep')}: {d.nextStep}
@@ -572,8 +736,8 @@ export function Decisions(): JSX.Element {
               </li>
             ))}
           </ul>
-        )}
-      </Card>
+        </Card>
+      )}
 
       {matrix.data && <AutonomyMatrixCard data={matrix.data} />}
 

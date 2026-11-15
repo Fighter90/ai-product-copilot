@@ -3,6 +3,7 @@ import type {
   AutonomyMatrixResponse,
   Decision,
   DecisionListItem,
+  DecisionStatus,
   Hypothesis,
   HypothesisStatus,
   NewDecision,
@@ -45,6 +46,9 @@ export const decisionsApi = {
   /** ANA-138: AI rows carry the `autonomy` assessment, manual rows carry none. */
   list: () => http<DecisionListItem[]>('/decisions'),
   create: (d: NewDecision) => http<Decision>('/decisions', { method: 'POST', ...json(d) }),
+  /** ANA-169: move a decision to another kanban lane. */
+  setStatus: (id: number, status: DecisionStatus) =>
+    http<Decision>(`/decisions/${id}/status`, { method: 'PATCH', ...json({ status }) }),
   /** ANA-138: the static autonomy contract behind the «Матрица автономии» block. */
   autonomyMatrix: () => http<AutonomyMatrixResponse>('/decisions/autonomy-matrix'),
 };

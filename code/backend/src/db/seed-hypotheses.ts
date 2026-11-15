@@ -361,6 +361,7 @@ export function buildSeedDecisions(): NewDecision[] {
     {
       hypothesisId: 1,
       date: '2025-01-05',
+      decision: 'Масштабируем онлайн-оплату и упрощаем ввод карты.',
       method: 'mixed',
       scope: 'A/B онлайн-оплаты на podcast-трафике, 2 недели',
       periodDays: 14,
@@ -385,6 +386,7 @@ export function buildSeedDecisions(): NewDecision[] {
     {
       hypothesisId: 4,
       date: '2025-01-05',
+      decision: 'Фиксируем дашборд как основной инструмент трека.',
       method: 'live',
       scope: 'Неделя ведения гипотез в дашборде',
       periodDays: 7,

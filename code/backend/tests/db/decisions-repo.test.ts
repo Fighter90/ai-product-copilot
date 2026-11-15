@@ -20,6 +20,7 @@ function decisionFor(hypothesisId: number, over: Partial<NewDecision> = {}): New
   return {
     hypothesisId,
     date: '2025-01-10',
+    decision: 'включаем онлайн-оплату',
     method: 'mixed',
     scope: '5 интервью + 12k сессий',
     periodDays: 5,
@@ -134,5 +135,39 @@ describe('DecisionsRepo decision type (ANA-137)', () => {
     const d = decisions.createAiDraft(decisionFor(h.id));
     db.prepare('UPDATE decisions SET decision_type = ? WHERE id = ?').run('bogus', d.id);
     expect(decisions.getById(d.id)?.decisionType).toBeUndefined();
+  });
+});
+
+describe('DecisionsRepo decision kanban (ANA-169)', () => {
+  it('stores the formulation and defaults the lane by source (manual → accepted, ai → in_progress)', () => {
+    const h = hyps.create(validHypothesis());
+    const manual = decisions.create(decisionFor(h.id, { decision: 'масштабируем подкаст' }));
+    expect(manual.decision).toBe('масштабируем подкаст');
+    // A manual decision was made by a human — it lands in «Принято».
+    expect(manual.status).toBe('accepted');
+
+    const ai = decisions.createAiDraft(decisionFor(h.id, { decision: 'проверить гипотезу: A/B' }));
+    // An AI proposal is not a human decision — it lands in «В работе» for the review.
+    expect(ai.status).toBe('in_progress');
+    expect(decisions.getById(ai.id)?.decision).toBe('проверить гипотезу: A/B');
+  });
+
+  it('round-trips an explicit status and moves a decision between lanes (setStatus)', () => {
+    const h = hyps.create(validHypothesis());
+    const d = decisions.create(decisionFor(h.id, { status: 'deferred' }));
+    expect(d.status).toBe('deferred');
+
+    const moved = decisions.setStatus(d.id, 'rejected');
+    expect(moved?.status).toBe('rejected');
+    expect(decisions.getById(d.id)?.status).toBe('rejected');
+  });
+
+  it('setStatus returns undefined for a missing id and tolerates a garbage stored status', () => {
+    const h = hyps.create(validHypothesis());
+    expect(decisions.setStatus(9999, 'accepted')).toBeUndefined();
+
+    const d = decisions.create(decisionFor(h.id));
+    db.prepare('UPDATE decisions SET status = ? WHERE id = ?').run('bogus', d.id);
+    expect(decisions.getById(d.id)?.status).toBe('accepted');
   });
 });

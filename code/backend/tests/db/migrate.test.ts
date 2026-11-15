@@ -38,6 +38,7 @@ describe('migrate', () => {
       '021_ana147_prelaunch_cleanup.sql',
       '022_ana148_stat_date_indexes.sql',
       '023_ana153_protected_days.sql',
+      '024_ana169_decision_status.sql',
     ]);
   });
 
@@ -223,6 +224,7 @@ describe('migrate', () => {
       '021_ana147_prelaunch_cleanup.sql',
       '022_ana148_stat_date_indexes.sql',
       '023_ana153_protected_days.sql',
+      '024_ana169_decision_status.sql',
     ]);
 
     const typeOf = (number: string): string | null =>
@@ -318,6 +320,7 @@ describe('migrate', () => {
       '021_ana147_prelaunch_cleanup.sql',
       '022_ana148_stat_date_indexes.sql',
       '023_ana153_protected_days.sql',
+      '024_ana169_decision_status.sql',
     ]);
 
     const dates = (table: string): string[] =>
@@ -382,5 +385,63 @@ describe('migrate', () => {
       .prepare('EXPLAIN QUERY PLAN SELECT * FROM utm_stats WHERE date >= ? AND date <= ?')
       .all('2025-01-01', '2025-01-31') as Array<{ detail: string }>;
     expect(plan.some((r) => /USING INDEX/i.test(r.detail))).toBe(true);
+  });
+
+  it('024 backfills decision formulations and kanban lanes from stored data (ANA-169)', () => {
+    db = openDb(':memory:');
+    // Stage the pre-ANA-169 state: rows created before the kanban model have no decision
+    // formulation and no status column at all.
+    const before = migrate(db, { until: '024_ana169_decision_status.sql' });
+    expect(before).not.toContain('024_ana169_decision_status.sql');
+    const columns = (
+      db.prepare('PRAGMA table_info(decisions)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(columns).not.toContain('decision');
+    expect(columns).not.toContain('status');
+
+    const h = db
+      .prepare(
+        `INSERT INTO hypotheses (diamond_phase, kind, subject, action, solution, condition, title,
+          hidden_assumptions, validation_methods, impact, confidence, ease,
+          impact_rationale, confidence_rationale, ease_rationale,
+          green_criteria, yellow_criteria, red_criteria, deadline_days, deadline_at, created_at, updated_at)
+         VALUES ('define','problem','s','a','sol','c','t','[]','[]',8,5,7,'r','r','r','g','y','rd',2,'x','n','n')`,
+      )
+      .run();
+    const insertDecision = db.prepare(
+      `INSERT INTO decisions (number, hypothesis_id, date, method, scope, period_days, findings,
+         evidence, outcome, outcome_rationale, next_step, decided_by, is_demo, source, created_at, updated_at)
+       VALUES (?, ?, '2025-01-10', 'mixed', '5 интервью', 5, '[]', '[]', 'yellow', 'вывод', ?, ?, 0, ?, 'n', 'n')`,
+    );
+    insertDecision.run(
+      'DL-001',
+      Number(h.lastInsertRowid),
+      'масштабируем подкаст',
+      'команда',
+      'manual',
+    );
+    insertDecision.run(
+      'DL-002',
+      Number(h.lastInsertRowid),
+      'проверить гипотезу: A/B',
+      'AI · yandexgpt',
+      'ai',
+    );
+
+    const applied = migrate(db);
+    expect(applied).toEqual(['024_ana169_decision_status.sql']);
+
+    const row = (number: string): { decision: string; status: string } =>
+      db.prepare('SELECT decision, status FROM decisions WHERE number = ?').get(number) as {
+        decision: string;
+        status: string;
+      };
+    // The formulation is derived from the stored «что делаем» (next_step) — no text invented.
+    expect(row('DL-001')).toEqual({ decision: 'масштабируем подкаст', status: 'accepted' });
+    // A manual conclusion was a made decision → «Принято»; an AI draft stays a proposal → «В работе».
+    expect(row('DL-002')).toEqual({ decision: 'проверить гипотезу: A/B', status: 'in_progress' });
+
+    // Idempotent: a second run applies nothing.
+    expect(migrate(db)).toEqual([]);
   });
 });

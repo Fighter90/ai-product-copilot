@@ -8,6 +8,18 @@ export type DecisionMethod = 'synthetic' | 'live' | 'quantitative' | 'market' | 
 export type DecisionOutcome = 'green' | 'yellow' | 'red';
 export type FindingConfidence = 'high' | 'medium' | 'low';
 
+/**
+ * ANA-169: workflow status of a decision — the lane it occupies on the Decision Log kanban
+ * (по аналогии с канбаном гипотез). Distinct from the validation outcome светофор: the
+ * outcome is what the data said, the status is what happens to the decision now.
+ */
+export const DECISION_STATUSES = ['accepted', 'in_progress', 'deferred', 'rejected'] as const;
+export type DecisionStatus = (typeof DECISION_STATUSES)[number];
+
+export function isDecisionStatus(value: string | null | undefined): value is DecisionStatus {
+  return DECISION_STATUSES.some((s) => s === value);
+}
+
 export interface DecisionFinding {
   readonly text: string;
   readonly confidence: FindingConfidence;
@@ -22,6 +34,11 @@ export interface DecisionEvidence {
 export interface NewDecision {
   readonly hypothesisId: number;
   readonly date: string;
+  /**
+   * ANA-169: the decision formulation — «что делаем». Every decision carries one (the UI
+   * and the POST API require it; the migration backfills legacy rows from `next_step`).
+   */
+  readonly decision: string;
   readonly method: DecisionMethod;
   readonly scope: string;
   readonly periodDays: number;
@@ -30,6 +47,11 @@ export interface NewDecision {
   readonly outcome: DecisionOutcome;
   readonly outcomeRationale: string;
   readonly nextStep: string;
+  /**
+   * ANA-169: the kanban status. Optional on input — on create it defaults by source
+   * (manual → accepted, AI draft → in_progress); absent everywhere it defaults to accepted.
+   */
+  readonly status?: DecisionStatus;
   readonly responsible?: string;
   readonly nextDeadline?: string;
   readonly previousDecisionId?: number;
@@ -49,6 +71,8 @@ export interface NewDecision {
 export interface Decision extends NewDecision {
   readonly id: number;
   readonly number: string;
+  /** ANA-169: the kanban lane of the decision (always resolved — see `isDecisionStatus`). */
+  readonly status: DecisionStatus;
   /**
    * ANA-128: provenance — `ai` marks an auto-populated AI proposal (report AI path),
    * `manual` a human-created entry. Absent in legacy rows before migration 019.

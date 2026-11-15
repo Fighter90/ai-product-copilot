@@ -19,6 +19,7 @@ function decision(over: Partial<NewDecision> = {}): NewDecision {
   return {
     hypothesisId,
     date: '2025-01-10',
+    decision: 'масштабируем подкаст',
     method: 'mixed',
     scope: '5 интервью',
     periodDays: 5,
@@ -90,6 +91,67 @@ describe('decisions API', () => {
     });
     expect(created.statusCode).toBe(201);
     expect(created.json().decisionType).toBeUndefined();
+  });
+
+  it('requires the decision formulation — a вывод without «что делаем» is a 400 (ANA-169)', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/decisions',
+      payload: decision({ decision: '' }),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('invalid body');
+  });
+
+  it('defaults the kanban lane by source and round-trips an explicit status (ANA-169)', async () => {
+    const manual = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/decisions',
+      payload: decision(),
+    });
+    expect(manual.json().status).toBe('accepted');
+
+    const deferred = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/decisions',
+      payload: decision({ status: 'deferred' }),
+    });
+    expect(deferred.json().status).toBe('deferred');
+
+    const ai = ctx.deps.decisions.createAiDraft(decision());
+    expect(ctx.deps.decisions.getById(ai.id)?.status).toBe('in_progress');
+  });
+
+  it('PATCH /api/decisions/:id/status moves a decision to another lane (ANA-169)', async () => {
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/decisions',
+      payload: decision(),
+    });
+    const id = created.json().id as number;
+
+    const moved = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/decisions/${id}/status`,
+      payload: { status: 'in_progress' },
+    });
+    expect(moved.statusCode).toBe(200);
+    expect(moved.json().status).toBe('in_progress');
+    expect(ctx.deps.decisions.getById(id)?.status).toBe('in_progress');
+
+    const bad = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/decisions/${id}/status`,
+      payload: { status: 'bogus' },
+    });
+    expect(bad.statusCode).toBe(400);
+
+    const missing = await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/decisions/9999/status',
+      payload: { status: 'accepted' },
+    });
+    expect(missing.statusCode).toBe(404);
   });
 });
 
