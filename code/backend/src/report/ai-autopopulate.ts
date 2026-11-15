@@ -196,6 +196,10 @@ function generatedToNewDecision(
   return {
     hypothesisId,
     date: now.toISOString().slice(0, 10),
+    // ANA-169: the formulation «что делаем» of an AI proposal — the actionable step it
+    // proposes (verify the hypothesis), the same deterministic template as nextStep; no
+    // invented text (anti-hallucination).
+    decision: `Проверить гипотезу: ${d.method}`,
     method: toDecisionMethod(d.method),
     scope: d.scope,
     periodDays: d.periodDays,

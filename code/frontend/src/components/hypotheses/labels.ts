@@ -2,6 +2,7 @@ import type {
   AssumptionCategory,
   DecisionMethod,
   DecisionOutcome,
+  DecisionStatus,
   DecisionType,
   FindingConfidence,
   HypothesisStatus,
@@ -52,6 +53,25 @@ export const OUTCOME_KEY: Record<DecisionOutcome, DictKey> = {
   yellow: 'dec.outcome.yellow',
   red: 'dec.outcome.red',
 };
+
+/** ANA-169: localized label of each decision kanban lane. */
+export const DECISION_STATUS_KEY: Record<DecisionStatus, DictKey> = {
+  accepted: 'dec.status.accepted',
+  in_progress: 'dec.status.in_progress',
+  deferred: 'dec.status.deferred',
+  rejected: 'dec.status.rejected',
+};
+
+/** ANA-169: the decision kanban lanes, one column per workflow status. */
+export const DECISION_KANBAN_COLUMNS: ReadonlyArray<{
+  readonly id: DecisionStatus;
+  readonly key: DictKey;
+}> = [
+  { id: 'accepted', key: 'dec.status.accepted' },
+  { id: 'in_progress', key: 'dec.status.in_progress' },
+  { id: 'deferred', key: 'dec.status.deferred' },
+  { id: 'rejected', key: 'dec.status.rejected' },
+];
 
 export const DECISION_METHOD_KEY: Record<DecisionMethod, DictKey> = {
   synthetic: 'hyp.mt.synthetic',

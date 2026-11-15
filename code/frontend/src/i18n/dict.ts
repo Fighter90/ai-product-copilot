@@ -1401,6 +1401,16 @@ export const ru = {
   'dec.conf.medium': 'Средняя',
   'dec.conf.low': 'Низкая',
   'dec.err.evidence': 'Нужно минимум одно доказательство (цитата + источник)',
+  // ANA-169: decision kanban — formulation field, workflow lanes and the view switcher.
+  'dec.f.decision': 'Решение (что делаем)',
+  'dec.status.accepted': 'Принято',
+  'dec.status.in_progress': 'В работе',
+  'dec.status.deferred': 'Отложено',
+  'dec.status.rejected': 'Отклонено',
+  'dec.view.kanban': 'Канбан',
+  'dec.view.list': 'Список',
+  'dec.viewSwitch': 'Вид раздела «Решения»',
+  'dec.columnEmpty': '— пусто —',
   // ANA-138: autonomy model — badges and the «Матрица автономии» block on /app/decisions.
   'dec.autonomy.type.data-analysis': 'Анализ данных',
   'dec.autonomy.type.hypothesis-draft': 'Черновик гипотезы',
@@ -2824,6 +2834,16 @@ export const en: Record<DictKey, string> = {
   'dec.conf.medium': 'Medium',
   'dec.conf.low': 'Low',
   'dec.err.evidence': 'Need at least one evidence item (quote + source)',
+  // ANA-169: decision kanban — formulation field, workflow lanes and the view switcher.
+  'dec.f.decision': 'Decision (what we do)',
+  'dec.status.accepted': 'Accepted',
+  'dec.status.in_progress': 'In progress',
+  'dec.status.deferred': 'Deferred',
+  'dec.status.rejected': 'Rejected',
+  'dec.view.kanban': 'Kanban',
+  'dec.view.list': 'List',
+  'dec.viewSwitch': 'Decisions view',
+  'dec.columnEmpty': '— empty —',
   // ANA-138: autonomy model — badges and the autonomy-matrix block on /app/decisions.
   'dec.autonomy.type.data-analysis': 'Data analysis',
   'dec.autonomy.type.hypothesis-draft': 'Hypothesis draft',

@@ -38,6 +38,8 @@ const decision: Decision = {
   number: 'DL-001',
   hypothesisId: 1,
   date: '2025-01-10',
+  decision: 'включаем онлайн-оплату',
+  status: 'accepted',
   method: 'mixed',
   scope: '5 интервью',
   periodDays: 5,

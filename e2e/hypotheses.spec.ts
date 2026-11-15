@@ -305,6 +305,8 @@ test.describe('Decision Log (ANA-37)', () => {
     const editor = page.getByTestId('decision-editor');
     await expect(editor).toBeVisible();
     await page.locator('#dec-hypothesis').selectOption({ label: '#100 Гипотеза про подкаст' });
+    // ANA-169: the formulation «что делаем» is required next to the findings.
+    await page.locator('#dec-decision').fill('масштабируем подкаст');
     await page.locator('#dec-scope').fill('канал: подкаст');
     await editor.getByRole('textbox', { name: 'Вывод' }).fill('CR вырос с 2.9% до 5.4%');
     await editor.getByRole('textbox', { name: 'Цитата / цифра' }).fill('CR 5.4% при 420 визитах');
@@ -317,6 +319,12 @@ test.describe('Decision Log (ANA-37)', () => {
     await expect(page.getByTestId('dec-save')).toBeEnabled();
     await page.getByTestId('dec-save').click();
     await expect(editor).toHaveCount(0);
+    // ANA-169: the kanban is the default view — the created decision lands in «Принято».
+    const accepted = page.getByTestId('dec-col-accepted');
+    await expect(accepted.getByText('DL-001')).toBeVisible();
+    await expect(accepted).toContainText('масштабируем подкаст');
+    // The original list view keeps the Decision Log rows behind the switcher.
+    await page.getByTestId('dec-view-list').click();
     await expect(page.getByTestId('dec-list')).toContainText('DL-001');
     await expect(page.getByTestId('dec-list')).toContainText('Гипотеза про подкаст');
     await expect(page.getByTestId('dec-list')).toContainText('Подтверждено');

@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { AUTONOMY_LEVEL_LABELS, AUTONOMY_MATRIX } from '@pca/shared';
+import { AUTONOMY_LEVEL_LABELS, AUTONOMY_MATRIX, DECISION_STATUSES } from '@pca/shared';
 import type { AutonomyMatrixResponse, Decision, DecisionListItem, Hypothesis } from '@pca/shared';
 import { renderWithProviders } from '../../test/utils';
 import { setTestLocale } from '../../test/i18n-utils';
@@ -17,7 +17,7 @@ vi.mock('../../lib/hypotheses-api', () => ({
     setStatus: vi.fn(),
     importAi: vi.fn(),
   },
-  decisionsApi: { list: vi.fn(), create: vi.fn(), autonomyMatrix: vi.fn() },
+  decisionsApi: { list: vi.fn(), create: vi.fn(), setStatus: vi.fn(), autonomyMatrix: vi.fn() },
 }));
 
 import { decisionsApi, hypothesesApi } from '../../lib/hypotheses-api';
@@ -34,6 +34,8 @@ const DECISION: Decision = {
   number: 'DL-001',
   hypothesisId: 100,
   date: '2026-01-15',
+  decision: 'масштабируем подкаст',
+  status: 'accepted',
   method: 'quantitative',
   scope: 'канал: подкаст',
   periodDays: 14,
@@ -47,19 +49,40 @@ const DECISION: Decision = {
   updatedAt: '2026-01-15T00:00:00.000Z',
 };
 
+/** Minimal DataTransfer stub: drag events in jsdom carry no dataTransfer (b2b pattern). */
+const dt = (id?: number | string) => ({
+  setData: vi.fn(),
+  effectAllowed: 'move',
+  dropEffect: 'move',
+  getData: () => (id === undefined ? '' : String(id)),
+});
+
+/** The list view is behind the switcher since ANA-169 — kanban is the default view. */
+async function openListView(): Promise<HTMLElement> {
+  // The switcher exists only after the skeleton (the query has resolved).
+  fireEvent.click(await screen.findByTestId('dec-view-list'));
+  return screen.findByTestId('dec-list');
+}
+
 describe('Decisions page (Decision Log)', () => {
   afterEach(() => setTestLocale('ru'));
 
   it('lists decisions with the number, outcome and linked hypothesis title', async () => {
-    vi.mocked(decisionsApi.list).mockResolvedValue([DECISION]);
+    const rejected = { ...DECISION, id: 7, number: 'DL-007', status: 'rejected' as const };
+    vi.mocked(decisionsApi.list).mockResolvedValue([DECISION, rejected]);
     vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
     renderWithProviders(<Decisions />, '/app/decisions');
 
-    const list = await screen.findByTestId('dec-list');
+    const list = await openListView();
     expect(list).toHaveTextContent('DL-001');
     expect(list).toHaveTextContent('Подтверждено');
+    expect(list).toHaveTextContent('Принято');
+    expect(list).toHaveTextContent('масштабируем подкаст');
     expect(list).toHaveTextContent('Гипотеза про подкаст');
     expect(list).toHaveTextContent('критерий достигнут');
+    // ANA-169: the lane pill renders next to the outcome светофор (rejected → red tone).
+    expect(list).toHaveTextContent('DL-007');
+    expect(list).toHaveTextContent('Отклонено');
   });
 
   it('shows the empty state when there are no decisions', async () => {
@@ -69,7 +92,7 @@ describe('Decisions page (Decision Log)', () => {
     expect(await screen.findByText(/Пока нет решений/)).toBeInTheDocument();
   });
 
-  it('creates a decision linked to a hypothesis (validates evidence first)', async () => {
+  it('creates a decision linked to a hypothesis (formulation + evidence required)', async () => {
     vi.mocked(decisionsApi.list).mockResolvedValue([]);
     vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
     vi.mocked(decisionsApi.create).mockResolvedValue(DECISION);
@@ -86,12 +109,16 @@ describe('Decisions page (Decision Log)', () => {
     expect(screen.queryByText('Заполните поле')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Гипотеза'), { target: { value: '100' } });
-    // After the first input the remaining per-field errors become visible.
+    // After the first input the remaining per-field errors become visible — including the
+    // formulation «что делаем» (ANA-169).
     expect(
       screen.getByText('Нужно минимум одно доказательство (цитата + источник)'),
     ).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Гипотеза'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('Решение (что делаем)'), {
+      target: { value: 'масштабируем подкаст' },
+    });
     fireEvent.change(screen.getByLabelText('Разрез'), { target: { value: 'канал: подкаст' } });
     fireEvent.change(screen.getAllByLabelText('Вывод')[0]!, { target: { value: 'CR вырос' } });
     fireEvent.change(screen.getByLabelText('Цитата / цифра'), { target: { value: 'CR 5.4%' } });
@@ -110,6 +137,7 @@ describe('Decisions page (Decision Log)', () => {
       expect(decisionsApi.create).toHaveBeenCalledWith(
         expect.objectContaining({
           hypothesisId: 100,
+          decision: 'масштабируем подкаст',
           outcome: 'green',
           decidedBy: 'Analyst',
           evidence: [{ quote: 'CR 5.4%', source: 'Метрика' }],
@@ -125,7 +153,7 @@ describe('Decisions page (Decision Log)', () => {
     vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
     renderWithProviders(<Decisions />, '/app/decisions');
 
-    const list = await screen.findByTestId('dec-list');
+    const list = await openListView();
     // Exactly one AI badge — only for the source: 'ai' draft (the manual row renders none).
     const badges = within(list).getAllByText('AI');
     expect(badges).toHaveLength(1);
@@ -171,7 +199,7 @@ describe('Decisions autonomy badges + matrix (ANA-138)', () => {
     vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
     renderWithProviders(<Decisions />, '/app/decisions');
 
-    const list = await screen.findByTestId('dec-list');
+    const list = await openListView();
     const escRow = row(list, 'DL-003');
     expect(within(escRow).getByText('Ценообразование')).toBeInTheDocument();
     expect(within(escRow).getByText('A1')).toBeInTheDocument();
@@ -205,7 +233,7 @@ describe('Decisions autonomy badges + matrix (ANA-138)', () => {
     vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
     renderWithProviders(<Decisions />, '/app/decisions');
 
-    const list = await screen.findByTestId('dec-list');
+    const list = await openListView();
     const escBadge = within(row(list, 'DL-004')).getByText('⚠️ Требует PM-эскалации');
     expect(escBadge).toHaveAttribute('title', expect.stringContaining('Тип решения не распознан'));
   });
@@ -229,7 +257,7 @@ describe('Decisions autonomy badges + matrix (ANA-138)', () => {
     vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
     renderWithProviders(<Decisions />, '/app/decisions');
 
-    const list = await screen.findByTestId('dec-list');
+    const list = await openListView();
     const draftRow = row(list, 'DL-005');
     expect(within(draftRow).getByText('Черновик гипотезы')).toBeInTheDocument();
     expect(within(draftRow).queryByText('⚠️ Требует PM-эскалации')).not.toBeInTheDocument();
@@ -306,10 +334,129 @@ describe('Decisions autonomy badges + matrix (ANA-138)', () => {
     vi.mocked(decisionsApi.autonomyMatrix).mockResolvedValue(MATRIX);
     renderWithProviders(<Decisions />, '/app/decisions');
 
-    const list = await screen.findByTestId('dec-list');
+    const list = await openListView();
     expect(within(row(list, 'DL-006')).getByText('Pricing')).toBeInTheDocument();
     expect(within(row(list, 'DL-006')).getByText('⚠️ Needs PM escalation')).toBeInTheDocument();
     expect(await screen.findByTestId('autonomy-matrix')).toHaveTextContent('Escalation rule');
     expect(screen.getByTestId('autonomy-matrix')).toHaveTextContent('No escalation');
+  });
+});
+
+describe('Decisions kanban (ANA-169)', () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => setTestLocale('ru'));
+
+  /** Seed: one accepted manual decision + one deferred one. */
+  const seeded = (over: Partial<Decision> & Pick<Decision, 'id' | 'status'>): Decision => ({
+    ...DECISION,
+    ...over,
+  });
+
+  it('renders the kanban by default — one lane per workflow status with counters', async () => {
+    vi.mocked(decisionsApi.list).mockResolvedValue([
+      seeded({ id: 1, status: 'accepted' }),
+      seeded({ id: 2, status: 'in_progress', number: 'DL-002' }),
+      seeded({ id: 3, status: 'deferred', number: 'DL-003' }),
+      seeded({ id: 4, status: 'rejected', number: 'DL-004' }),
+    ]);
+    vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
+    renderWithProviders(<Decisions />, '/app/decisions');
+
+    const board = await screen.findByTestId('dec-kanban');
+    for (const status of DECISION_STATUSES) {
+      expect(screen.getByTestId(`dec-col-${status}`)).toBeInTheDocument();
+    }
+    // Every card sits in its own lane with the formulation, hypothesis, date and author.
+    const accepted = screen.getByTestId('dec-col-accepted');
+    const card = within(accepted).getByTestId('dec-card-1');
+    expect(card).toHaveTextContent('масштабируем подкаст');
+    expect(card).toHaveTextContent('Гипотеза про подкаст');
+    expect(card).toHaveTextContent('Кто решил: Analyst');
+    expect(card).toHaveTextContent('DL-001');
+    expect(
+      within(screen.getByTestId('dec-col-in_progress')).getByTestId('dec-card-2'),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('dec-col-deferred')).getByTestId('dec-card-3'),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('dec-col-rejected')).getByTestId('dec-card-4'),
+    ).toBeInTheDocument();
+    // Lane counters.
+    expect(screen.getByTestId('dec-col-accepted-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('dec-col-rejected-count')).toHaveTextContent('1');
+    // The list is NOT rendered until the switcher asks for it.
+    expect(screen.queryByTestId('dec-list')).not.toBeInTheDocument();
+    expect(board).toBeInTheDocument();
+  });
+
+  it('drag-and-drop to another lane patches the decision status (ANA-169)', async () => {
+    vi.mocked(decisionsApi.list).mockResolvedValue([seeded({ id: 1, status: 'accepted' })]);
+    vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
+    vi.mocked(decisionsApi.setStatus).mockResolvedValue({ ...DECISION, status: 'in_progress' });
+    renderWithProviders(<Decisions />, '/app/decisions');
+
+    await screen.findByTestId('dec-kanban');
+    fireEvent.dragStart(screen.getByTestId('dec-card-1'), { dataTransfer: dt(1) });
+    fireEvent.drop(screen.getByTestId('dec-col-in_progress'), { dataTransfer: dt(1) });
+    await waitFor(() => expect(decisionsApi.setStatus).toHaveBeenCalledWith(1, 'in_progress'));
+  });
+
+  it('ignores empty/garbage drop payloads and same-lane drops (ANA-169)', async () => {
+    vi.mocked(decisionsApi.list).mockResolvedValue([seeded({ id: 1, status: 'accepted' })]);
+    vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
+    renderWithProviders(<Decisions />, '/app/decisions');
+
+    await screen.findByTestId('dec-kanban');
+    fireEvent.dragStart(screen.getByTestId('dec-card-1'), { dataTransfer: dt(1) });
+    // No payload → no move.
+    fireEvent.drop(screen.getByTestId('dec-col-deferred'), { dataTransfer: dt() });
+    // Garbage payload → no move.
+    fireEvent.drop(screen.getByTestId('dec-col-deferred'), { dataTransfer: dt('abc') });
+    // Same lane → no move.
+    fireEvent.drop(screen.getByTestId('dec-col-accepted'), { dataTransfer: dt(1) });
+    expect(decisionsApi.setStatus).not.toHaveBeenCalled();
+  });
+
+  it('the switcher toggles between kanban and the original list view (ANA-169)', async () => {
+    vi.mocked(decisionsApi.list).mockResolvedValue([DECISION]);
+    vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
+    renderWithProviders(<Decisions />, '/app/decisions');
+
+    expect(await screen.findByTestId('dec-kanban')).toBeInTheDocument();
+    expect(screen.queryByTestId('dec-list')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('dec-view-list'));
+    expect(await screen.findByTestId('dec-list')).toBeInTheDocument();
+    expect(screen.queryByTestId('dec-kanban')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('dec-view-kanban'));
+    expect(await screen.findByTestId('dec-kanban')).toBeInTheDocument();
+    expect(screen.queryByTestId('dec-list')).not.toBeInTheDocument();
+  });
+
+  it('keeps the board inside a horizontal-scroll container so 390px never overflows the page (ANA-169)', async () => {
+    // ANA-135 regression-guard pattern: jsdom cannot measure layout, so the structural
+    // guarantee is that the board sits in an overflow-x-auto wrapper and each lane keeps a
+    // fixed min width on mobile — the page itself never scrolls horizontally.
+    vi.mocked(decisionsApi.list).mockResolvedValue([DECISION]);
+    vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
+    renderWithProviders(<Decisions />, '/app/decisions');
+
+    const board = await screen.findByTestId('dec-kanban');
+    expect(board).toHaveClass('overflow-x-auto');
+    expect(screen.getByTestId('dec-col-accepted')).toHaveClass('min-w-[16rem]');
+  });
+
+  it('shows the kanban lanes in the en locale too (ANA-169)', async () => {
+    setTestLocale('en');
+    vi.mocked(decisionsApi.list).mockResolvedValue([seeded({ id: 1, status: 'deferred' })]);
+    vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
+    renderWithProviders(<Decisions />, '/app/decisions');
+
+    expect(await screen.findByTestId('dec-kanban')).toBeInTheDocument();
+    expect(screen.getByTestId('dec-col-deferred')).toHaveTextContent('Deferred');
+    expect(screen.getByTestId('dec-col-accepted')).toHaveTextContent('Accepted');
+    expect(screen.getByTestId('dec-view-list')).toHaveTextContent('List');
   });
 });

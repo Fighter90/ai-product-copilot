@@ -24,10 +24,17 @@ const EvidenceBody = z.object({
   rawResponseId: z.number().int().optional(),
 });
 
+/** ANA-169: body of PATCH /decisions/:id/status — a move to another kanban lane. */
+const StatusBody = z.object({
+  status: z.enum(['accepted', 'in_progress', 'deferred', 'rejected']),
+});
+
 /** REG-02: shape of NewDecision; evidence-required stays in the repo (422, not 400). */
 const CreateBody = z.object({
   hypothesisId: z.number().int().positive(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  // ANA-169: the formulation «что делаем» is required — a decision without one is a вывод.
+  decision: z.string().min(1),
   method: z.enum(['synthetic', 'live', 'quantitative', 'market', 'mixed']),
   scope: z.string().min(1),
   periodDays: z.number().int().min(1),
@@ -36,6 +43,8 @@ const CreateBody = z.object({
   outcome: z.enum(['green', 'yellow', 'red']),
   outcomeRationale: z.string().min(1),
   nextStep: z.string().min(1),
+  // ANA-169: the kanban lane; omitted → the repo defaults it by source.
+  status: z.enum(['accepted', 'in_progress', 'deferred', 'rejected']).optional(),
   responsible: z.string().optional(),
   nextDeadline: z.string().optional(),
   previousDecisionId: z.number().int().optional(),
@@ -92,5 +101,18 @@ export async function decisionsRoutes(
       }
       throw err;
     }
+  });
+
+  // ANA-169: move a decision to another kanban lane (drag-and-drop / status select).
+  app.patch('/decisions/:id/status', { schema: { tags: ['decisions'] } }, async (req, reply) => {
+    const parsed = StatusBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });
+    }
+    const updated = opts.repo.setStatus(
+      Number((req.params as { id: string }).id),
+      parsed.data.status,
+    );
+    return updated ?? reply.code(404).send({ error: 'not found' });
   });
 }
