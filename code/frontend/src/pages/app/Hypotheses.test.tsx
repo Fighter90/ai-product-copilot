@@ -4,9 +4,11 @@ import type { Hypothesis } from '@pca/shared';
 import { renderWithProviders } from '../../test/utils';
 import { setTestLocale } from '../../test/i18n-utils';
 
-vi.mock('../../auth/AuthContext', () => ({
-  useAuth: () => ({ user: { name: 'Analyst' }, isAdmin: false }),
+/** Mutable auth state — the ANA-157 tests flip it to admin to verify the PM override in the UI. */
+const authMock = vi.hoisted(() => ({
+  state: { user: { name: 'Analyst' } as { name: string } | null, isAdmin: false },
 }));
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => authMock.state }));
 vi.mock('../../lib/hypotheses-api', () => ({
   hypothesesApi: {
     list: vi.fn(),
@@ -105,7 +107,10 @@ function mockData({ list = SEEDED, snapshot }: { list?: Hypothesis[]; snapshot?:
 }
 
 describe('Hypotheses page', () => {
-  beforeEach(() => mockData());
+  beforeEach(() => {
+    mockData();
+    authMock.state = { user: { name: 'Analyst' }, isAdmin: false };
+  });
   afterEach(() => setTestLocale('ru'));
 
   it('renders the kanban columns with ICE, the AI badge and the unverified-numbers warning', async () => {
@@ -210,6 +215,91 @@ describe('Hypotheses page', () => {
     const rejected = screen.getByRole('region', { name: 'Отклонена' });
     expect(expired).toHaveTextContent('CCC просроченная');
     expect(rejected).toHaveTextContent('— пусто —');
+  });
+
+  it('ANA-157: an AI card caps the status select at «В проверке» — verdict options disabled with the PM tooltip', async () => {
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    const card = await screen.findByTestId('hyp-card-2'); // SEEDED[1] — source: 'ai'
+    const select = within(card).getByRole('combobox', { name: 'Изменить статус' });
+    // Allowed at A1: draft and «В проверке».
+    expect(within(select).getByRole('option', { name: 'Черновик' })).toBeEnabled();
+    expect(within(select).getByRole('option', { name: 'В проверке' })).toBeEnabled();
+    // PM-only: the verification verdicts + «Просрочена», each with the autonomy tooltip.
+    for (const label of ['Подтверждена', 'Частично', 'Отклонена', 'Просрочена']) {
+      const option = within(select).getByRole('option', { name: label });
+      expect(option).toBeDisabled();
+      expect(option).toHaveAttribute('title', 'Требуется подтверждение PM — уровень автономии A1');
+    }
+    // The autonomy badges next to the AI badge: the level + the escalation marker.
+    expect(within(card).getByText('A1')).toBeInTheDocument();
+    expect(within(card).getByText('⚠️ Эскалация к PM')).toBeInTheDocument();
+  });
+
+  it('ANA-157 review: the PM (admin) sees the verdict options enabled on an AI card — the cap is a gate, not a dead end', async () => {
+    authMock.state = { user: { name: 'PM' }, isAdmin: true };
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    const card = await screen.findByTestId('hyp-card-2'); // SEEDED[1] — source: 'ai'
+    const select = within(card).getByRole('combobox', { name: 'Изменить статус' });
+    // The PM may give every светофор verdict directly (the backend lets the admin role through).
+    for (const label of [
+      'Черновик',
+      'В проверке',
+      'Подтверждена',
+      'Частично',
+      'Отклонена',
+      'Просрочена',
+    ]) {
+      expect(within(select).getByRole('option', { name: label })).toBeEnabled();
+    }
+    // The autonomy badges still mark the AI provenance and the escalation path.
+    expect(within(card).getByText('A1')).toBeInTheDocument();
+    expect(within(card).getByText('⚠️ Эскалация к PM')).toBeInTheDocument();
+  });
+
+  it('ANA-157 review: without a signed-in user (legacy single-user mode) the verdict options stay enabled', async () => {
+    authMock.state = { user: null, isAdmin: false };
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    const card = await screen.findByTestId('hyp-card-2'); // SEEDED[1] — source: 'ai'
+    const select = within(card).getByRole('combobox', { name: 'Изменить статус' });
+    // No PM role exists — the single human owner owns the светофор verdict.
+    for (const label of ['Подтверждена', 'Частично', 'Отклонена', 'Просрочена']) {
+      expect(within(select).getByRole('option', { name: label })).toBeEnabled();
+    }
+  });
+
+  it('ANA-157 review 3: a non-PM cannot clear a PM verdict from the UI — leaving «Подтверждена» is blocked', async () => {
+    mockData({ list: [h({ id: 7, title: 'AI зелёная', status: 'green', source: 'ai' })] });
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    const card = await screen.findByTestId('hyp-card-7');
+    const select = within(card).getByRole('combobox', { name: 'Изменить статус' });
+    // Staying on the PM verdict stays selectable.
+    expect(within(select).getByRole('option', { name: 'Подтверждена' })).toBeEnabled();
+    // Every other option — including «Черновик» — is blocked with the PM tooltip:
+    // erasing the светофор decision is itself a PM decision.
+    for (const label of ['Черновик', 'В проверке', 'Частично', 'Отклонена', 'Просрочена']) {
+      const option = within(select).getByRole('option', { name: label });
+      expect(option).toBeDisabled();
+      expect(option).toHaveAttribute('title', 'Требуется подтверждение PM — уровень автономии A1');
+    }
+  });
+
+  it('ANA-157: a manual card keeps every status option enabled and shows no autonomy badges', async () => {
+    mockData({ list: [h({ id: 5, title: 'Ручная гипотеза', status: 'in_progress' })] });
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    const card = await screen.findByTestId('hyp-card-5');
+    const select = within(card).getByRole('combobox', { name: 'Изменить статус' });
+    for (const label of [
+      'Черновик',
+      'В проверке',
+      'Подтверждена',
+      'Частично',
+      'Отклонена',
+      'Просрочена',
+    ]) {
+      expect(within(select).getByRole('option', { name: label })).toBeEnabled();
+    }
+    expect(within(card).queryByText('A1')).not.toBeInTheDocument();
+    expect(within(card).queryByText('⚠️ Эскалация к PM')).not.toBeInTheDocument();
   });
 
   it('БАГ-14: the editor hides «Заполните поле» until a field is touched (draft: title only)', async () => {

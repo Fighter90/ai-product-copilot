@@ -8,6 +8,12 @@ import { HypothesisViewModal } from './HypothesisViewModal';
 /** ANA-152: the read-only «Посмотреть» popup renders the FULL hypothesis — every section,
     evidence fallbacks (note → slice → type) and the «Редактировать» hand-off. */
 
+/** Mutable auth state — the ANA-157 tests flip it to admin to verify the PM override in the popup. */
+const authMock = vi.hoisted(() => ({
+  state: { user: { name: 'Analyst' } as { name: string } | null, isAdmin: false },
+}));
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => authMock.state }));
+
 const h = (over: Partial<Hypothesis>): Hypothesis =>
   ({
     id: 1,
@@ -55,7 +61,10 @@ const h = (over: Partial<Hypothesis>): Hypothesis =>
   }) as Hypothesis;
 
 describe('HypothesisViewModal (ANA-152)', () => {
-  afterEach(() => setTestLocale('ru'));
+  afterEach(() => {
+    setTestLocale('ru');
+    authMock.state = { user: { name: 'Analyst' }, isAdmin: false };
+  });
 
   it('renders the complete hypothesis: all testids, evidence fallbacks, ICE rationales, traffic light', () => {
     const full = h({});
@@ -177,5 +186,75 @@ describe('HypothesisViewModal (ANA-152)', () => {
     // evidence item without note/slice shows its type as the last fallback.
     expect(within(modal).getByText('Доказательства')).toBeInTheDocument();
     expect(within(modal).getByText('dashboard')).toBeInTheDocument();
+  });
+
+  it('ANA-157: an AI hypothesis shows the autonomy badges and a status select capped at «В проверке»', () => {
+    renderWithProviders(
+      <HypothesisViewModal
+        hypothesis={h({})}
+        onClose={vi.fn()}
+        onEdit={vi.fn()}
+        onStatusChange={vi.fn()}
+      />,
+    );
+    const modal = screen.getByTestId('hyp-view-modal');
+    // The autonomy badges next to the AI badge: the level + the escalation marker.
+    expect(within(modal).getByText('A1')).toBeInTheDocument();
+    expect(within(modal).getByText('⚠️ Эскалация к PM')).toBeInTheDocument();
+    // The status select exists in the popup and is restricted the same way as on the card.
+    const select = within(modal).getByRole('combobox', { name: 'Изменить статус' });
+    expect(within(select).getByRole('option', { name: 'Черновик' })).toBeEnabled();
+    expect(within(select).getByRole('option', { name: 'В проверке' })).toBeEnabled();
+    expect(within(select).getByRole('option', { name: 'Подтверждена' })).toBeDisabled();
+    expect(within(select).getByRole('option', { name: 'Отклонена' })).toBeDisabled();
+    expect(within(select).getByRole('option', { name: 'Просрочена' })).toBeDisabled();
+  });
+
+  it('ANA-157 review: the PM (admin) gets every status option enabled even on an AI hypothesis', () => {
+    authMock.state = { user: { name: 'PM' }, isAdmin: true };
+    renderWithProviders(
+      <HypothesisViewModal
+        hypothesis={h({})}
+        onClose={vi.fn()}
+        onEdit={vi.fn()}
+        onStatusChange={vi.fn()}
+      />,
+    );
+    const modal = screen.getByTestId('hyp-view-modal');
+    const select = within(modal).getByRole('combobox', { name: 'Изменить статус' });
+    // The PM may give every светофор verdict directly — the autonomy badges stay.
+    for (const label of ['Черновик', 'В проверке', 'Подтверждена', 'Частично', 'Отклонена']) {
+      expect(within(select).getByRole('option', { name: label })).toBeEnabled();
+    }
+    expect(within(modal).getByText('A1')).toBeInTheDocument();
+  });
+
+  it('ANA-157: a manual hypothesis gets no autonomy badges and a fully enabled status select', () => {
+    renderWithProviders(
+      <HypothesisViewModal
+        hypothesis={h({ source: 'manual', aiProvider: undefined, aiModel: undefined })}
+        onClose={vi.fn()}
+        onEdit={vi.fn()}
+        onStatusChange={vi.fn()}
+      />,
+    );
+    const modal = screen.getByTestId('hyp-view-modal');
+    expect(within(modal).queryByText('A1')).not.toBeInTheDocument();
+    expect(within(modal).queryByText('⚠️ Эскалация к PM')).not.toBeInTheDocument();
+    const select = within(modal).getByRole('combobox', { name: 'Изменить статус' });
+    for (const label of ['Черновик', 'В проверке', 'Подтверждена', 'Частично', 'Отклонена']) {
+      expect(within(select).getByRole('option', { name: label })).toBeEnabled();
+    }
+  });
+
+  it('ANA-157: without a status handler the popup stays read-only (no select, badges still shown)', () => {
+    renderWithProviders(
+      <HypothesisViewModal hypothesis={h({})} onClose={vi.fn()} onEdit={vi.fn()} />,
+    );
+    const modal = screen.getByTestId('hyp-view-modal');
+    expect(
+      within(modal).queryByRole('combobox', { name: 'Изменить статус' }),
+    ).not.toBeInTheDocument();
+    expect(within(modal).getByText('A1')).toBeInTheDocument();
   });
 });

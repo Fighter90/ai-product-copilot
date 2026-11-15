@@ -144,7 +144,14 @@ export function buildServer(
         }
       : {}),
   });
-  app.register(hypothesesRoutes, { prefix: '/api', repo: deps.hypotheses });
+  app.register(hypothesesRoutes, {
+    prefix: '/api',
+    repo: deps.hypotheses,
+    // ANA-157: cabinet users repo — refusals of non-PM status changes on AI hypotheses write
+    // the escalation audit entry. Legacy single-user mode has no PM role: the single human
+    // user confirms every status directly (no refusal, no audit).
+    ...(cab ? { users: cab.users } : {}),
+  });
   app.register(decisionsRoutes, { prefix: '/api', repo: deps.decisions });
   app.register(b2bRoutes, { prefix: '/api', repo: deps.b2b });
   // ANA-73: the weekly marketing grid. PUT/DELETE are analyst work (hand-entered cells); the
