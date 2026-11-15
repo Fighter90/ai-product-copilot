@@ -423,7 +423,11 @@ describe('Hypotheses page', () => {
       ).toBeInTheDocument(),
     );
     expect(screen.queryByTestId('hyp-ice-table')).not.toBeInTheDocument();
-  });
+    // ANA-172 (round-2 gate): ~30 controlled interactions plus two mocked API round-trips
+    // make this the heaviest test of the file — under `pnpm coverage` (backend and frontend
+    // suites run concurrently) it overran the 20 s global budget. Same headroom as the
+    // ANA-129 sibling below.
+  }, 45_000);
 
   it('ANA-38: imports an AI hypothesis from the latest snapshot with provenance', async () => {
     vi.mocked(hypothesesApi.importAi).mockResolvedValue(SEEDED[0]!);
