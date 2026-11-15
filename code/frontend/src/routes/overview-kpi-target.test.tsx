@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor } from '@testing-library/react';
 import type { ChannelStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
@@ -93,7 +93,7 @@ describe('Overview KPI target (en locale)', () => {
   });
 });
 
-describe('Overview B2B segment (БАГ-11)', () => {
+describe('Overview B2B segment (БАГ-11 → ANA-176)', () => {
   const paidDeal = {
     id: 1,
     company: 'A',
@@ -108,12 +108,14 @@ describe('Overview B2B segment (БАГ-11)', () => {
     auth.isAdmin = false;
   });
 
-  it('B2B (analyst): KPI strip stays («Оплачено B2B vs цель»), empty-state without sync advice', () => {
+  it('B2B (analyst): KPI goal strip hidden with the explanation even with paid CRM deals', () => {
     useFilters.setState({ segment: 'b2b' });
     renderWithProviders(<OverviewView status="success" stats={[]} b2bDeals={[paidDeal]} />);
-    const strip = within(screen.getByTestId('kpi-strip'));
-    expect(strip.getByText('Успеваем к 300?')).toBeInTheDocument();
-    expect(strip.getByRole('img', { name: 'Прогресс к цели: 30 из 300' })).toBeInTheDocument();
+    // ANA-176: the goal-300 block belongs to the overall flow — hidden, never shown with zeros.
+    expect(screen.queryByTestId('kpi-strip')).not.toBeInTheDocument();
+    expect(screen.getByTestId('b2b-goal-hidden').textContent).toBe(
+      'Цель 300 относится к общему потоку; в сегменте B2B целей Метрики нет',
+    );
     expect(
       screen.getByText('B2B-данные вносятся вручную на странице B2B-сделки.'),
     ).toBeInTheDocument();
@@ -123,10 +125,11 @@ describe('Overview B2B segment (БАГ-11)', () => {
     expect(screen.queryByRole('link', { name: 'Перейти к B2B-сделкам' })).not.toBeInTheDocument();
   });
 
-  it('B2B (admin): empty-state offers a transition to the B2B deals page', () => {
+  it('B2B (admin): empty-state offers a transition to the B2B deals page, strip stays hidden', () => {
     useFilters.setState({ segment: 'b2b' });
     auth.isAdmin = true;
     renderWithProviders(<OverviewView status="success" stats={[]} b2bDeals={[paidDeal]} />);
+    expect(screen.queryByTestId('kpi-strip')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Перейти к B2B-сделкам' })).toHaveAttribute(
       'href',
       '/app/b2b',
@@ -138,6 +141,8 @@ describe('Overview B2B segment (БАГ-11)', () => {
     renderWithProviders(<OverviewView status="success" stats={[]} />);
     expect(screen.queryByTestId('kpi-strip')).not.toBeInTheDocument();
     expect(screen.getByText(/Нет данных за выбранный период/)).toBeInTheDocument();
+    // ANA-176: the B2B explanation is b2b-only — absent in other segments.
+    expect(screen.queryByTestId('b2b-goal-hidden')).not.toBeInTheDocument();
   });
 
   it('B2C: empty screen unchanged — no KPI strip, standard empty-state', () => {
@@ -145,9 +150,10 @@ describe('Overview B2B segment (БАГ-11)', () => {
     renderWithProviders(<OverviewView status="success" stats={[]} />);
     expect(screen.queryByTestId('kpi-strip')).not.toBeInTheDocument();
     expect(screen.getByText(/Нет данных за выбранный период/)).toBeInTheDocument();
+    expect(screen.queryByTestId('b2b-goal-hidden')).not.toBeInTheDocument();
   });
 
-  it('Overview wrapper: B2B segment keeps the KPI strip from CRM deals with the admin target', async () => {
+  it('Overview wrapper: B2B segment hides the goal strip and explains, naming the real admin target', async () => {
     useFilters.setState({ segment: 'b2b' });
     vi.mocked(api.channels).mockResolvedValue([]);
     vi.mocked(api.primaryGoal).mockRejectedValue(new Error('404'));
@@ -164,9 +170,12 @@ describe('Overview B2B segment (БАГ-11)', () => {
       days: 0,
     });
     renderWithProviders(<Overview />);
-    await waitFor(() => expect(screen.getByTestId('kpi-strip').textContent).toContain('450'));
-    // B2B segment counts CRM paid only — the B2C payments figure (12) is not mixed in.
-    expect(screen.getByRole('img', { name: 'Прогресс к цели: 30 из 450' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('b2b-goal-hidden')).toBeInTheDocument());
+    expect(screen.queryByTestId('kpi-strip')).not.toBeInTheDocument();
+    // The explanation quotes the real admin target (450), not the hardcoded 300.
+    expect(screen.getByTestId('b2b-goal-hidden').textContent).toContain('450');
+    // The B2C payments figure (12) is not mixed into the hidden-strip explanation.
+    expect(screen.getByTestId('b2b-goal-hidden').textContent).not.toContain('12');
     expect(screen.getByText(/B2B-данные вносятся вручную/)).toBeInTheDocument();
   });
 });
