@@ -316,18 +316,35 @@ export function ConfirmDialog({
   );
 }
 
-export function ThemeToggle({ className = '' }: { className?: string }): JSX.Element {
+export function ThemeToggle({
+  className = '',
+  reload,
+}: {
+  className?: string;
+  /** Default `window.location.reload()`; tests inject a spy (jsdom forbids stubbing it). */
+  reload?: () => void;
+}): JSX.Element {
   const { theme, toggleTheme } = usePrefs();
   const { t } = useT();
   const label = theme === 'dark' ? t('theme.light') : t('theme.dark');
+  const doReload = reload ?? (() => window.location.reload());
+  // ANA-173 (регресс прод 15.11, /help): пока запланированный reload не произошёл, повторные
+  // клики игнорируются — иначе второй клик возвращает тему обратно (два toggle + два reload),
+  // и тумблер выглядит мёртвым. Без хранилища reload не планируется — клики работают как обычно.
+  const reloadPending = useRef(false);
   return (
     <button
       type="button"
       onClick={() => {
+        if (reloadPending.current) return;
         // Тема красит и canvas-графики (ECharts) — надёжнее перезагрузить страницу,
         // чтобы все диаграммы/стили пересобрались чисто под новую тему.
-        toggleTheme();
-        window.location.reload();
+        // ANA-173: если хранилище недоступно, выбор не переживёт перезагрузку —
+        // страница вернулась бы как была, и тумблер выглядел бы мёртвым. Применяем на месте.
+        if (toggleTheme()) {
+          reloadPending.current = true;
+          doReload();
+        }
       }}
       title={label}
       aria-label={label}
@@ -341,12 +358,20 @@ export function ThemeToggle({ className = '' }: { className?: string }): JSX.Ele
 export function LangToggle({
   className = '',
   onChange,
+  reload,
 }: {
   className?: string;
   onChange?: (l: 'ru' | 'en') => void;
+  /** Default `window.location.reload()`; tests inject a spy (jsdom forbids stubbing it). */
+  reload?: () => void;
 }): JSX.Element {
   const { locale, setLocale } = usePrefs();
   const { t } = useT();
+  const doReload = reload ?? (() => window.location.reload());
+  // ANA-173 (регресс прод 15.11, EN на лендинге, 3 клика): каждый клик планировал свой reload;
+  // гонка перезагрузок оставляла страницу на прежнем языке. Пока reload в полёте — клики
+  // игнорируются. Без хранилища reload не планируется — язык применяется на месте.
+  const reloadPending = useRef(false);
   return (
     <div
       role="group"
@@ -359,10 +384,16 @@ export function LangToggle({
           type="button"
           aria-pressed={locale === l}
           onClick={() => {
+            if (reloadPending.current) return;
             // Язык меняет все тексты и даты — надёжнее перезагрузить страницу целиком.
-            setLocale(l);
+            // ANA-173: без хранилища перезагрузка стёрла бы выбор (мёртвая кнопка на
+            // публичных страницах) — тогда применяем язык на месте, без перезагрузки.
+            const persisted = setLocale(l);
             onChange?.(l);
-            window.location.reload();
+            if (persisted) {
+              reloadPending.current = true;
+              doReload();
+            }
           }}
           className={`px-2.5 uppercase transition-colors ${locale === l ? 'bg-accent text-onaccent' : 'text-muted hover:text-ink'}`}
         >

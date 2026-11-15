@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { renderWithProviders } from '../../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../../test/i18n-utils';
+import { usePrefs } from '../../store/prefs';
 
 vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ user: null }) }));
 vi.mock('../../lib/api-v3', () => ({
@@ -98,6 +99,39 @@ function renderAt(route: string) {
     route,
   );
 }
+
+/**
+ * ANA-173 (регресс прод 15.11): «Ночная тема» на /help — 2 клика, data-theme оставался light.
+ * Профиль QA-браузера запрещает хранилище: выбор не переживал reload и тема «не переключалась».
+ * Теперь без хранилища тема применяется на месте — клик по тумблеру в хедере /help красит <html>.
+ */
+describe('HelpCenter header theme toggle (ANA-173)', () => {
+  beforeEach(() => {
+    setTestLocale('en');
+    vi.mocked(v3.helpArticles).mockResolvedValue([] as unknown as Articles);
+  });
+  afterEach(() => {
+    // Undo the Storage prototype spies AFTER the test — never inside the it body, where a
+    // restore would also wipe the helpArticles mock set above (ANA-173 review).
+    vi.restoreAllMocks();
+  });
+
+  it('storage denied: «Night theme» flips data-theme on <html> in place', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage denied', 'SecurityError');
+    });
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Storage denied', 'SecurityError');
+    });
+    usePrefs.setState({ theme: 'light', locale: 'en', sidebarCollapsed: false });
+    document.documentElement.dataset.theme = 'light';
+    renderWithProviders(<HelpCenter />);
+    const toggle = screen.getByRole('button', { name: 'Night theme' });
+    fireEvent.click(toggle);
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(usePrefs.getState().theme).toBe('dark');
+  });
+});
 
 describe('HelpCenter links and on-this-page navigation', () => {
   const scrollIntoView = vi.fn();
