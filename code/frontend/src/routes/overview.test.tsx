@@ -244,6 +244,60 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
     expect(screen.queryByText('Direct traffic')).not.toBeInTheDocument();
   });
 
+  // ANA-170 (regress прода 15.11.2026): те же факты, что и в тесте выше — темп 7/день,
+  // прогноз = 2025-02-10 (39 дней после `to`); админская EVENT_DATE — дедлайн героя.
+  it('ANA-170: forecast AFTER the EVENT_DATE deadline is «Не успеваем», not «Успеваем: запас»', () => {
+    renderWithProviders(
+      <OverviewView
+        status="success"
+        to="2025-01-02"
+        eventDate="2025-01-20"
+        stats={[
+          {
+            ...sample,
+            date: '2025-01-01',
+            channel: 'Direct traffic',
+            visits: 1000,
+            goalReaches: 5,
+          },
+          { ...sample, date: '2025-01-02', channel: 'vip', visits: 10, goalReaches: 9 },
+        ]}
+        b2bDeals={[{ id: 1, company: 'A', tickets: 30, stage: 'paid', dateAdded: '2025-01-01' }]}
+      />,
+    );
+    // Прогноз (2025-02-10) ПОЗЖЕ даты события → отставание +21 дн.; перевёрнутый знак давал
+    // «Успеваем: запас 21 дн.» (а эвристика без EVENT_DATE дала бы «+35 дн.»).
+    expect(within(screen.getByTestId('kpi-strip')).getByTestId('pace-status')).toHaveTextContent(
+      'Не успеваем: +21 дн.',
+    );
+  });
+
+  it('ANA-170: forecast BEFORE the EVENT_DATE deadline keeps the real «запас»', () => {
+    renderWithProviders(
+      <OverviewView
+        status="success"
+        to="2025-01-02"
+        eventDate="2026-02-10"
+        stats={[
+          {
+            ...sample,
+            date: '2025-01-01',
+            channel: 'Direct traffic',
+            visits: 1000,
+            goalReaches: 5,
+          },
+          { ...sample, date: '2025-01-02', channel: 'vip', visits: 10, goalReaches: 9 },
+        ]}
+        b2bDeals={[{ id: 1, company: 'A', tickets: 30, stage: 'paid', dateAdded: '2025-01-01' }]}
+      />,
+    );
+    // Прогноз (2025-02-10) РАНЬШЕ даты события → запас 365 дн.; перевёрнутый знак показывал
+    // «Не успеваем: +365 дн.» на заведомо успевающем темпе.
+    expect(within(screen.getByTestId('kpi-strip')).getByTestId('pace-status')).toHaveTextContent(
+      'Успеваем: запас 365 дн.',
+    );
+  });
+
   it('REG-03 (заявка ≠ оплата): purchase-goal orders do NOT inflate the ring — money only', () => {
     render(
       <OverviewView
