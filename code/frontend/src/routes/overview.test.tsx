@@ -90,12 +90,15 @@ describe('OverviewView', () => {
     expect(screen.getByText(/Заявок/)).toBeInTheDocument();
     expect(screen.getByText('Визиты и заявки по дням')).toBeInTheDocument();
     // EChart грузит EChartInner за React.lazy (ANA-41) — ждём появления обоих графиков.
+    // ANA-172 (round-2 gate): под `pnpm coverage` backend и frontend гоняются параллельно,
+    // ленивый чанк EChartInner отрисовывался дольше 15 с и waitFor падал по таймауту.
+    // 30 с на waitFor и 45 с на тест — тот же запас, что у тяжёлых тестов Hypotheses.
     await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(2), {
-      timeout: 15000,
+      timeout: 30000,
     });
     expect(screen.getByText(/Нет слабых мест/)).toBeInTheDocument();
     expect(screen.queryByText(/KPI-цель определена автоматически/)).not.toBeInTheDocument();
-  });
+  }, 45_000);
 
   it('REG-17 (ANA-105): the deadline caveat equals the расчёт — coverage days ×2 and the computed date', () => {
     // 3 fact days → window = 3 → deadline = 2025-01-03 + 6 (the coverage-based heuristic goalPace runs).
@@ -130,10 +133,11 @@ describe('OverviewView', () => {
     expect(screen.getByText('Доля устройств (визиты)')).toBeInTheDocument();
     // 2 base charts (visits+applications, channel mix) + 2 geo/device charts = 4.
     // EChart грузит EChartInner за React.lazy (ANA-41) — ждём все четыре.
+    // Тот же запас на загруженную машину, что и у теста выше (ANA-172, round-2 gate).
     await waitFor(() => expect(screen.getAllByTestId('echart')).toHaveLength(4), {
-      timeout: 15000,
+      timeout: 30000,
     });
-  });
+  }, 45_000);
 
   it('lists weak spots when a channel converts below the overall rate', () => {
     renderWithProviders(

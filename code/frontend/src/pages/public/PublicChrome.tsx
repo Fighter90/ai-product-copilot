@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { BrandMark } from '../../components/BrandMark';
-import { LangToggle, ThemeToggle, VersionBadge } from '../../components/ui';
+import { LangToggle, ThemeToggle, VersionBadge, GITHUB_CHANGELOG_URL } from '../../components/ui';
 import { BuildMismatchBadge, BuildMismatchBanner } from '../../components/BuildMismatchBadge';
 import { useT } from '../../i18n';
 import { useAuth } from '../../auth/AuthContext';
@@ -99,10 +99,7 @@ export function PublicFooter(): JSX.Element {
           <Link to="/help" className="hover:text-ink">
             {t('nav.help')}
           </Link>
-          <a
-            href="https://github.com/Fighter90/ai-product-copilot/blob/main/CHANGELOG.md"
-            className="hover:text-ink"
-          >
+          <a href={GITHUB_CHANGELOG_URL} className="hover:text-ink">
             {t('footer.changelog')}
           </a>
           <span className="flex items-center gap-2">

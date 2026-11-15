@@ -4,6 +4,10 @@ import { usePrefs } from '../../store/prefs';
 import { useT, fmtNum } from '../../i18n';
 import { FRONTEND_BUILD, buildLabel } from '../../lib/build-info';
 
+/** ANA-172: CHANGELOG of the project's own repo (ai-product-copilot was renamed → 404). */
+export const GITHUB_CHANGELOG_URL =
+  'https://github.com/Fighter90/yandex-metrika-analyse-dashboard/blob/main/CHANGELOG.md';
+
 /** Page title block with optional actions. */
 export function PageHeader({
   title,
@@ -373,7 +377,7 @@ export function LangToggle({
 export function VersionBadge({ className = '' }: { className?: string }): JSX.Element {
   return (
     <a
-      href="https://github.com/Fighter90/ai-product-copilot/blob/main/CHANGELOG.md"
+      href={GITHUB_CHANGELOG_URL}
       target="_blank"
       rel="noreferrer"
       data-testid="version-badge"
