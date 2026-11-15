@@ -541,8 +541,10 @@ describe('report routes', () => {
       insights,
       hypotheses: vi.fn(),
     };
-    // A 15 ms watchdog: the hung holder is killed almost immediately.
-    const app = appWith(runner, { aiJobs: createAiJobQueue({ maxRunMs: 15 }) });
+    // A 250 ms watchdog — wide enough that the setup round-trips below always land while the
+    // hung holder still owns the slot (a 15 ms window raced them: the Auto request could
+    // arrive after the takeover, launch directly and never see the takeover context).
+    const app = appWith(runner, { aiJobs: createAiJobQueue({ maxRunMs: 250 }) });
 
     const holder = await app.inject({
       method: 'POST',
@@ -560,9 +562,13 @@ describe('report routes', () => {
     });
     expect(auto.statusCode).toBe(202);
     const { jobId: parkedId } = auto.json() as { jobId: string };
+    // …and really PARKED (pending = it has not taken the slot): a direct launch would already
+    // be «running», and the takeover context would never reach this job.
+    const parkedNow = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${parkedId}` });
+    expect(parkedNow.json()).toMatchObject({ status: 'pending' });
 
     // …the watchdog kills the holder and the parked job runs on the next provider.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 300));
     await settle();
     const hungJob = await app.inject({
       method: 'GET',
@@ -606,8 +612,10 @@ describe('report routes', () => {
       insights,
       hypotheses: vi.fn(),
     };
-    // A 15 ms watchdog: the hung holder is killed almost immediately.
-    const app = appWith(runner, { aiJobs: createAiJobQueue({ maxRunMs: 15 }) });
+    // A 250 ms watchdog — wide enough that the setup round-trips below always land while the
+    // hung holder still owns the slot (a 15 ms window raced them: the Auto request could
+    // arrive after the takeover, launch directly and never see the takeover context).
+    const app = appWith(runner, { aiJobs: createAiJobQueue({ maxRunMs: 250 }) });
 
     const holder = await app.inject({
       method: 'POST',
@@ -625,9 +633,13 @@ describe('report routes', () => {
     });
     expect(auto.statusCode).toBe(202);
     const { jobId: parkedId } = auto.json() as { jobId: string };
+    // …and really PARKED (pending = it has not taken the slot): a direct launch would already
+    // be «running», and the takeover context would never reach this job.
+    const parkedNow = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${parkedId}` });
+    expect(parkedNow.json()).toMatchObject({ status: 'pending' });
 
     // …the watchdog kills the hung «auto» holder and the parked job runs — the full chain.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 300));
     await settle();
     const hungJob = await app.inject({
       method: 'GET',

@@ -241,3 +241,57 @@ describe('Users → delete a user (ANA-123)', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Ana');
   });
 });
+
+describe('Users → role column shows only the user’s real role (ANA-175)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks(); // call history would otherwise leak between the tests below
+    vi.mocked(v3.users).mockResolvedValue(users);
+    vi.mocked(v3.adminCounters).mockResolvedValue(counters);
+    vi.mocked(v3.adminUserCounters).mockResolvedValue({ 2: [COUNTER] });
+    vi.mocked(v3.updateUser).mockResolvedValue({ user: users[0]! });
+  });
+
+  it('analyst row shows only «Аналитик»; admin row only «Администратор»', async () => {
+    renderWithProviders(<Users />);
+    await screen.findByText('an@x.ru');
+    const analystRow = screen.getByText('an@x.ru').closest('tr')!;
+    const adminRow = screen.getByText('admin@x.ru').closest('tr')!;
+    expect(within(analystRow).getByText('Аналитик')).toBeInTheDocument();
+    expect(within(analystRow).queryByText('Администратор')).toBeNull();
+    expect(within(adminRow).getByText('Администратор')).toBeInTheDocument();
+    expect(within(adminRow).queryByText('Аналитик')).toBeNull();
+  });
+
+  it('role stays editable: «Изменить роль» opens a select; picking a role PUTs the patch', async () => {
+    renderWithProviders(<Users />);
+    await screen.findByText('an@x.ru');
+    const analystRow = screen.getByText('an@x.ru').closest('tr')!;
+    fireEvent.click(within(analystRow).getByRole('button', { name: 'Изменить роль «Аналитик»' }));
+    const sel = within(analystRow).getByRole('combobox') as HTMLSelectElement;
+    fireEvent.change(sel, { target: { value: 'admin' } });
+    await waitFor(() => expect(v3.updateUser).toHaveBeenCalledWith(2, { role: 'admin' }));
+  });
+
+  it('blur closes the editor back to the role label', async () => {
+    renderWithProviders(<Users />);
+    await screen.findByText('an@x.ru');
+    const analystRow = screen.getByText('an@x.ru').closest('tr')!;
+    fireEvent.click(within(analystRow).getByRole('button', { name: 'Изменить роль «Аналитик»' }));
+    fireEvent.blur(within(analystRow).getByRole('combobox'));
+    expect(within(analystRow).queryByRole('combobox')).toBeNull();
+    expect(within(analystRow).getByText('Аналитик')).toBeInTheDocument();
+  });
+
+  it('Escape closes the editor; any other key keeps it open', async () => {
+    renderWithProviders(<Users />);
+    await screen.findByText('an@x.ru');
+    const analystRow = screen.getByText('an@x.ru').closest('tr')!;
+    fireEvent.click(within(analystRow).getByRole('button', { name: 'Изменить роль «Аналитик»' }));
+    const sel = within(analystRow).getByRole('combobox');
+    fireEvent.keyDown(sel, { key: 'Enter' });
+    expect(within(analystRow).getByRole('combobox')).toBeInTheDocument();
+    fireEvent.keyDown(sel, { key: 'Escape' });
+    expect(within(analystRow).queryByRole('combobox')).toBeNull();
+    expect(v3.updateUser).not.toHaveBeenCalled();
+  });
+});
