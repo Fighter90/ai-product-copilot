@@ -541,6 +541,65 @@ describe('ReportPreview (wrapper)', () => {
     // The raw JSON body of the 429 never reaches the UI.
     expect(screen.queryByText(/AI_BUSY/)).not.toBeInTheDocument();
   });
+
+  it('ANA-155: the enriched 429 names the holder with its start/expected release and offers «Повторить»', async () => {
+    vi.mocked(api.generateInsights).mockReset();
+    vi.mocked(api.getAiJob).mockReset();
+    // First attempt: the slot is busy with a yandexgpt generation (the enriched 429 body).
+    // The retry then succeeds — the retry button must actually re-run the generation.
+    vi.mocked(api.generateInsights)
+      .mockRejectedValueOnce(
+        Object.assign(new Error('{"error":"занято","code":"AI_BUSY"}'), {
+          status: 429,
+          body: {
+            code: 'AI_BUSY',
+            job: {
+              kind: 'insights',
+              provider: 'yandexgpt',
+              startedAt: '2026-11-15T10:00:00.000Z',
+              expectedReleaseAt: '2026-11-15T10:15:00.000Z',
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce({ jobId: 'job-2' });
+    vi.mocked(api.getAiJob).mockResolvedValue({
+      id: 'job-2',
+      kind: 'insights',
+      status: 'done',
+      result: { narrative: 'AI: рост заявок' },
+    });
+    renderWithProviders(<ReportPreview />);
+    fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
+    expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
+    // The busy hint now names WHO holds the slot (localized provider name) and when it frees.
+    await screen.findByText(/Слот занят: YandexGPT \(AI Studio\)/);
+    expect(screen.getByText(/Запущено:/)).toBeInTheDocument();
+    expect(screen.getByText(/ожидаемое освобождение/)).toBeInTheDocument();
+    // …and the wait is actionable: «Повторить» re-runs the generation with the same choice.
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }));
+    await screen.findByText(/AI: рост заявок/);
+    expect(vi.mocked(api.generateInsights)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(api.generateInsights)).toHaveBeenLastCalledWith('snap-1', 'auto');
+    // The holder details are gone once a retry is in flight.
+    expect(screen.queryByText(/Слот занят/)).not.toBeInTheDocument();
+  });
+
+  it('ANA-155: a plain 429 (old backend body) keeps the simple busy hint without the holder line', async () => {
+    vi.mocked(api.generateInsights).mockReset();
+    vi.mocked(api.generateInsights).mockRejectedValue(
+      Object.assign(new Error('{"error":"занято","code":"AI_BUSY"}'), { status: 429 }),
+    );
+    renderWithProviders(<ReportPreview />);
+    fireEvent.click(screen.getByRole('button', { name: 'Собрать отчёт' }));
+    expect(await screen.findByText(/Отчёт «01\.01\.2025 – 07\.01\.2025»/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Сгенерировать AI-анализ' }));
+    await screen.findByText(/уже выполняется/);
+    expect(screen.queryByText(/Слот занят:/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Повторить' })).not.toBeInTheDocument();
+  });
 });
 
 describe('ReportFullView markdown tables', () => {

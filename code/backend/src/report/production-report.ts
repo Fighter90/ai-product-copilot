@@ -27,7 +27,12 @@ import type { DecisionsRepo } from '../db/repositories/decisions-repo';
  */
 export interface AiBridge {
   readonly available: () => boolean;
-  readonly fetchFor: (purpose: string, choice?: AiProviderChoice) => AnthropicFetch;
+  /** ANA-155: `excludeProvider` drops one provider from the Auto chain (watchdog takeover). */
+  readonly fetchFor: (
+    purpose: string,
+    choice?: AiProviderChoice,
+    excludeProvider?: string,
+  ) => AnthropicFetch;
   /** Human-readable provider name for the «Сгенерировано: …» label; unknown ids fall back raw. */
   readonly providerName: (id: string) => string;
   readonly unavailableMessage: string;
@@ -254,7 +259,7 @@ export function makeReportRunner(
         contentType,
       };
     },
-    insights: async (snapshotId, providerId) => {
+    insights: async (snapshotId, providerId, opts) => {
       const record = snapshots.getById(snapshotId);
       if (!record) return { ok: false, reason: 'not_found', message: 'snapshot not found' };
       if (!ai.available()) {
@@ -268,7 +273,7 @@ export function makeReportRunner(
       // ANA-33: sniff which provider/model actually answered (auto mode → the chain winner).
       let info: AiCallInfo = {};
       const narrative = await generateInsights(
-        sniffAiFetch(ai.fetchFor('report-insights', providerId), (i) => {
+        sniffAiFetch(ai.fetchFor('report-insights', providerId, opts?.excludeProvider), (i) => {
           info = i;
         }),
         {
@@ -304,7 +309,7 @@ export function makeReportRunner(
       });
       return { ok: true, narrative, generatedBy };
     },
-    hypotheses: async (snapshotId, providerId) => {
+    hypotheses: async (snapshotId, providerId, opts) => {
       const record = snapshots.getById(snapshotId);
       if (!record) return { ok: false, reason: 'not_found', message: 'snapshot not found' };
       // If hypotheses were already generated during build, return them. ANA-128: a snapshot
@@ -337,9 +342,12 @@ export function makeReportRunner(
       const snapshot = record.payload as ReportSnapshot;
       let info: AiCallInfo = {};
       const generatedHypotheses = await generateHypotheses(snapshot, {
-        fetch: sniffAiFetch(ai.fetchFor('report-hypotheses', providerId), (i) => {
-          info = i;
-        }),
+        fetch: sniffAiFetch(
+          ai.fetchFor('report-hypotheses', providerId, opts?.excludeProvider),
+          (i) => {
+            info = i;
+          },
+        ),
         apiKey: config.ANTHROPIC_API_KEY,
         model: config.ANTHROPIC_MODEL,
       });

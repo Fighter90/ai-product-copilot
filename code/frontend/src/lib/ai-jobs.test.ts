@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { AI_JOB_MAX_POLLS, AI_JOB_POLL_MS, isBusyError, jobErrorHint, trackAiJob } from './ai-jobs';
+import {
+  AI_JOB_MAX_POLLS,
+  AI_JOB_POLL_MS,
+  busyJobInfo,
+  isBusyError,
+  jobErrorHint,
+  trackAiJob,
+} from './ai-jobs';
 import { ApiError, type AiJobView } from './api';
 
 /** ANA-133: client-side polling of the backend's single-slot background AI jobs. */
@@ -73,8 +80,19 @@ describe('trackAiJob (ANA-133)', () => {
     const getJob = vi.fn(async () => job({}));
     await expect(
       trackAiJob('job-1', getJob, { delay: noDelay, polls: AI_JOB_MAX_POLLS }),
-    ).rejects.toThrow(/10 минут/);
+    ).rejects.toThrow(/16 минут/);
     expect(getJob).toHaveBeenCalledTimes(AI_JOB_MAX_POLLS + 1);
+  });
+
+  // ANA-155 (review r2): the backend watchdog (AI_JOB_MAX_RUN_MS, default 15 min) frees the
+  // slot of a hung generation and a parked Auto job is promoted — the client must outlive
+  // the watchdog to OBSERVE that takeover, otherwise it dies with a generic timeout before
+  // the honest «превышен таймаут (15 мин) — слот освобождён» failure can arrive.
+  // The env is tunable — this hardcoded 15 min is the documented default; the coupling
+  // «keep the env below the client's poll budget» is written at the env definition
+  // (code/backend/src/config.ts, AI_JOB_MAX_RUN_MS) so ops changing one side finds the other.
+  it('the poll budget outlives the backend watchdog (15 min) so a takeover is observable', () => {
+    expect(AI_JOB_MAX_POLLS * AI_JOB_POLL_MS).toBeGreaterThan(15 * 60_000);
   });
 
   it('isBusyError detects only the 429 busy signal', () => {
@@ -120,5 +138,50 @@ describe('jobErrorHint (ANA-132)', () => {
   it('maps a missing message to the localized failure note', () => {
     expect(jobErrorHint(undefined, BUSY, UNREADABLE)).toBe(UNREADABLE);
     expect(jobErrorHint(new Error(), BUSY, UNREADABLE)).toBe(UNREADABLE);
+  });
+});
+
+describe('busyJobInfo (ANA-155)', () => {
+  const body = {
+    code: 'AI_BUSY',
+    job: {
+      kind: 'insights',
+      provider: 'openrouter',
+      startedAt: '2026-11-15T10:00:00.000Z',
+      expectedReleaseAt: '2026-11-15T10:15:00.000Z',
+    },
+  };
+
+  it('extracts the holder info from the enriched 429 body', () => {
+    expect(busyJobInfo(new ApiError(429, 'busy', body))).toEqual(body.job);
+  });
+
+  it('returns null for a plain 429 without the enriched job payload', () => {
+    expect(busyJobInfo(new ApiError(429, 'busy'))).toBeNull();
+    expect(busyJobInfo(new ApiError(429, 'busy', { code: 'AI_BUSY' }))).toBeNull();
+    expect(busyJobInfo(new ApiError(429, 'busy', { job: { provider: 42 } }))).toBeNull();
+  });
+
+  // ANA-155 (review r3): kind is validated like every other field — a payload without a
+  // readable kind yields null (plain hint) instead of a silently invented «AI-анализ» label.
+  it('returns null when the payload carries no valid kind — never invents «insights»', () => {
+    expect(
+      busyJobInfo(
+        new ApiError(429, 'busy', {
+          job: {
+            provider: 'openrouter',
+            startedAt: '2026-11-15T10:00:00.000Z',
+            expectedReleaseAt: '2026-11-15T10:15:00.000Z',
+          },
+        }),
+      ),
+    ).toBeNull();
+    expect(busyJobInfo(new ApiError(429, 'busy', { job: { ...body.job, kind: 42 } }))).toBeNull();
+  });
+
+  it('returns null for anything that is not the AI-busy 429', () => {
+    expect(busyJobInfo(new ApiError(500, 'boom', body))).toBeNull();
+    expect(busyJobInfo(new Error('plain'))).toBeNull();
+    expect(busyJobInfo(undefined)).toBeNull();
   });
 });

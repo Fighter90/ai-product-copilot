@@ -30,6 +30,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** ANA-155: parsed JSON body (when it was one) — the enriched 429 payload reads it. */
+    public readonly body?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -65,7 +67,12 @@ export interface SnapshotSummary {
 export interface AiJobView {
   readonly id: string;
   readonly kind: 'insights' | 'hypotheses';
-  readonly status: 'running' | 'done' | 'failed';
+  /** ANA-155: 'pending' = the Auto fallback parked behind the running generation. */
+  readonly status: 'pending' | 'running' | 'done' | 'failed';
+  /** ANA-155: requested provider choice of the job ('auto' or a pinned provider id). */
+  readonly provider?: string;
+  /** ANA-155: ISO time the job took the slot (absent while pending). */
+  readonly startedAt?: string;
   /** Set when status is 'done' — the generation payload ({narrative} / {hypotheses}). */
   readonly result?: unknown;
   /** Set when status is 'failed' — the extracted error message. */
@@ -129,7 +136,15 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     ) {
       dispatchQuotaBanner();
     }
-    throw new ApiError(res.status, readableError(res.status, text));
+    // ANA-155: attach the parsed JSON body (the enriched AI-busy 429 reads it later);
+    // non-JSON bodies (HTML error pages) keep body undefined.
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(text) as unknown;
+    } catch {
+      parsedBody = undefined;
+    }
+    throw new ApiError(res.status, readableError(res.status, text), parsedBody);
   }
   if (res.status === 204) return undefined as T;
   const data = (await res.json()) as T;

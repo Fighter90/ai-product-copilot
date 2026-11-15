@@ -338,16 +338,26 @@ export class LlmService {
 
   /**
    * Complete through the chain. `choice = 'auto'` tries every available provider in priority order
-   * and falls back on any error; an explicit provider is tried alone.
+   * and falls back on any error; an explicit provider is tried alone. ANA-155: `exclude` drops
+   * one provider from the Auto chain (the queued job runs after a watchdog takeover — the
+   * provider whose generation hung is not retried) as long as another provider remains.
    */
   async complete(
     req: CompletionRequest,
-    opts: { choice?: ProviderChoice; purpose: string; user?: string | null } = { purpose: 'other' },
+    opts: {
+      choice?: ProviderChoice;
+      purpose: string;
+      user?: string | null;
+      exclude?: ProviderId;
+    } = { purpose: 'other' },
   ): Promise<CompletionResult> {
     const choice = opts.choice ?? 'auto';
-    const candidates = this.rows().filter(
+    let candidates = this.rows().filter(
       (r) => this.usable(r) && (choice === 'auto' || r.id === choice),
     );
+    if (opts.exclude && candidates.length > 1) {
+      candidates = candidates.filter((r) => r.id !== opts.exclude);
+    }
     if (candidates.length === 0) {
       throw new ProviderError(
         choice === 'auto' ? 'anthropic' : choice,
@@ -428,6 +438,8 @@ export function chainAsAnthropicFetch(
     choice?: ProviderChoice;
     purpose: string;
     user?: string | null;
+    /** ANA-155: drop one provider from the Auto chain (see LlmService.complete). */
+    exclude?: ProviderId;
     /** Per-request provider timeout; defaults to PURPOSE_TIMEOUT_MS[purpose] or the adapter's. */
     timeoutMs?: number;
     onResult?: (r: CompletionResult) => void;

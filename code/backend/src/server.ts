@@ -93,11 +93,13 @@ async function main(): Promise<void> {
   const ai: AiBridge = {
     available: () => llm.available().length > 0,
     // ANA-33: an explicit provider choice (≠ 'auto') is pinned for the call, 'auto'/undefined
-    // walks the admin-defined chain in priority order.
-    fetchFor: (purpose, choice) =>
+    // walks the admin-defined chain in priority order. ANA-155: excludeProvider drops the
+    // provider whose generation was watchdog-killed from that chain.
+    fetchFor: (purpose, choice, excludeProvider) =>
       chainAsAnthropicFetch(llm, {
         purpose,
         ...(choice && choice !== 'auto' ? { choice: choice as (typeof PROVIDER_IDS)[number] } : {}),
+        ...(excludeProvider ? { exclude: excludeProvider as (typeof PROVIDER_IDS)[number] } : {}),
       }) as unknown as AnthropicFetch,
     providerName: providerDisplayName,
     unavailableMessage:
@@ -138,6 +140,12 @@ async function main(): Promise<void> {
       'No users yet: set ADMIN_EMAIL/ADMIN_PASSWORD in .env and restart to create an admin.',
     );
   }
+  // ANA-155: AI jobs are in-memory, so a restart drops every pending/running entry — the slot
+  // starts clean (a hung generation can no longer outlive the process that owned it). Clients
+  // polling a lost jobId get 404 and the honest «прервана — запустите ещё раз» note.
+  app.log.info(
+    'AI job queue starts clean after restart: in-memory jobs are gone, the slot is free',
+  );
   try {
     await app.listen({ port: config.API_PORT, host: process.env.HOST ?? '0.0.0.0' });
   } catch (err) {
