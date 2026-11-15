@@ -22,6 +22,8 @@ import {
 } from '../../components/ui';
 import { EmptyState } from '../../components/EmptyState';
 import { SourceBadge, UnverifiedBadge } from '../../components/hypotheses/SourceBadge';
+import { HypothesisAutonomyBadges } from '../../components/hypotheses/AutonomyBadges';
+import { StatusSelect } from '../../components/hypotheses/StatusSelect';
 import {
   HypothesisEditor,
   blankDraft,
@@ -35,16 +37,8 @@ import { api } from '../../lib/api';
 import { hasSeed, parseHypothesisSeed } from '../../lib/hypothesis-prefill';
 import type { GeneratedHypotheses } from '@pca/shared';
 
-/** Hypotheses workspace (ANA-37): status kanban + sortable ICE table + AI import (ANA-38). */
-
-const STATUSES: readonly HypothesisStatus[] = [
-  'draft',
-  'in_progress',
-  'green',
-  'yellow',
-  'red',
-  'expired',
-];
+/** Hypotheses workspace (ANA-37): status kanban + sortable ICE table + AI import (ANA-38).
+    ANA-157: the status select is restricted by the AI-autonomy matrix (StatusSelect). */
 
 type SortKey = 'iceScore' | 'impact' | 'confidence' | 'ease' | 'deadlineDays' | 'title';
 const FACTORS: ReadonlyArray<{
@@ -313,24 +307,19 @@ export function Hypotheses(): JSX.Element {
                         aiProvider={h.aiProvider}
                         aiModel={h.aiModel}
                       />
+                      {/* ANA-157: the autonomy badges (level + escalation) on AI cards. */}
+                      <HypothesisAutonomyBadges source={h.source} />
                       <UnverifiedBadge numbers={h.unverifiedNumbers} />
                     </div>
                     {/* ANA-158: flex-wrap + min-w-0 on every flex child — with a long status label
                         or a narrow lane the row wraps and «Посмотреть» truncates instead of being
                         pushed past the card edge (overflow-hidden would clip it). */}
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-1 text-xs text-muted">
-                      <select
-                        aria-label={t('hyp.changeStatus')}
-                        className="min-w-0 max-w-full rounded border border-line bg-surface px-1 py-0.5 text-xs"
-                        value={h.status}
-                        onChange={(e) => onStatusChange(h, e.target.value as HypothesisStatus)}
-                      >
-                        {STATUSES.map((s) => (
-                          <option key={s} value={s}>
-                            {t(STATUS_KEY[s])}
-                          </option>
-                        ))}
-                      </select>
+                      <StatusSelect
+                        status={h.status}
+                        source={h.source}
+                        onChange={(s) => onStatusChange(h, s)}
+                      />
                       <span className="flex min-w-0 max-w-full items-center gap-1">
                         <button
                           type="button"
@@ -506,12 +495,14 @@ export function Hypotheses(): JSX.Element {
 
       {viewing !== null && (
         <HypothesisViewModal
-          hypothesis={viewing}
+          // ANA-157: resolve the stored hypothesis so a status change in the popup re-renders it.
+          hypothesis={hypotheses.find((x) => x.id === viewing.id) ?? viewing}
           onClose={() => setViewing(null)}
           onEdit={(h) => {
             setViewing(null);
             setEditing({ id: h.id, draft: draftOf(h) });
           }}
+          onStatusChange={onStatusChange}
         />
       )}
 

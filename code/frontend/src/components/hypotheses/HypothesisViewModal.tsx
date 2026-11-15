@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
 import { Pencil } from 'lucide-react';
-import { iceScore, type Hypothesis } from '@pca/shared';
+import { iceScore, type Hypothesis, type HypothesisStatus } from '@pca/shared';
 import { useT, fmtDate, fmtNum, type DictKey } from '../../i18n';
 import { Modal, Pill } from '../ui';
 import { SourceBadge, UnverifiedBadge } from './SourceBadge';
+import { HypothesisAutonomyBadges } from './AutonomyBadges';
+import { StatusSelect } from './StatusSelect';
 import { CATEGORY_KEY, METHOD_TYPE_KEY, STATUS_KEY, statusTone } from './labels';
 
 /**
@@ -12,6 +14,8 @@ import { CATEGORY_KEY, METHOD_TYPE_KEY, STATUS_KEY, statusTone } from './labels'
  * evidence quotes from the report, ICE with the rationales that were tooltip-only before,
  * assumptions, validation methods, traffic light, deadline and provenance — opens here.
  * «Редактировать» hands over to the existing HypothesisEditor: the form is not duplicated.
+ * ANA-157: AI hypotheses show the autonomy badges; with a status handler the popup carries
+ * the same restricted status select as the card (verdicts disabled for AI until PM).
  */
 
 const label = 'mb-1 block text-xs font-semibold text-muted';
@@ -30,11 +34,14 @@ export function HypothesisViewModal({
   hypothesis,
   onClose,
   onEdit,
+  onStatusChange,
 }: {
   hypothesis: Hypothesis;
   onClose: () => void;
   /** ANA-152: «Редактировать» opens the existing editor — no form duplication. */
   onEdit: (h: Hypothesis) => void;
+  /** ANA-157: when provided, the popup carries the (autonomy-restricted) status select. */
+  onStatusChange?: (h: Hypothesis, status: HypothesisStatus) => void;
 }): JSX.Element {
   const { t, locale } = useT();
   const h = hypothesis;
@@ -71,8 +78,19 @@ export function HypothesisViewModal({
           </Pill>
           <Pill tone={statusTone(h.status)}>{t(STATUS_KEY[h.status])}</Pill>
           <SourceBadge source={h.source} aiProvider={h.aiProvider} aiModel={h.aiModel} />
+          {/* ANA-157: the autonomy badges (level + escalation) on AI hypotheses. */}
+          <HypothesisAutonomyBadges source={h.source} />
           <UnverifiedBadge numbers={h.unverifiedNumbers} />
         </div>
+
+        {/* ANA-157: the popup's status select, restricted by the autonomy matrix for AI. */}
+        {onStatusChange !== undefined && (
+          <StatusSelect
+            status={h.status}
+            source={h.source}
+            onChange={(status) => onStatusChange(h, status)}
+          />
+        )}
 
         {sentence.trim() !== '' && (
           <p className="rounded-md border border-line bg-raised px-3 py-2 italic text-muted">

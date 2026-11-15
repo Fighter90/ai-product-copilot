@@ -1314,6 +1314,13 @@ export const ru = {
   'hyp.status.yellow': 'Частично',
   'hyp.status.red': 'Отклонена',
   'hyp.status.expired': 'Просрочена',
+  // ANA-157: матрица автономии ИИ для гипотез — статус AI-черновика ограничен уровнем A1,
+  // вердикты светофора (Подтверждена/Частично/Отклонена) и «Просрочена» — только PM.
+  'hyp.autonomy.level.A0': 'ИИ только предлагает — решает PM',
+  'hyp.autonomy.level.A1': 'ИИ действует по шаблону — PM ревьюит постфактум',
+  'hyp.autonomy.level.A2': 'ИИ автономно в лимитах (в MVP не исполняется)',
+  'hyp.autonomy.pmRequired': 'Требуется подтверждение PM — уровень автономии {level}',
+  'hyp.autonomy.escalation': '⚠️ Эскалация к PM',
   'hyp.cat.behavior': 'Поведение',
   'hyp.cat.market': 'Рынок',
   'hyp.cat.tech': 'Технологии',
@@ -2729,6 +2736,13 @@ export const en: Record<DictKey, string> = {
   'hyp.status.yellow': 'Partial',
   'hyp.status.red': 'Rejected',
   'hyp.status.expired': 'Expired',
+  // ANA-157: the AI-autonomy matrix applied to hypotheses — an AI draft's status is capped at
+  // level A1; the verification verdicts (Confirmed/Partial/Rejected) and «Expired» are PM-only.
+  'hyp.autonomy.level.A0': 'AI only proposes — the PM decides',
+  'hyp.autonomy.level.A1': 'AI acts by template — PM reviews post-factum',
+  'hyp.autonomy.level.A2': 'AI acts autonomously within limits (not executed in MVP)',
+  'hyp.autonomy.pmRequired': 'Requires PM confirmation — autonomy level {level}',
+  'hyp.autonomy.escalation': '⚠️ PM escalation',
   'hyp.cat.behavior': 'Behaviour',
   'hyp.cat.market': 'Market',
   'hyp.cat.tech': 'Tech',
