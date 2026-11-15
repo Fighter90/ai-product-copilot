@@ -206,7 +206,9 @@ const RU = {
   summaryHeading: 'Краткие итоги',
   goalTitle: (label: { title: string; isPaid: boolean } | undefined) =>
     label?.title ?? 'Заявок B2C',
-  summaryGoal: (title: string, n: number) => `${title} (достижения основной цели за период): ${n}`,
+  // ANA-167: the goal line names its period explicitly — «период с {дата} по {дата}».
+  summaryGoal: (title: string, n: number, from: string, to: string) =>
+    `${title} (достижения основной цели, период с ${from} по ${to}): ${n}`,
   summaryPaid: (n: number) => `Оплачено B2B (билетов): ${n}`,
   summaryGap: (n: number) => `Gap до цели (по оплатам): ${n}`,
   summaryVisits: (n: number) => `Суммарно визитов в выборке каналов: ${n}`,
@@ -224,7 +226,7 @@ const RU = {
   summaryKeyFigures: 'Ключевые цифры периода:',
   kfHeader: ['Показатель', 'Значение'] as readonly string[],
   kfTarget: 'Цель периода (оплаченных билетов)',
-  kfApps: 'Заявки B2C (достижения цели Метрики)',
+  kfApps: (from: string, to: string) => `Заявки B2C (достижения цели Метрики, с ${from} по ${to})`,
   kfPaid: 'Оплачено B2B (билетов)',
   kfCredited: 'Зачтено к цели (оплаченные билеты)',
   kfGap: 'Gap до цели (билетов)',
@@ -538,7 +540,8 @@ const EN: ReportText = {
 
   summaryHeading: 'Key results',
   goalTitle: (label) => (label?.isPaid ? 'Applications' : 'B2C applications'),
-  summaryGoal: (title, n) => `${title} (primary goal reaches for the period): ${n}`,
+  // ANA-167: the goal line names its period explicitly.
+  summaryGoal: (title, n, from, to) => `${title} (primary goal reaches, period ${from} – ${to}): ${n}`,
   summaryPaid: (n) => `B2B paid (tickets): ${n}`,
   summaryGap: (n) => `Gap to target (by payments): ${n}`,
   summaryVisits: (n) => `Total visits in the channel sample: ${n}`,
@@ -555,7 +558,7 @@ const EN: ReportText = {
   summaryKeyFigures: 'Key figures for the period:',
   kfHeader: ['Metric', 'Value'],
   kfTarget: 'Period target (paid tickets)',
-  kfApps: 'B2C applications (Metrika goal reaches)',
+  kfApps: (from, to) => `B2C applications (Metrika goal reaches, ${from} – ${to})`,
   kfPaid: 'B2B paid (tickets)',
   kfCredited: 'Credited to target (paid tickets)',
   kfGap: 'Gap to target (tickets)',

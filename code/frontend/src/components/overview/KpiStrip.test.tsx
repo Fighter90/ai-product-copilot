@@ -4,6 +4,7 @@ import type { ChannelStat } from '@pca/shared';
 import { KpiStrip } from './KpiStrip';
 import { goalPace } from './goal-pace';
 import { summarizeChannels, type WeakSpot } from '../../lib/overview';
+import { useFilters } from '../../store/filters';
 import { setTestLocale } from '../../test/i18n-utils';
 
 const ch = (date: string, channel: string, visits: number, goalReaches: number): ChannelStat => ({
@@ -63,5 +64,25 @@ describe('KpiStrip (ANA-146 mobile no-overflow)', () => {
       month: 'short',
     });
     expect(screen.getByText(`до ${date}`)).toBeInTheDocument();
+  });
+
+  it('ANA-167: the order-goal tile hint explains «Заказ» with the period dates', () => {
+    setTestLocale('ru');
+    useFilters.getState().setRange('2025-01-01', '2025-01-07');
+    const kpi = summarizeChannels([ch('2025-01-01', 'podcast', 420, 12)], [], true, 300, 0);
+    const pace = goalPace({
+      points: [{ date: '2025-01-01', visits: 420, reaches: 12 }],
+      to: '2025-01-01',
+      target: kpi.target,
+      current: kpi.paid,
+      goalIsPaid: true,
+    });
+    render(
+      <KpiStrip kpi={kpi} pace={pace} goalIsPaid showApplicationsCaveat={false} weakSpot={weak} />,
+    );
+    // The InfoHint popover stays in the DOM — its text explains the order goal with the period.
+    const hint = screen.getByText(/goal_reaches/);
+    expect(hint.textContent).toContain('с 2025-01-01 до 2025-01-07');
+    expect(hint.textContent).toContain('Заказ ≠ платный билет');
   });
 });

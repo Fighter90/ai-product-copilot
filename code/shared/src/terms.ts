@@ -192,3 +192,34 @@ export function termHint(key: TermKey, locale: string = 'ru'): string {
   const t = term(key, locale);
   return `${t.label} — ${t.definition}`;
 }
+
+/** Period bounds (ISO dates) shown with goal explanations. */
+export interface TermPeriod {
+  readonly from?: string;
+  readonly to?: string;
+}
+
+/**
+ * ANA-167: the full «Заказ» explanation for tooltips — what the goal is (TERMS.order), how it is
+ * counted (the sum of goal_reaches over the period), the period dates («с {from} до {to}») and
+ * the «заказ ≠ платный билет» distinction. Pure and deterministic; dates appear only when both
+ * bounds are known, so partial periods never render half a range.
+ */
+export function orderGoalHint(locale: string = 'ru', period?: TermPeriod): string {
+  const t = term('order', locale);
+  const range =
+    period?.from && period?.to
+      ? locale === 'en'
+        ? `, ${period.from} – ${period.to}`
+        : `, с ${period.from} до ${period.to}`
+      : '';
+  const how =
+    locale === 'en'
+      ? `Counted as the sum of goal_reaches over the period${range}.`
+      : `Считается: сумма goal_reaches за период${range}.`;
+  const notPaid =
+    locale === 'en'
+      ? 'An order is not a paid ticket: orders are never counted as Paid.'
+      : 'Заказ ≠ платный билет: в «Оплачено» заказы не входят.';
+  return `${t.label} — ${t.definition} ${how} ${notPaid}`;
+}

@@ -97,6 +97,25 @@ describe('KPI & forecast (GoalsView)', () => {
     expect(screen.getByText(/Это заявки, не оплаты/)).toBeInTheDocument();
   });
 
+  it('ANA-167: the Metrika goal line shows the period dates and the «Заказ» explanation', () => {
+    view({
+      from: '2025-01-01',
+      goalLabel: {
+        title: 'Заявок',
+        isPaid: true,
+        showApplicationsCaveat: false,
+        showEstimate: false,
+      },
+    });
+    // The count line carries the period dates (fmtDate → «1 янв. 2025 г.»).
+    const from = fmtDate('2025-01-01', 'ru');
+    const to = fmtDate('2025-01-02', 'ru');
+    expect(screen.getByText(`Заявок (Метрика, с ${from} по ${to}): 40`)).toBeInTheDocument();
+    // The InfoHint explains «Заказ»: goal_reaches + period + not-a-paid-ticket.
+    const hint = screen.getByText(/goal_reaches/);
+    expect(hint.textContent).toContain('Заказ ≠ платный билет');
+  });
+
   it('keeps loading and error states in English', () => {
     setTestLocale('en');
     const { container, rerender } = view({ status: 'pending' });

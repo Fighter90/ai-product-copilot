@@ -1,8 +1,9 @@
 import { channelName, fmtNum, useT } from '../../i18n';
 import type { Locale } from '../../store/prefs';
 import { formatInt, formatPercent } from '../../lib/format';
-import { termHint } from '@pca/shared';
+import { orderGoalHint, termHint } from '@pca/shared';
 import type { OverviewKpi, WeakSpot } from '../../lib/overview';
+import { useFilters } from '../../store/filters';
 import { Tooltip } from '../Tooltip';
 import { InfoHint } from '../InfoHint';
 import type { GoalPace, PaceStatus } from './goal-pace';
@@ -45,6 +46,8 @@ export function KpiStrip({
   weakSpot?: WeakSpot;
 }): JSX.Element {
   const { t, locale } = useT();
+  // ANA-167: goal figures are always dated — the tooltip carries the selected period.
+  const { from, to } = useFilters();
   const target = formatInt(kpi.target);
   const statusText =
     pace.status === 'reached'
@@ -146,7 +149,11 @@ export function KpiStrip({
           <Kpi
             label={goalIsPaid ? t('ov.kpi.orders') : t('ov.kpi.applications')}
             value={formatInt(kpi.applications)}
-            define={t('hint.metric.applications')}
+            /* ANA-167: when the primary goal is the purchase goal, its reaches are «заказы» —
+               the hint explains what «Заказ» is, how goal_reaches are counted and the period. */
+            define={
+              goalIsPaid ? orderGoalHint(locale, { from, to }) : t('hint.metric.applications')
+            }
             hint={showApplicationsCaveat ? t('ov.kpi.applicationsHint') : undefined}
           />
           <Kpi

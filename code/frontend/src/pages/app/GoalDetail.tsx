@@ -92,6 +92,10 @@ export function GoalDetail(): JSX.Element {
         }
       />
       {q.error && <ErrorBox error={q.error} onRetry={() => void q.refetch()} />}
+      {/* ANA-167: the goal's reaches are counted over the selected period — say it explicitly. */}
+      <p data-testid="goals-period" className="text-xs text-muted">
+        {t('goals.periodLine', { from: p.from, to: p.to })}
+      </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {d ? (
           <>

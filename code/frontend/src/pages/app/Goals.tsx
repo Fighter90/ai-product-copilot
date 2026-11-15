@@ -153,6 +153,10 @@ export function Goals(): JSX.Element {
           />
         }
       />
+      {/* ANA-167: every goal display is dated — the period the reaches are counted over. */}
+      <p data-testid="goals-period" className="text-xs text-muted">
+        {t('goals.periodLine', { from: p.from, to: p.to })}
+      </p>
       {q.error && <ErrorBox error={q.error} onRetry={() => void q.refetch()} />}
       {hiddenArchived > 0 && (
         <p role="note" className="text-xs text-muted">

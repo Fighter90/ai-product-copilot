@@ -129,6 +129,7 @@ export const ru = {
   'goals.title': 'Цели Метрики',
   'goals.subtitle':
     'Все цели счётчика: достижения, конверсия, динамика к прошлому периоду и статус',
+  'goals.periodLine': 'Период: с {from} до {to}',
   'goals.col.id': 'ID',
   'goals.col.name': 'Цель',
   'goals.col.type': 'Тип',
@@ -554,6 +555,7 @@ export const ru = {
   'rep.kpi.target': 'Цель',
   'rep.kpi.applicationsB2c': 'Заявок B2C',
   'rep.kpi.orders': 'Заявок',
+  'rep.kpi.goalPeriod': 'Считается: сумма goal_reaches за период {period}',
   'rep.kpi.applicationNotPayment': 'заявка ≠ оплата',
   'rep.kpi.b2bOrders': 'Оплачено B2B',
   'rep.kpi.gap': 'Gap',
@@ -909,6 +911,7 @@ export const ru = {
   'an.kpi.tickets': 'билетов',
   'an.kpi.orders': 'Заявок',
   'an.kpi.metrikaCount': '{title} (Метрика): {n}',
+  'an.kpi.metrikaCountPeriod': '{title} (Метрика, с {from} по {to}): {n}',
   'an.kpi.paidNote':
     'Достижения цели из Метрики — это заявки (заказы по Ecommerce), не оплаты: в «Оплачено» не входят.',
   'an.kpi.appsNote':
@@ -1565,6 +1568,7 @@ export const en: Record<DictKey, string> = {
 
   'goals.title': 'Metrika goals',
   'goals.subtitle': 'Every counter goal: reaches, conversion, change vs previous period and status',
+  'goals.periodLine': 'Period: {from} – {to}',
   'goals.col.id': 'ID',
   'goals.col.name': 'Goal',
   'goals.col.type': 'Type',
@@ -1987,6 +1991,7 @@ export const en: Record<DictKey, string> = {
   'rep.kpi.target': 'Target',
   'rep.kpi.applicationsB2c': 'B2C applications',
   'rep.kpi.orders': 'Applications',
+  'rep.kpi.goalPeriod': 'Counted as goal_reaches over the period {period}',
   'rep.kpi.applicationNotPayment': 'application ≠ payment',
   'rep.kpi.b2bOrders': 'B2B paid',
   'rep.kpi.gap': 'Gap',
@@ -2343,6 +2348,7 @@ export const en: Record<DictKey, string> = {
   'an.kpi.tickets': 'tickets',
   'an.kpi.orders': 'Applications',
   'an.kpi.metrikaCount': '{title} (Metrika): {n}',
+  'an.kpi.metrikaCountPeriod': '{title} (Metrika, {from} – {to}): {n}',
   'an.kpi.paidNote':
     'Goal reaches from Metrika are applications (Ecommerce orders), not payments — not counted in Paid.',
   'an.kpi.appsNote':

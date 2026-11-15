@@ -145,6 +145,29 @@ beforeEach(() => {
 afterEach(() => setTestLocale('ru'));
 
 describe('Goals page — «Архивные цели» filter', () => {
+  it('ANA-167: every goal display carries the period dates (с {дата} до {дата})', async () => {
+    act(() => useFilters.getState().setRange('2026-10-01', '2026-10-14'));
+    renderWithProviders(<Goals />);
+    await screen.findByText('Ticket purchase');
+    expect(screen.getByTestId('goals-period')).toHaveTextContent(
+      'Период: с 2026-10-01 до 2026-10-14',
+    );
+  });
+
+  it('ANA-167: the goal detail page shows the period dates of its data', async () => {
+    act(() => useFilters.getState().setRange('2026-10-01', '2026-10-14'));
+    renderWithProviders(
+      <Routes>
+        <Route path="/app/goals/:id" element={<GoalDetail />} />
+      </Routes>,
+      '/app/goals/2',
+    );
+    await screen.findByText('Old landing form');
+    expect(screen.getByTestId('goals-period')).toHaveTextContent(
+      'Период: с 2026-10-01 до 2026-10-14',
+    );
+  });
+
   it('hides archived goals until the global checkbox is on', async () => {
     renderWithProviders(<Goals />);
     expect(await screen.findByText('Ticket purchase')).toBeInTheDocument();

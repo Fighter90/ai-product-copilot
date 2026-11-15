@@ -180,6 +180,30 @@ describe('ReportPreviewView', () => {
     expect(screen.queryByText('Заявок B2C')).not.toBeInTheDocument();
   });
 
+  it('ANA-167: the order-goal tile explains «Заказ» with the period and a definition tooltip', () => {
+    render(
+      <ReportPreviewView
+        {...baseProps}
+        snapshot={{
+          ...snapshot,
+          goalLabel: {
+            title: 'Заказов',
+            isPaid: true,
+            showApplicationsCaveat: false,
+            showEstimate: false,
+          },
+        }}
+      />,
+    );
+    // Visible dates: the «how counted + period» line under the value.
+    expect(
+      screen.getByText('Считается: сумма goal_reaches за период 01.01.2025 – 07.01.2025'),
+    ).toBeInTheDocument();
+    // The «i» tooltip carries the full order-goal definition with the ISO period.
+    const hint = screen.getByText(/Заказ ≠ платный билет/);
+    expect(hint.textContent).toContain('с 2025-01-01 до 2025-01-07');
+  });
+
   it('REG-04 (ANA-93): shows «Покрытие данных» when the slice covers the period partially', () => {
     const partial = {
       ...snapshot,

@@ -4,6 +4,7 @@ import {
   coveredDaysInPeriod,
   coveredToInPeriod,
   isPartialCoverage,
+  orderGoalHint,
   periodDays,
   reportPeriodLabel,
   reportSections,
@@ -26,10 +27,11 @@ import { formatInt, formatPercent } from '../lib/format';
 import { errorMessage } from '../lib/error-message';
 import { downloadFileViaFetch, reportDownloadUrl } from '../lib/download';
 import { ErrorBox } from '../components/ui';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { mdToHtml } from '../lib/md-to-html';
 import { fmtDate, useT, type DictKey } from '../i18n';
+import { InfoHint } from '../components/InfoHint';
 import {
   hasSeed,
   loadHypothesisSeed,
@@ -44,14 +46,22 @@ function Stat({
   label,
   value,
   hint,
+  define,
 }: {
   label: string;
   value: string;
   hint?: string;
+  /** ANA-167: metric definition for the «i» tooltip next to the label (order-goal explanation). */
+  define?: ReactNode;
 }): JSX.Element {
   return (
     <div className="rounded border border-slate-200 p-2">
-      <div className="text-xs uppercase text-slate-500">{label}</div>
+      <div className="text-xs uppercase text-slate-500">
+        {label}
+        {define ? (
+          <InfoHint text={define} align="start" className="ml-1 align-middle" />
+        ) : null}
+      </div>
       <div className="text-lg font-bold">{value}</div>
       {hint ? <div className="text-xs text-slate-500">{hint}</div> : null}
     </div>
@@ -460,8 +470,13 @@ export function ReportPreviewView({
               value={formatInt(snapshot.kpi.b2cApplications)}
               hint={
                 snapshot.goalLabel?.showApplicationsCaveat === false
-                  ? undefined
+                  ? t('rep.kpi.goalPeriod', { period: reportPeriodLabel(snapshot.period) })
                   : t('rep.kpi.applicationNotPayment')
+              }
+              /* ANA-167: the «Заказ» tile carries its definition (goal_reaches, period,
+                 not-a-payment) in the «i» tooltip; the caveat tile keeps its inline caveat. */
+              define={
+                snapshot.goalLabel?.isPaid ? orderGoalHint(locale, snapshot.period) : undefined
               }
             />
             <Stat label={t('rep.kpi.b2bOrders')} value={formatInt(snapshot.kpi.b2bPaidTickets)} />

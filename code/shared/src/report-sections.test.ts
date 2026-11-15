@@ -231,12 +231,30 @@ describe('reportSections — structure', () => {
     const text = findSection(baseSnapshot, (h) => h === 'Краткие итоги').join('\n');
     expect(text).toContain('| Показатель | Значение |');
     expect(text).toContain('| Цель периода (оплаченных билетов) | 300 |');
-    expect(text).toContain('| Заявки B2C (достижения цели Метрики) | 7 |');
+    expect(text).toContain(
+      '| Заявки B2C (достижения цели Метрики, с 2025-01-01 по 2025-01-07) | 7 |',
+    );
     expect(text).toContain('| Оплачено B2B (билетов) | 20 |');
     expect(text).toContain('| Зачтено к цели (оплаченные билеты) | 20 |');
     expect(text).toContain('| Gap до цели (билетов) | 280 |');
     expect(text).toContain('| CR общий (заявки / визиты) | 7.0% |'); // 7 / 100 funnel.visits
     expect(text).toContain('| CR оплаты (оплачено / визиты) | 20.0% |');
+  });
+
+  it('ANA-167: the goals line in Краткие итоги carries the period dates and the order definition', () => {
+    const text = findSection(baseSnapshot, (h) => h === 'Краткие итоги').join('\n');
+    // ANA-167: the goal line names the period explicitly — «период с {дата} по {дата}».
+    expect(text).toContain('(достижения основной цели, период с 2025-01-01 по 2025-01-07): 7');
+  });
+
+  it('ANA-167: the English report prints the goal line and KPI row with the period dates', () => {
+    const text = reportSections(baseSnapshot, 'en')
+      .find((sec) => sec.heading === 'Key results')!
+      .lines.join('\n');
+    expect(text).toContain('(primary goal reaches, period 2025-01-01 – 2025-01-07): 7');
+    expect(text).toContain(
+      '| B2C applications (Metrika goal reaches, 2025-01-01 – 2025-01-07) | 7 |',
+    );
   });
 
   it('renders dashes (never fake 0.0%) when the funnel has no visits', () => {
@@ -877,7 +895,7 @@ describe('reportSections — locale en (ANA-42)', () => {
     const summary = sections.find((sec) => sec.heading === 'Key results')!;
     const text = summary.lines.join('\n');
     expect(text).toContain('Period target (paid tickets)');
-    expect(text).toContain('B2C applications (Metrika goal reaches)');
+    expect(text).toContain('B2C applications (Metrika goal reaches, 2025-01-01 – 2025-01-07)');
     // Exec summary: the KPI sentence is localized, the numbers are the same.
     const exec = sections.find((sec) => sec.heading === 'EXECUTIVE SUMMARY')!;
     expect(exec.lines.join('\n')).toContain('Period target — 300 paid tickets; credited 20');

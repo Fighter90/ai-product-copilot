@@ -576,7 +576,7 @@ export function reportSections(s: ReportSnapshot, locale: ReportLocale = 'ru'): 
       heading: T.summaryHeading,
       lines: [
         ...coverageLines,
-        T.summaryGoal(T.goalTitle(s.goalLabel), s.kpi.b2cApplications),
+        T.summaryGoal(T.goalTitle(s.goalLabel), s.kpi.b2cApplications, s.period.from, s.period.to),
         T.summaryPaid(s.kpi.b2bPaidTickets),
         T.summaryGap(s.kpi.gap),
         T.summaryVisits(totalVisits),
@@ -589,7 +589,7 @@ export function reportSections(s: ReportSnapshot, locale: ReportLocale = 'ru'): 
         T.summaryKeyFigures,
         ...tableHeader(...T.kfHeader),
         row(T.kfTarget, String(s.kpi.target)),
-        row(T.kfApps, String(s.kpi.b2cApplications)),
+        row(T.kfApps(s.period.from, s.period.to), String(s.kpi.b2cApplications)),
         row(T.kfPaid, String(s.kpi.b2bPaidTickets)),
         row(T.kfCredited, String(s.kpi.target - s.kpi.gap)),
         row(T.kfGap, String(s.kpi.gap)),
