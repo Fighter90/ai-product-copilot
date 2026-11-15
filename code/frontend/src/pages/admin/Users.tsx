@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Trash2, UserPlus } from 'lucide-react';
+import { KeyRound, Pencil, Trash2, UserPlus } from 'lucide-react';
 import { v3, type CabinetUser, type CounterOption, type Role } from '../../lib/api-v3';
 import { useT, fmtDate } from '../../i18n';
 import {
@@ -26,6 +26,8 @@ export function Users(): JSX.Element {
   const counterMap = useQuery({ queryKey: ['user-counters'], queryFn: v3.adminUserCounters });
   const counterLabel = (c: CounterOption) =>
     c.name ? `${c.name} (#${c.id})` : c.site ? `${c.site} (#${c.id})` : `#${c.id}`;
+  // ANA-175: label of a user's real role (the row never shows the whole roles list).
+  const roleLabel = (r: Role) => t(r === 'admin' ? 'role.admin' : 'role.analyst');
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<{
     email: string;
@@ -38,6 +40,8 @@ export function Users(): JSX.Element {
   const [notice, setNotice] = useState<string | null>(null);
   // ANA-123: hard delete is irreversible — it never fires without this dialog.
   const [pendingDelete, setPendingDelete] = useState<CabinetUser | null>(null);
+  // ANA-175: the row shows only the user's real role; the roles list opens on demand.
+  const [editingRole, setEditingRole] = useState<number | null>(null);
 
   /** Invite default for analysts: the configured counter (mirrors the backend default grant). */
   const defaultCounterIds =
@@ -192,17 +196,39 @@ export function Users(): JSX.Element {
                     </td>
                     <td className="px-3 py-2 text-muted">{u.email}</td>
                     <td className="px-3 py-2">
-                      <select
-                        value={u.role}
-                        aria-label={t('admin.users.role')}
-                        onChange={(e) =>
-                          update.mutate({ id: u.id, patch: { role: e.target.value as Role } })
-                        }
-                        className="input w-auto py-1"
-                      >
-                        <option value="admin">{t('role.admin')}</option>
-                        <option value="analyst">{t('role.analyst')}</option>
-                      </select>
+                      {/* ANA-175: a permanent roles dropdown renders BOTH labels in every
+                          row's cell («АдминистраторАналитик» in text/screen-reader form),
+                          masking the user's real role. Show the role as text and open the
+                          roles list only on explicit edit. */}
+                      {editingRole === u.id ? (
+                        <select
+                          autoFocus
+                          value={u.role}
+                          aria-label={t('admin.users.role')}
+                          onChange={(e) =>
+                            update.mutate({ id: u.id, patch: { role: e.target.value as Role } })
+                          }
+                          onBlur={() => setEditingRole(null)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') setEditingRole(null);
+                          }}
+                          className="input w-auto py-1"
+                        >
+                          <option value="admin">{t('role.admin')}</option>
+                          <option value="analyst">{t('role.analyst')}</option>
+                        </select>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn-ghost px-2 py-1 text-xs"
+                          aria-label={t('admin.users.changeRole', { role: roleLabel(u.role) })}
+                          title={t('admin.users.changeRole', { role: roleLabel(u.role) })}
+                          onClick={() => setEditingRole(u.id)}
+                        >
+                          <Pencil className="mr-1 inline h-3.5 w-3.5" aria-hidden />
+                          {roleLabel(u.role)}
+                        </button>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <Pill tone={u.isActive ? 'green' : 'neutral'}>
