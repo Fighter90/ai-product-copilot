@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   BarChart3,
@@ -527,11 +527,31 @@ function IntegrationCard({
   );
 }
 
+/**
+ * ANA-173 (регресс прод 15.11): нативный дефолт якорных ссылок лендинга в QA-прогоне
+ * не сработал (scrollY=0, hash пустой). Скроллим явно — как оглавление /help: плавно,
+ * с уважением к prefers-reduced-motion, hash синхронизируем через роутер.
+ */
+function useAnchorScroll(): (e: MouseEvent<HTMLAnchorElement>) => void {
+  const navigate = useNavigate();
+  const { pathname, search } = useLocation();
+  return (e) => {
+    const id = e.currentTarget.getAttribute('href')?.replace(/^#/, '') ?? '';
+    e.preventDefault();
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    document
+      .getElementById(id)
+      ?.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    navigate({ pathname, search, hash: id ? `#${id}` : '' });
+  };
+}
+
 export function Landing(): JSX.Element {
   const { locale, t } = useT();
   const c = CONTENT[locale];
   const root = useRef<HTMLDivElement>(null);
   const [faqOpen, setFaqOpen] = useState<number | null>(0);
+  const onAnchorClick = useAnchorScroll();
   useParallax(root);
   useReveal(root);
 
@@ -626,7 +646,11 @@ export function Landing(): JSX.Element {
                 <Link to="/login" className="btn-primary px-6 py-3 uppercase tracking-wide">
                   {c.ctaLogin} <ArrowRight className="h-4 w-4" />
                 </Link>
-                <a href="#how" className="btn-ghost px-6 py-3 uppercase tracking-wide">
+                <a
+                  href="#how"
+                  onClick={onAnchorClick}
+                  className="btn-ghost px-6 py-3 uppercase tracking-wide"
+                >
                   {c.ctaHow}
                 </a>
               </div>

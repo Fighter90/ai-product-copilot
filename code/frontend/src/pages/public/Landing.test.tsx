@@ -1,6 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderWithProviders } from '../../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../../test/i18n-utils';
+import { fireEvent, screen } from '@testing-library/react';
+import { useLocation } from 'react-router-dom';
+import { usePrefs } from '../../store/prefs';
 
 vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ user: null }) }));
 vi.mock('../../lib/api-v3', () => ({ v3: {} }));
@@ -64,4 +67,103 @@ describe('Landing detail (ANA-71)', () => {
       expect(stale).toEqual([]);
     },
   );
+});
+
+/** Router location probe (MemoryRouter does not touch window.location). */
+function LocationProbe(): JSX.Element {
+  const loc = useLocation();
+  return <span data-testid="loc">{loc.pathname + loc.search + loc.hash}</span>;
+}
+
+/**
+ * ANA-173 (регресс прод 15.11) — «мёртвые» интеракции хедера на лендинге:
+ * 1) EN-тумблер не менял язык (в кабинете работает — там выбор переживает reload за счёт
+ *    серверного профиля, на публичных страницах выбор держится только на хранилище);
+ * 2) анкор «Как это работает» (#how) не скроллил (scrollY=0, hash пустой).
+ */
+describe('Landing header interactions (ANA-173)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    window.localStorage.clear();
+    window.localStorage.setItem('pca.locale', 'ru');
+    window.localStorage.setItem('pca.theme', 'dark');
+    usePrefs.setState({ theme: 'dark', locale: 'ru', sidebarCollapsed: false });
+    document.documentElement.lang = 'ru';
+    document.documentElement.dataset.theme = 'dark';
+  });
+
+  it('storage denied: EN in the public header switches the landing language in place', () => {
+    // Профиль QA-браузера запрещает хранилище: раньше выбор «испарялся» при reload
+    // и страница возвращалась на RU (aria-pressed=false, h1 RU, lang=ru).
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage denied', 'SecurityError');
+    });
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Storage denied', 'SecurityError');
+    });
+    const { container } = renderWithProviders(<Landing />);
+    const en = screen.getByRole('button', { name: 'en' });
+    fireEvent.click(en);
+    // Язык применён на месте: атрибуты <html>, состояние тумблера и тексты лендинга.
+    expect(document.documentElement.lang).toBe('en');
+    expect(en.getAttribute('aria-pressed')).toBe('true');
+    expect(container.querySelector('h1')?.textContent).toContain('From Metrika');
+  });
+
+  it('EN in the public header persists the choice to storage (survives the reload)', () => {
+    // Живое хранилище: клик по EN в хедере лендинга обязан записать выбор —
+    // именно он переживает перезагрузку страницы в проде.
+    const { container } = renderWithProviders(<Landing />);
+    fireEvent.click(screen.getByRole('button', { name: 'en' }));
+    expect(usePrefs.getState().locale).toBe('en');
+    expect(window.localStorage.getItem('pca.locale')).toBe('en');
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (b) => b.textContent === 'en' && b.getAttribute('aria-pressed') === 'true',
+      ),
+    ).toBe(true);
+  });
+
+  it('«Как это работает» (#how) scrolls to the section and syncs the hash', () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const { container, getByTestId } = renderWithProviders(
+        <>
+          <LocationProbe />
+          <Landing />
+        </>,
+      );
+      const anchor = container.querySelector<HTMLAnchorElement>('a[href="#how"]');
+      expect(anchor).not.toBeNull();
+      // Цель анкора существует (предусловие нативного скролла).
+      expect(document.getElementById('how')).not.toBeNull();
+      fireEvent.click(anchor!);
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect((scrollIntoView.mock.instances[0] as HTMLElement).id).toBe('how');
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+      // Hash синхронизирован через роутер.
+      expect(getByTestId('loc').textContent).toBe('/#how');
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('respects prefers-reduced-motion: scrolls to #how instantly', () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    // jsdom не имеет matchMedia — подставляем и восстанавливаем вручную.
+    const originalMm = window.matchMedia;
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as unknown as typeof matchMedia;
+    try {
+      const { container } = renderWithProviders(<Landing />);
+      fireEvent.click(container.querySelector<HTMLAnchorElement>('a[href="#how"]')!);
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+    } finally {
+      window.matchMedia = originalMm;
+      Element.prototype.scrollIntoView = original;
+    }
+  });
 });
