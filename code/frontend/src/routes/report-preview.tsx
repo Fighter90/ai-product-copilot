@@ -13,7 +13,13 @@ import {
   type ReportSnapshot,
 } from '@pca/shared';
 import { api } from '../lib/api';
-import { isBusyError, jobErrorHint, trackAiJob } from '../lib/ai-jobs';
+import {
+  busyJobInfo,
+  isBusyError,
+  jobErrorHint,
+  trackAiJob,
+  type AiBusyJobInfo,
+} from '../lib/ai-jobs';
 import { v3 } from '../lib/api-v3';
 import { useFilters } from '../store/filters';
 import { formatInt, formatPercent } from '../lib/format';
@@ -185,6 +191,11 @@ export interface ReportPreviewProps {
    * (.catch(() => undefined)) and prod saw «0 AI-черновиков» without a trace.
    */
   hypothesesError?: string;
+  /**
+   * ANA-155: when the generation failed with the enriched 429 («слот занят»), the UI shows
+   * WHO holds the slot, since when, the expected release — and a «Повторить» button.
+   */
+  busyInfo?: AiBusyJobInfo | null;
   /** ANA-33: the selected provider rides along («auto» walks the admin-defined chain). */
   onInsights: (snapshotId: string, providerId: string) => void;
   /** ANA-33: providers currently usable (enabled + key set) from the admin API; [] = none. */
@@ -207,6 +218,20 @@ const AI_STAGES: readonly DictKey[] = [
   'rep.stage.risks',
   'rep.stage.hypotheses',
 ];
+
+/**
+ * ANA-155: a human-readable holder name for the busy hint — the localized «Авто» label for
+ * the chain choice, otherwise the provider's display name from the usable list (a raw id
+ * when the holder is not in the current list).
+ */
+function busyWho(
+  info: AiBusyJobInfo,
+  providers: Array<{ id: string; name: string }>,
+  autoLabel: string,
+): string {
+  if (info.provider === 'auto') return autoLabel;
+  return providers.find((p) => p.id === info.provider)?.name ?? info.provider;
+}
 
 /** Localised B2B stage label; unknown stages fall back to the raw value. */
 const STAGE_KEYS: Record<string, DictKey> = {
@@ -293,6 +318,7 @@ export function ReportPreviewView({
   narrative,
   insightsError,
   hypothesesError,
+  busyInfo,
   onInsights,
   providers,
   providersPending,
@@ -599,6 +625,26 @@ export function ReportPreviewView({
                 {t('rep.ai.unavailable', { error: insightsError })}
               </p>
             ) : null}
+            {/* ANA-155: the busy 429 names the holder, its start and the expected release —
+                plus «Повторить», so the wait no longer ends in a dead end. */}
+            {insightsError && busyInfo ? (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-red-700">
+                <span>
+                  {t('rep.ai.busyHolder', {
+                    who: busyWho(busyInfo, providers, t('fx.ai.providerAuto')),
+                    started: fmtDate(busyInfo.startedAt, locale, true),
+                    until: fmtDate(busyInfo.expectedReleaseAt, locale, true),
+                  })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onInsights(snapshot.id, providerId)}
+                  className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-700 hover:bg-red-50"
+                >
+                  {t('rep.ai.retry')}
+                </button>
+              </div>
+            ) : null}
             {/* ANA-33: «Сгенерировано: YandexGPT · yandexgpt/latest» — who actually answered. */}
             {(() => {
               const by = aiGeneratedBy ?? snapshot.aiGeneratedBy?.insights;
@@ -652,8 +698,11 @@ export function ReportPreview(): JSX.Element {
   const snapshot = existingSnapshot.data ?? buildMut.data;
   // ANA-132: сбой до-генерации гипотез живёт в отдельном состоянии компонента, а не в данных
   // мутации — мутация завершается сразу после нарратива, и «Сгенерировано…» не ждёт фоновую
-  // задачу до 10-минутного таймаута (см. mutationFn ниже).
+  // задачу до ~16-минутного таймаута поллинга (см. mutationFn ниже).
   const [hypothesesError, setHypothesesError] = useState<string | undefined>(undefined);
+  // ANA-155: enriched 429 payload («кто занял слот, когда, ожидаемое освобождение») —
+  // заполняется при busy-сбое генерации, сбрасывается при новой попытке.
+  const [busyInfo, setBusyInfo] = useState<AiBusyJobInfo | null>(null);
   // БАГ-21: «Сгенерировать AI-анализ» пополнял только narrative — строка «AI-гипотез: не
   // сгенерированы» могла висеть вечно, когда fire-and-forget автогенерация на бэке терялась
   // (параллельные AI-вызовы, тихий .catch). Досыпаем гипотезы тем же провайдером: бэкенд
@@ -664,6 +713,7 @@ export function ReportPreview(): JSX.Element {
       // ANA-133: генерация ушла в фоновую однослотную очередь бэка — POST сразу отвечает
       // 202 {jobId}, результат дотягиваем поллингом /report/ai-jobs/:jobId (индикатор
       // прогресса внизу остаётся, пока mutation pending).
+      setBusyInfo(null);
       let result: { narrative: string; generatedBy?: AiGenerationInfo };
       try {
         const { jobId } = await api.generateInsights(input.snapshotId, input.providerId);
@@ -673,8 +723,12 @@ export function ReportPreview(): JSX.Element {
         );
       } catch (err) {
         // 429 = слот занят другой генерацией — показываем локализованную подсказку
-        // вместо сырого JSON-тела прокси.
-        if (isBusyError(err)) throw new Error(t('rep.ai.busy'));
+        // вместо сырого JSON-тела прокси. ANA-155: обогащённое тело 429 (кто занял слот,
+        // когда и ожидаемое освобождение) оседает в busyInfo для подсказки и «Повторить».
+        if (isBusyError(err)) {
+          setBusyInfo(busyJobInfo(err));
+          throw new Error(t('rep.ai.busy'));
+        }
         throw err;
       }
       // ANA-132: мутация завершается здесь — нарратив уже готов и должен остаться на экране
@@ -765,6 +819,7 @@ export function ReportPreview(): JSX.Element {
         narrative={narrative}
         insightsError={errorMessage(insightsMut.error)}
         hypothesesError={hypothesesError}
+        busyInfo={busyInfo}
         onInsights={(snapshotId, providerId) => insightsMut.mutate({ snapshotId, providerId })}
         providers={providersQ.data ?? []}
         providersPending={providersQ.isPending}

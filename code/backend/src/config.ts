@@ -57,6 +57,19 @@ const EnvSchema = z.object({
   GIGACHAT_AUTH_KEY: z.string().default(''),
   GIGACHAT_SCOPE: z.string().default('GIGACHAT_API_PERS'),
   GIGACHAT_MODEL: z.string().default('GigaChat-2-Pro'),
+  // ANA-155: watchdog for one background AI generation (ms). A job holding the single AI slot
+  // longer than this is marked failed and the slot freed — a hung generation used to block
+  // every AI entry point with 429 until a server restart.
+  // COUPLING (ANA-155, review r3): the frontend client polls for ~16 min
+  // (AI_JOB_MAX_POLLS × AI_JOB_POLL_MS, code/frontend/src/lib/ai-jobs.ts) so it can OBSERVE
+  // the watchdog takeover. Raising this env above ~16 min makes the client die with its
+  // generic timeout BEFORE the honest «превышен таймаут — слот освобождён» failure arrives;
+  // if you raise this, raise the client's poll budget in the same change.
+  AI_JOB_MAX_RUN_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15 * 60_000),
   HELP_DIR: z.string().default(join(REPO_ROOT, 'docs', 'help')),
 });
 

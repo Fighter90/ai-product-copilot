@@ -23,10 +23,18 @@ const snap = {
   funnel: { visits: 100, b2cApplications: 7, b2bPipelineTickets: 0, b2bPaidTickets: 20 },
 } as unknown as ReportSnapshot;
 
-function appWith(runner: ReportRunner, opts: { users?: UsersRepo } = {}): FastifyInstance {
+function appWith(
+  runner: ReportRunner,
+  opts: { users?: UsersRepo; aiJobs?: ReturnType<typeof createAiJobQueue> } = {},
+): FastifyInstance {
   const app = Fastify();
   // ANA-133: a fresh single-slot AI queue per app so tests never share job state.
-  app.register(reportRoutes, { prefix: '/api', runner, aiJobs: createAiJobQueue(), ...opts });
+  app.register(reportRoutes, {
+    prefix: '/api',
+    runner,
+    aiJobs: opts.aiJobs ?? createAiJobQueue(),
+    ...(opts.users ? { users: opts.users } : {}),
+  });
   return app;
 }
 
@@ -250,7 +258,7 @@ describe('report routes', () => {
     });
     expect(pinned.statusCode).toBe(202);
     await settle();
-    expect(runner.insights).toHaveBeenCalledWith('ok', 'yandexgpt');
+    expect(runner.insights).toHaveBeenCalledWith('ok', 'yandexgpt', undefined);
     const auto = await app.inject({
       method: 'POST',
       url: '/api/report/insights',
@@ -258,7 +266,7 @@ describe('report routes', () => {
     });
     expect(auto.statusCode).toBe(202);
     await settle();
-    expect(runner.insights).toHaveBeenCalledWith('ok', 'auto');
+    expect(runner.insights).toHaveBeenCalledWith('ok', 'auto', undefined);
     const noProvider = await app.inject({
       method: 'POST',
       url: '/api/report/insights',
@@ -266,7 +274,7 @@ describe('report routes', () => {
     });
     expect(noProvider.statusCode).toBe(202);
     await settle();
-    expect(runner.insights).toHaveBeenLastCalledWith('ok', undefined);
+    expect(runner.insights).toHaveBeenLastCalledWith('ok', undefined, undefined);
     // Unknown provider → validation error, not a silent fallback.
     const badProvider = await app.inject({
       method: 'POST',
@@ -328,7 +336,7 @@ describe('report routes', () => {
     expect(res.statusCode).toBe(202);
     await settle();
     // Same snapshot, same pinned provider as the narrative — the UI's own follow-up does this.
-    expect(runner.hypotheses).toHaveBeenCalledWith('ok', 'anthropic');
+    expect(runner.hypotheses).toHaveBeenCalledWith('ok', 'anthropic', undefined);
     // The job result contract is unchanged: the narrative, not the hypotheses payload.
     const { jobId } = res.json() as { jobId: string };
     const done = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${jobId}` });
@@ -429,7 +437,7 @@ describe('report routes', () => {
     await app.close();
   });
 
-  it('ANA-133: 3 concurrent AI requests → 1 job runs, 2 get 429 with Retry-After', async () => {
+  it('ANA-133+155: slot busy → Auto parks (202, depth 1), further callers get 429 with Retry-After', async () => {
     let release!: (r: InsightsResult) => void;
     const gate = new Promise<InsightsResult>((resolve) => {
       release = resolve;
@@ -455,28 +463,185 @@ describe('report routes', () => {
     const { jobId } = first.json() as { jobId: string };
     await settle(); // the job is running now
 
-    // While the single slot is taken, further requests are throttled — not queued.
+    // ANA-155: an Auto request parks instead of 429 — it runs when the slot frees.
     const second = await app.inject({
       method: 'POST',
       url: '/api/report/insights',
       payload: { snapshotId: 'ok' },
     });
+    expect(second.statusCode).toBe(202);
+    const { jobId: parkedId } = second.json() as { jobId: string };
+    const parked = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${parkedId}` });
+    expect(parked.json()).toMatchObject({ status: 'pending', provider: 'auto' });
+
+    // The depth-1 park is taken → further Auto callers get the honest 429…
     const third = await app.inject({
       method: 'POST',
       url: '/api/report/hypotheses',
       payload: { snapshotId: 'ok' },
     });
-    expect(second.statusCode).toBe(429);
-    expect(second.headers['retry-after']).toBe('30');
-    expect(second.json().code).toBe('AI_BUSY');
     expect(third.statusCode).toBe(429);
+    expect(third.headers['retry-after']).toBe('30');
+    const busyBody = third.json() as {
+      code: string;
+      job?: { kind: string; provider: string; startedAt: string; expectedReleaseAt: string };
+    };
+    expect(busyBody.code).toBe('AI_BUSY');
+    // ANA-155: the busy answer names the holder and when the watchdog would free the slot.
+    expect(busyBody.job).toMatchObject({ kind: 'insights', provider: 'auto' });
+    expect(new Date(busyBody.job!.startedAt).getTime()).toBeLessThanOrEqual(Date.now());
+    expect(new Date(busyBody.job!.expectedReleaseAt).getTime()).toBeGreaterThan(Date.now());
+    // …and a pinned-provider request still gets the immediate 429 (only «Авто» falls back),
+    // with the same holder info in the body.
+    const pinned = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok', providerId: 'openrouter' },
+    });
+    expect(pinned.statusCode).toBe(429);
+    expect(pinned.headers['retry-after']).toBe('30');
+    expect((pinned.json() as { job?: { provider: string } }).job?.provider).toBe('auto');
     expect(runner.insights).toHaveBeenCalledTimes(1);
     expect(runner.hypotheses).not.toHaveBeenCalled();
 
+    // The holder completes → the parked Auto job is promoted and runs in its turn.
     release({ ok: true as const, narrative: 'анализ' });
+    await settle();
     await settle();
     const done = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${jobId}` });
     expect(done.json().status).toBe('done');
+    const promoted = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${parkedId}` });
+    expect(promoted.json()).toMatchObject({
+      status: 'done',
+      result: { narrative: 'анализ' },
+    });
+    // The holder succeeded normally → the Auto chain is NOT narrowed (no excludeProvider).
+    expect(runner.insights).toHaveBeenLastCalledWith('ok', undefined, undefined);
+    await app.close();
+  });
+
+  it('ANA-155: a parked Auto job promoted after a watchdog takeover skips the hung provider', async () => {
+    let release!: (r: InsightsResult) => void;
+    const gate = new Promise<InsightsResult>((resolve) => {
+      release = resolve;
+    });
+    // 1st call: the pinned openrouter holder hangs forever (the prod bug); 2nd call: the
+    // promoted Auto job (skipping openrouter) resolves.
+    const insights = vi
+      .fn<() => Promise<InsightsResult>>()
+      .mockReturnValueOnce(gate)
+      .mockResolvedValueOnce({ ok: true as const, narrative: 'фолбэк-анализ' });
+    const runner: ReportRunner = {
+      build: vi.fn(),
+      get: vi.fn(() => snap),
+      list: vi.fn(),
+      generate: vi.fn(),
+      remove: vi.fn(),
+      download: vi.fn(),
+      insights,
+      hypotheses: vi.fn(),
+    };
+    // A 15 ms watchdog: the hung holder is killed almost immediately.
+    const app = appWith(runner, { aiJobs: createAiJobQueue({ maxRunMs: 15 }) });
+
+    const holder = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok', providerId: 'openrouter' },
+    });
+    expect(holder.statusCode).toBe(202);
+    await settle();
+
+    // Auto parks behind the hung holder…
+    const auto = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok' },
+    });
+    expect(auto.statusCode).toBe(202);
+    const { jobId: parkedId } = auto.json() as { jobId: string };
+
+    // …the watchdog kills the holder and the parked job runs on the next provider.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await settle();
+    const hungJob = await app.inject({
+      method: 'GET',
+      url: `/api/report/ai-jobs/${(holder.json() as { jobId: string }).jobId}`,
+    });
+    expect(hungJob.json()).toMatchObject({ status: 'failed' });
+    expect((hungJob.json() as { error?: string }).error).toContain('таймаут');
+    const promoted = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${parkedId}` });
+    expect(promoted.json()).toMatchObject({
+      status: 'done',
+      result: { narrative: 'фолбэк-анализ' },
+    });
+    // The takeover context told the runner to skip the provider that just hung.
+    expect(insights).toHaveBeenLastCalledWith('ok', undefined, {
+      excludeProvider: 'openrouter',
+    });
+    release({ ok: true as const, narrative: 'поздно' });
+    await app.close();
+  });
+
+  // ANA-155 (review r3): the queue records the holder's REQUESTED choice — an «auto» holder
+  // killed by the watchdog yields previousProvider: 'auto', from which skipOpts cannot name
+  // a chain member, so the promoted job retries the FULL chain (no excludeProvider).
+  it('ANA-155: a watchdog-killed «auto» holder → the promoted Auto job retries the full chain', async () => {
+    let release!: (r: InsightsResult) => void;
+    const gate = new Promise<InsightsResult>((resolve) => {
+      release = resolve;
+    });
+    // 1st call: the «auto» holder hangs forever; 2nd call: the promoted Auto job resolves.
+    const insights = vi
+      .fn<() => Promise<InsightsResult>>()
+      .mockReturnValueOnce(gate)
+      .mockResolvedValueOnce({ ok: true as const, narrative: 'фолбэк-анализ' });
+    const runner: ReportRunner = {
+      build: vi.fn(),
+      get: vi.fn(() => snap),
+      list: vi.fn(),
+      generate: vi.fn(),
+      remove: vi.fn(),
+      download: vi.fn(),
+      insights,
+      hypotheses: vi.fn(),
+    };
+    // A 15 ms watchdog: the hung holder is killed almost immediately.
+    const app = appWith(runner, { aiJobs: createAiJobQueue({ maxRunMs: 15 }) });
+
+    const holder = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok' }, // no providerId → the «auto» choice
+    });
+    expect(holder.statusCode).toBe(202);
+    await settle();
+
+    // Auto parks behind the hung holder…
+    const auto = await app.inject({
+      method: 'POST',
+      url: '/api/report/insights',
+      payload: { snapshotId: 'ok' },
+    });
+    expect(auto.statusCode).toBe(202);
+    const { jobId: parkedId } = auto.json() as { jobId: string };
+
+    // …the watchdog kills the hung «auto» holder and the parked job runs — the full chain.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await settle();
+    const hungJob = await app.inject({
+      method: 'GET',
+      url: `/api/report/ai-jobs/${(holder.json() as { jobId: string }).jobId}`,
+    });
+    expect(hungJob.json()).toMatchObject({ status: 'failed' });
+    const promoted = await app.inject({ method: 'GET', url: `/api/report/ai-jobs/${parkedId}` });
+    expect(promoted.json()).toMatchObject({
+      status: 'done',
+      result: { narrative: 'фолбэк-анализ' },
+    });
+    // No excludeProvider: an «auto» holder tells the runner nothing skippable.
+    expect(insights).toHaveBeenLastCalledWith('ok', undefined, undefined);
+    release({ ok: true as const, narrative: 'поздно' });
     await app.close();
   });
 
@@ -538,7 +703,7 @@ describe('report routes', () => {
     });
     expect(pinned.statusCode).toBe(202);
     await settle();
-    expect(runner.hypotheses).toHaveBeenCalledWith('ok', 'gigachat');
+    expect(runner.hypotheses).toHaveBeenCalledWith('ok', 'gigachat', undefined);
 
     // Runner failure inside the job → failed job with the message.
     const nokey = await app.inject({

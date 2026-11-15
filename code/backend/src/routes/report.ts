@@ -66,10 +66,21 @@ export interface ReportRunner {
     author?: string | null;
   }>;
   generate: (snapshotId: string, format: ReportFormat) => Promise<{ filePath: string } | undefined>;
-  /** Generate + persist the AI narrative for a snapshot (ANA-33: `providerId` pins a provider). */
-  insights: (snapshotId: string, providerId?: AiProviderChoice) => Promise<InsightsResult>;
-  /** Generate + persist the AI hypotheses for a snapshot (returns existing if already generated). */
-  hypotheses: (snapshotId: string, providerId?: AiProviderChoice) => Promise<HypothesesResult>;
+  /** Generate + persist the AI narrative for a snapshot (ANA-33: `providerId` pins a provider).
+   *  ANA-155: `excludeProvider` skips one provider in the Auto chain — the queued job runs it
+   *  after a watchdog takeover, so the provider whose generation hung is not retried. */
+  insights: (
+    snapshotId: string,
+    providerId?: AiProviderChoice,
+    opts?: { excludeProvider?: string },
+  ) => Promise<InsightsResult>;
+  /** Generate + persist the AI hypotheses for a snapshot (returns existing if already generated).
+   *  ANA-155: `excludeProvider` — see insights. */
+  hypotheses: (
+    snapshotId: string,
+    providerId?: AiProviderChoice,
+    opts?: { excludeProvider?: string },
+  ) => Promise<HypothesesResult>;
   /** Render a snapshot to DOCX/PDF bytes for download (undefined when the snapshot is missing).
    *  `locale` (ANA-42) selects the report language; Russian stays the default. */
   download: (
@@ -99,6 +110,50 @@ export interface ReportRouteOptions {
 const AI_BUSY_RETRY_AFTER_SECONDS = 30;
 const AI_BUSY_MESSAGE =
   'AI-генерация уже выполняется — дождитесь её завершения и попробуйте снова.';
+
+/**
+ * ANA-155: the enriched 429 payload — WHO holds the slot, since when and when the watchdog
+ * would free it. The pinned provider's concrete model is only known after the provider
+ * answers, so the honest identifier here is the requested choice («auto» or a provider id).
+ */
+function busyBody(aiJobs: AiJobQueue): {
+  error: string;
+  code: 'AI_BUSY';
+  job?: { kind: string; provider: string; startedAt: string; expectedReleaseAt: string };
+} {
+  const holder = aiJobs.current();
+  return {
+    error: AI_BUSY_MESSAGE,
+    code: 'AI_BUSY',
+    ...(holder
+      ? {
+          job: {
+            kind: holder.kind,
+            provider: holder.provider ?? 'auto',
+            startedAt: new Date(holder.startedAt).toISOString(),
+            expectedReleaseAt: new Date(holder.expectedReleaseAt).toISOString(),
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * ANA-155: the queued Auto job skips the provider whose generation was watchdog-killed —
+ * retrying a provider that just hung would likely hang again; the chain falls through to
+ * the next usable one. A normal completion implies the provider is healthy → no skip.
+ * Limitation: the queue records the REQUESTED provider choice, not the actual chain
+ * winner — the skip works only for holders pinned to a concrete provider; an «auto»
+ * holder (`previousProvider === 'auto'`) retries the full chain (follow-up: wire the
+ * ANA-33 sniffed winner into the takeover context).
+ */
+function skipOpts(
+  ctx: { previousTimedOut: boolean; previousProvider?: string } | undefined,
+): { excludeProvider: string } | undefined {
+  if (!ctx?.previousTimedOut) return undefined;
+  const provider = ctx.previousProvider;
+  return provider && provider !== 'auto' ? { excludeProvider: provider } : undefined;
+}
 
 /** Build/fetch immutable report snapshots and generate report files. */
 export async function reportRoutes(app: FastifyInstance, opts: ReportRouteOptions): Promise<void> {
@@ -170,34 +225,50 @@ export async function reportRoutes(app: FastifyInstance, opts: ReportRouteOption
     if (!opts.runner.get(parsed.data.snapshotId)) {
       return reply.code(404).send({ error: 'snapshot not found' });
     }
-    const jobId = aiJobs.start('insights', async () => {
-      const result = await opts.runner.insights(parsed.data.snapshotId, parsed.data.providerId);
-      // A runner failure («no key», provider error) fails the job with its message instead
-      // of the old synchronous 503 — the poll reports it as {status:'failed', error}.
-      if (!result.ok) throw new Error(result.message);
-      // ANA-156: the analysis must leave AI drafts in the backlog (ANA-128) — «после AI-анализа
-      // 0 гипотез с source=ai» on prod had this contract gap: only the browser's fire-and-forget
-      // (БАГ-21) drove POST /report/hypotheses, so a pure-API analysis (the admin checklist) or
-      // a closed tab silently skipped auto-population. Run the runner right here, in the same
-      // job and slot: it returns the already-generated hypotheses without regenerating (ANA-128
-      // backfill) and dedupes drafts by content hash. Best-effort (ANA-128: auto-population
-      // must never break the report) — a failure here keeps the narrative job done, the
-      // browser follow-up stays as a second chance, and the miss is observable in the log.
-      try {
-        await opts.runner.hypotheses(parsed.data.snapshotId, parsed.data.providerId);
-      } catch (err) {
-        logger.warn(
-          { err, snapshotId: parsed.data.snapshotId },
-          'ai-autopopulate after insights failed — narrative kept, backlog left without AI drafts',
+    const jobId = aiJobs.start(
+      'insights',
+      async (ctx) => {
+        // ANA-155: a queued Auto job that got the slot after a watchdog takeover skips the
+        // provider whose generation hung (see skipOpts) — the chain falls to the next one.
+        const skip = skipOpts(ctx);
+        const result = await opts.runner.insights(
+          parsed.data.snapshotId,
+          parsed.data.providerId,
+          skip,
         );
-      }
-      return { narrative: result.narrative, generatedBy: result.generatedBy };
-    });
+        // A runner failure («no key», provider error) fails the job with its message instead
+        // of the old synchronous 503 — the poll reports it as {status:'failed', error}.
+        if (!result.ok) throw new Error(result.message);
+        // ANA-156: the analysis must leave AI drafts in the backlog (ANA-128) — «после AI-анализа
+        // 0 гипотез с source=ai» on prod had this contract gap: only the browser's fire-and-forget
+        // (БАГ-21) drove POST /report/hypotheses, so a pure-API analysis (the admin checklist) or
+        // a closed tab silently skipped auto-population. Run the runner right here, in the same
+        // job and slot: it returns the already-generated hypotheses without regenerating (ANA-128
+        // backfill) and dedupes drafts by content hash. Best-effort (ANA-128: auto-population
+        // must never break the report) — a failure here keeps the narrative job done, the
+        // browser follow-up stays as a second chance, and the miss is observable in the log.
+        try {
+          await opts.runner.hypotheses(parsed.data.snapshotId, parsed.data.providerId, skip);
+        } catch (err) {
+          logger.warn(
+            { err, snapshotId: parsed.data.snapshotId },
+            'ai-autopopulate after insights failed — narrative kept, backlog left without AI drafts',
+          );
+        }
+        return { narrative: result.narrative, generatedBy: result.generatedBy };
+      },
+      // ANA-155: the «Авто» choice falls back instead of failing — the request parks (depth 1)
+      // and runs when the slot frees. A pinned provider keeps the immediate 429 + Retry-After.
+      {
+        provider: parsed.data.providerId ?? 'auto',
+        queueIfBusy: !parsed.data.providerId || parsed.data.providerId === 'auto',
+      },
+    );
     if (jobId === null) {
       return reply
         .code(429)
         .header('retry-after', String(AI_BUSY_RETRY_AFTER_SECONDS))
-        .send({ error: AI_BUSY_MESSAGE, code: 'AI_BUSY' });
+        .send(busyBody(aiJobs));
     }
     return reply.code(202).send({ jobId });
   });
@@ -219,16 +290,28 @@ export async function reportRoutes(app: FastifyInstance, opts: ReportRouteOption
     if (!opts.runner.get(parsed.data.snapshotId)) {
       return reply.code(404).send({ error: 'snapshot not found' });
     }
-    const jobId = aiJobs.start('hypotheses', async () => {
-      const result = await opts.runner.hypotheses(parsed.data.snapshotId, parsed.data.providerId);
-      if (!result.ok) throw new Error(result.message);
-      return { hypotheses: result.hypotheses };
-    });
+    const jobId = aiJobs.start(
+      'hypotheses',
+      async (ctx) => {
+        // ANA-155: same watchdog-takeover provider skip as the insights job.
+        const result = await opts.runner.hypotheses(
+          parsed.data.snapshotId,
+          parsed.data.providerId,
+          skipOpts(ctx),
+        );
+        if (!result.ok) throw new Error(result.message);
+        return { hypotheses: result.hypotheses };
+      },
+      {
+        provider: parsed.data.providerId ?? 'auto',
+        queueIfBusy: !parsed.data.providerId || parsed.data.providerId === 'auto',
+      },
+    );
     if (jobId === null) {
       return reply
         .code(429)
         .header('retry-after', String(AI_BUSY_RETRY_AFTER_SECONDS))
-        .send({ error: AI_BUSY_MESSAGE, code: 'AI_BUSY' });
+        .send(busyBody(aiJobs));
     }
     return reply.code(202).send({ jobId });
   });

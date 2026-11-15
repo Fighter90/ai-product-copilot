@@ -443,3 +443,34 @@ describe('network error diagnostics', () => {
     });
   });
 });
+
+describe('ANA-155: Auto chain exclusion after a watchdog takeover', () => {
+  it('complete(exclude) skips the provider whose generation hung and uses the next one', async () => {
+    const { svc, calls } = setup('openrouter', () => res(200, ADAPTERS.openrouter.ok));
+    // The watchdog killed a hung openrouter generation → the queued Auto job excludes it.
+    const out = await svc.complete(req, { purpose: 'test', exclude: 'openrouter' });
+    expect(out.provider).toBe('anthropic');
+    expect(calls).toEqual({ primary: 0, fallback: 1 });
+    expect(usageRows().map((r) => r.provider)).toEqual(['anthropic']);
+  });
+
+  it('the exclusion is ignored when it would leave the chain empty (single provider)', async () => {
+    const { svc, calls } = setup('openrouter', () => res(200, ADAPTERS.openrouter.ok), {
+      withFallback: false,
+    });
+    const out = await svc.complete(req, { purpose: 'test', exclude: 'openrouter' });
+    expect(out.provider).toBe('openrouter');
+    expect(calls).toEqual({ primary: 1, fallback: 0 });
+  });
+
+  it('an explicit (pinned) choice wins over the exclusion', async () => {
+    const { svc, calls } = setup('openrouter', () => res(200, ADAPTERS.openrouter.ok));
+    const out = await svc.complete(req, {
+      purpose: 'test',
+      choice: 'openrouter',
+      exclude: 'openrouter',
+    });
+    expect(out.provider).toBe('openrouter');
+    expect(calls).toEqual({ primary: 1, fallback: 0 });
+  });
+});

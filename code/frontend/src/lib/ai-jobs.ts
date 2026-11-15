@@ -14,10 +14,13 @@ import type { Locale } from '../store/prefs';
 /** Poll interval — a generation takes minutes, there is nothing to gain by hammering. */
 export const AI_JOB_POLL_MS = 2000;
 /**
- * Poll budget: 400 × 2s ≈ 13 minutes — comfortably above the documented 5–10 minutes
- * a report AI analysis may take (rep.ai.pendingNote), so a healthy run is never cut off.
+ * Poll budget: 480 × 2s ≈ 16 minutes — above the documented 5–10 minutes a report AI
+ * analysis may take (rep.ai.pendingNote), and — ANA-155 — above the backend's watchdog
+ * (AI_JOB_MAX_RUN_MS, default 15 min), so the client observes a hung job's takeover
+ * («превышен таймаут (15 мин) — слот освобождён») instead of dying with a generic
+ * timeout before the honest failure can arrive.
  */
-export const AI_JOB_MAX_POLLS = 400;
+export const AI_JOB_MAX_POLLS = 480;
 
 /** The HTTP status carried by ApiError — status-only checks keep this module import-cycle-free. */
 function errStatus(err: unknown): number | undefined {
@@ -27,6 +30,41 @@ function errStatus(err: unknown): number | undefined {
 /** True when the error is the backend's 429 «another generation already holds the slot». */
 export function isBusyError(err: unknown): boolean {
   return errStatus(err) === 429;
+}
+
+/** ANA-155: the enriched 429 payload — who holds the slot, since when, expected release. */
+export interface AiBusyJobInfo {
+  readonly kind: string;
+  readonly provider: string;
+  readonly startedAt: string;
+  readonly expectedReleaseAt: string;
+}
+
+/**
+ * ANA-155: extract the holder info from a busy (429) error. The backend's 429 body carries
+ * `{ code: 'AI_BUSY', job: { kind, provider, startedAt, expectedReleaseAt } }`; anything
+ * else (older backend, proxy page, non-429, a field with an unexpected type) yields null
+ * and the UI shows the plain hint — ANA-155 (review r3): `kind` is validated like every
+ * other field, the UI never displays an invented label (anti-hallucination).
+ */
+export function busyJobInfo(err: unknown): AiBusyJobInfo | null {
+  if (!isBusyError(err)) return null;
+  const job = (err as { body?: { job?: Partial<AiBusyJobInfo> } | undefined }).body?.job;
+  if (
+    !job ||
+    typeof job.kind !== 'string' ||
+    typeof job.provider !== 'string' ||
+    typeof job.startedAt !== 'string' ||
+    typeof job.expectedReleaseAt !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    kind: job.kind,
+    provider: job.provider,
+    startedAt: job.startedAt,
+    expectedReleaseAt: job.expectedReleaseAt,
+  };
 }
 
 /**
