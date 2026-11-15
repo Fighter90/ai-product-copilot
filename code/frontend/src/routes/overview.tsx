@@ -4,7 +4,7 @@ import type { Locale } from '../store/prefs';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { ChannelStat, GeoDeviceStat, UtmStat, PageStat, B2bDeal } from '@pca/shared';
-import { paidAndGap, readEventDate } from '@pca/shared';
+import { paidAndGap, readEventDate, isGoalExpired, smartGoal } from '@pca/shared';
 import { api } from '../lib/api';
 import { v3 } from '../lib/api-v3';
 import { useFilters } from '../store/filters';
@@ -456,6 +456,7 @@ export function OverviewView({
   b2cPaid = 0,
   eventDate,
   showDeadlineCaveat,
+  today,
 }: {
   status: QueryStatus;
   stats: ChannelStat[];
@@ -478,6 +479,11 @@ export function OverviewView({
   eventDate?: string;
   /** ANA-75 (БАГ-01): show the deadline heuristic caveat (same text as the KPI page). */
   showDeadlineCaveat?: boolean;
+  /**
+   * ANA-166: «сегодня» для SMART-формулировки и авто-состояния «дедлайн прошёл». Живой
+   * дашборд использует настоящую дату; тесты передают явную (в render-пути отчёта Date.now() нет).
+   */
+  today?: string;
 }): JSX.Element {
   const { t, locale } = useT();
   const { segment } = useFilters();
@@ -547,6 +553,20 @@ export function OverviewView({
     goalPace({ points: daily, to, target: kpi.target, current: kpi.paid, goalIsPaid: false }),
     eventDate,
   );
+  // ANA-166: SMART-формулировка цели + авто-состояние «дедлайн прошёл». Истекает только
+  // настроенный EVENT_DATE (эвристический дедлайн — не обязательство); в SMART идёт тот
+  // дедлайн, который показывает герой (EVENT_DATE, иначе расчёт темпа). Правка ревью:
+  // расчётный дедлайн, оказавшийся в прошлом (старый период), не превращает SMART в «прошёл» —
+  // срок опускается, пилюля темпа остаётся честной «успеваем/не успеваем».
+  const todayIso = today ?? new Date().toISOString().slice(0, 10);
+  const goalExpired = isGoalExpired(eventDate ?? '', todayIso);
+  const goalSmart = smartGoal({
+    target: kpi.target,
+    paid: kpi.paid,
+    deadline: eventDate || (isGoalExpired(pace.deadline, todayIso) ? '' : pace.deadline),
+    today: todayIso,
+    locale,
+  });
   const geoRows = geoDevice ? byCountry(geoDevice) : [];
   const devRows = geoDevice ? byDevice(geoDevice) : [];
   const hasGeo = geoRows.length > 0 && devRows.length > 0;
@@ -593,6 +613,8 @@ export function OverviewView({
         goalIsPaid={goalIsPaid}
         showApplicationsCaveat={goalLabel?.showApplicationsCaveat !== false}
         weakSpot={weak[0]}
+        expired={goalExpired}
+        smart={goalSmart}
       />
 
       {/* ANA-75 (BUG-01): the heuristic deadline gets the same caveat on Overview and /app/kpi.

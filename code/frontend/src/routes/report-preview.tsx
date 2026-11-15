@@ -58,9 +58,7 @@ function Stat({
     <div className="rounded border border-slate-200 p-2">
       <div className="text-xs uppercase text-slate-500">
         {label}
-        {define ? (
-          <InfoHint text={define} align="start" className="ml-1 align-middle" />
-        ) : null}
+        {define ? <InfoHint text={define} align="start" className="ml-1 align-middle" /> : null}
       </div>
       <div className="text-lg font-bold">{value}</div>
       {hint ? <div className="text-xs text-slate-500">{hint}</div> : null}

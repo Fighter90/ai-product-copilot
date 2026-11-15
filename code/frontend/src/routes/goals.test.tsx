@@ -248,4 +248,60 @@ describe('KPI & forecast (GoalsView)', () => {
     expect(line).toHaveTextContent(fmtDate('2026-04-15', 'en'));
     expectNoCyrillic(container);
   });
+
+  it('ANA-166: the main goal carries the SMART statement (S+M+T + daily rate)', () => {
+    // paid = b2cPaid(0) + b2bPaid(20) → remaining 280; 2026-03-01 → 2026-04-15 = 45 days
+    // → ceil(280 / 45) = 7 в день.
+    view({ eventDate: '2026-04-15', today: '2026-03-01' });
+    const smart = screen.getByTestId('kpi-smart');
+    expect(smart).toHaveTextContent('≥300 платных билетов');
+    expect(smart).toHaveTextContent('к 15.04.2026');
+    expect(smart).toHaveTextContent('сейчас 20');
+    expect(smart).toHaveTextContent('осталось 280');
+    expect(smart).toHaveTextContent('~7 в день');
+    // The goal is still active — no expired block.
+    expect(screen.queryByTestId('kpi-expired')).toBeNull();
+  });
+
+  it('ANA-166: after EVENT_DATE the KPI page shows the auto «дедлайн прошёл» итог', () => {
+    view({ eventDate: '2025-01-01', today: '2025-01-10' });
+    const block = screen.getByTestId('kpi-expired');
+    expect(block).toHaveTextContent(fmtDate('2025-01-01', 'ru'));
+    // «Итог по цели: {paid} из {target}» — те же подтверждённые деньги, что в кольце.
+    expect(block).toHaveTextContent('20 из 300');
+    expect(block).toHaveTextContent('«Сбросить цель»');
+    // The SMART sentence switches to the expired variant with the final count.
+    expect(screen.getByTestId('kpi-smart')).toHaveTextContent(
+      'Дедлайн 01.01.2025 прошёл: 20 из 300 платных билетов',
+    );
+  });
+
+  it('ANA-166: expired wording keeps English (no Cyrillic)', () => {
+    setTestLocale('en');
+    const { container } = view({ eventDate: '2025-01-01', today: '2025-01-10' });
+    expect(screen.getByTestId('kpi-expired')).toHaveTextContent('deadline has passed');
+    expect(screen.getByTestId('kpi-smart')).toHaveTextContent(
+      'Deadline 1 Jan 2025 has passed: 20 of 300 paid tickets',
+    );
+    expectNoCyrillic(container);
+  });
+
+  // ANA-166 (правка ревью): без EVENT_DATE расчётный дедлайн (конец периода + 2×окно) — не
+  // обязательство: оказавшись в прошлом (старый период), он не объявляет цель завершённой.
+  it('ANA-166: a past computed deadline without EVENT_DATE never flips the SMART line to «прошёл»', () => {
+    // to=2025-01-02 + 2×2 дня → расчётный дедлайн 2025-01-06; сегодня позже него.
+    const first = view({ today: '2025-02-01' });
+    const smart = screen.getByTestId('kpi-smart');
+    expect(smart).toHaveTextContent('≥300 платных билетов');
+    expect(smart.textContent).not.toContain('прошёл');
+    // The expired итог block stays hidden — isGoalExpired reads the configured EVENT_DATE only.
+    expect(screen.queryByTestId('kpi-expired')).toBeNull();
+    first.unmount();
+
+    // While the computed deadline is still ahead, SMART keeps the «к ДАТА» term.
+    view({ today: '2025-01-03' });
+    expect(screen.getByTestId('kpi-smart')).toHaveTextContent(
+      'Достичь ≥300 платных билетов к 06.01.2025',
+    );
+  });
 });

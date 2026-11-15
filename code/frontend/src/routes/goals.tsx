@@ -8,6 +8,8 @@ import {
   formatGoalLabel,
   readEventDate,
   resolveKpiDeadline,
+  isGoalExpired,
+  smartGoal,
 } from '@pca/shared';
 import { api, http } from '../lib/api';
 import { v3 } from '../lib/api-v3';
@@ -380,6 +382,7 @@ export function GoalsView({
   eventDate,
   coverageFrom,
   coverageDays,
+  today,
 }: {
   status: QueryStatus;
   target: number;
@@ -407,6 +410,11 @@ export function GoalsView({
    * seeded demo «history» never stretches it. Shown next to coverageFrom; null hides the line.
    */
   coverageDays?: number | null;
+  /**
+   * ANA-166: «сегодня» для SMART-формулировки и авто-состояния после дедлайна. Живой дашборд
+   * передаёт настоящую дату из роута; тесты — явную (в render-пути отчёта Date.now() нет).
+   */
+  today?: string;
 }): JSX.Element {
   const { t, locale } = useT();
   if (status === 'pending') return <p className="text-slate-500">{t('common.loading')}</p>;
@@ -434,6 +442,22 @@ export function GoalsView({
     eventDate,
   });
   const progress = target > 0 ? Math.min((current / target) * 100, 100) : 0;
+  // ANA-166: SMART-формулировка цели + авто-состояние «дедлайн прошёл». Истекает только
+  // настроенный EVENT_DATE — эвристическая дата (конец периода + 2 длины) не обязательство,
+  // поэтому isGoalExpired проверяет именно eventDate.
+  const todayIso = today ?? new Date().toISOString().slice(0, 10);
+  const goalExpired = isGoalExpired(eventDate ?? '', todayIso);
+  const smart = smartGoal({
+    target,
+    paid: current,
+    // ANA-166 (правка ревью): «прошёл» — только для настроенного EVENT_DATE (обязательство).
+    // Расчётный дедлайн идёт в SMART как срок «к ДАТА», пока он впереди; оказавшись в прошлом
+    // (старый период / после кемпа без EVENT_DATE), он не объявляет цель завершённой.
+    deadline:
+      eventDate || (isGoalExpired(kpiDeadline.deadline, todayIso) ? '' : kpiDeadline.deadline),
+    today: todayIso,
+    locale,
+  });
   // formatGoalLabel (shared) titles the goal in Russian — localise by its isPaid flag instead.
   const goalTitle = goalLabel?.isPaid ? t('an.kpi.orders') : t('an.fn.b2cAppsCount');
   const stageLabel = (stage: B2bDeal['stage']): string => t(stageKey(stage));
@@ -467,6 +491,13 @@ export function GoalsView({
             <p className="text-sm text-slate-500" data-testid="kpi-deadline">
               {t('an.kpi.deadline', { date: fmtDate(kpiDeadline.deadline, locale) })}
             </p>
+            {/* ANA-166: SMART-формулировка главной цели — Specific/Measurable/Time-bound одним
+                предложением, тот же расчёт дедлайна, что и в строке выше. */}
+            {smart && (
+              <p className="text-sm leading-snug text-slate-500" data-testid="kpi-smart">
+                {smart}
+              </p>
+            )}
             <div className="space-y-1 text-sm text-slate-600">
               <p>
                 {t('an.kpi.remaining')}{' '}
@@ -519,6 +550,20 @@ export function GoalsView({
                 {`🔴 ${t('an.kpi.speedUp')}`}
               </div>
             )}
+            {/* ANA-166: авто-состояние после дедлайна — итог фиксируется, темп больше не важен.
+                Сброс цели (кнопка) — в Админ → Метрика; здесь только честный итог и подсказка. */}
+            {goalExpired && eventDate ? (
+              <div className="space-y-1" data-testid="kpi-expired">
+                <div className="rounded bg-red-100 px-3 py-2 text-sm text-red-800">
+                  {t('an.kpi.goalExpired', {
+                    date: fmtDate(eventDate, locale),
+                    paid: formatInt(current),
+                    target: formatInt(target),
+                  })}
+                </div>
+                <p className="text-xs text-slate-500">{t('an.kpi.goalExpiredHint')}</p>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

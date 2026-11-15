@@ -85,4 +85,70 @@ describe('KpiStrip (ANA-146 mobile no-overflow)', () => {
     expect(hint.textContent).toContain('с 2025-01-01 до 2025-01-07');
     expect(hint.textContent).toContain('Заказ ≠ платный билет');
   });
+
+  it('ANA-166: the SMART statement renders in the hero (hero-smart)', () => {
+    setTestLocale('ru');
+    const kpi = summarizeChannels([ch('2025-01-01', 'podcast', 420, 12)], [], false, 300, 0);
+    const pace = goalPace({
+      points: [{ date: '2025-01-01', visits: 420, reaches: 12 }],
+      to: '2025-01-01',
+      target: kpi.target,
+      current: kpi.paid,
+      goalIsPaid: false,
+    });
+    render(
+      <KpiStrip
+        kpi={kpi}
+        pace={pace}
+        goalIsPaid={false}
+        showApplicationsCaveat
+        weakSpot={weak}
+        smart="Достичь ≥300 платных билетов к 15.01.2025 — сейчас 0, осталось 300 (~22 в день)."
+      />,
+    );
+    expect(screen.getByTestId('hero-smart')).toHaveTextContent('Достичь ≥300 платных билетов');
+  });
+
+  it('ANA-166: after the deadline the hero switches to the expired state — итог instead of forecast', () => {
+    setTestLocale('ru');
+    const kpi = summarizeChannels([ch('2025-01-01', 'podcast', 420, 12)], [], false, 300, 0);
+    const pace = goalPace({
+      points: [{ date: '2025-01-01', visits: 420, reaches: 12 }],
+      to: '2025-01-01',
+      target: kpi.target,
+      current: kpi.paid,
+      goalIsPaid: false,
+    });
+    render(
+      <KpiStrip
+        kpi={kpi}
+        pace={pace}
+        goalIsPaid={false}
+        showApplicationsCaveat
+        weakSpot={weak}
+        expired
+      />,
+    );
+    // The pill says the deadline passed (not «успеваем/не успеваем»).
+    expect(screen.getByTestId('pace-status')).toHaveTextContent('Дедлайн прошёл');
+    // The forecast line is replaced by the honest final count + the reset pointer.
+    expect(screen.getByTestId('hero-expired-final')).toHaveTextContent('Итог: 0 из 300 билетов');
+    expect(screen.queryByText(/Прогноз:/)).toBeNull();
+    expect(screen.getByText(/«Сбросить цель»/)).toBeInTheDocument();
+  });
+
+  it('ANA-166: expired is ignored when the goal is reached (status pill keeps «Цель достигнута»)', () => {
+    setTestLocale('ru');
+    const kpi = summarizeChannels([], [], false, 300, 0);
+    const pace = goalPace({
+      points: [],
+      to: '2025-01-01',
+      target: kpi.target,
+      current: 300,
+      goalIsPaid: false,
+    });
+    render(<KpiStrip kpi={kpi} pace={pace} goalIsPaid={false} showApplicationsCaveat expired />);
+    expect(screen.getByTestId('pace-status')).toHaveTextContent('Цель достигнута');
+    expect(screen.queryByTestId('hero-expired-final')).toBeNull();
+  });
 });
