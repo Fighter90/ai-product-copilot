@@ -57,4 +57,17 @@ describe('<App>', () => {
     await screen.findAllByText(/Войти|Sign in/i);
     expect(window.location.pathname).toBe('/login');
   });
+
+  it('unknown URL shows the 404 page instead of silently redirecting to / (ANA-174)', async () => {
+    window.history.pushState({}, '', '/nonexistent-page');
+    render(<App />);
+    // The explicit «not found» state replaces the old silent redirect to the landing.
+    expect(await screen.findByRole('heading', { name: 'Страница не найдена' })).toBeInTheDocument();
+    // The URL is preserved — the user learns the link is broken.
+    expect(window.location.pathname).toBe('/nonexistent-page');
+    // A way out: the link to the home page.
+    expect(screen.getByRole('link', { name: /На главную/ })).toHaveAttribute('href', '/');
+    // No landing hero leaks through.
+    expect(screen.queryByText(/От Метрики|From Metrika/i)).toBeNull();
+  });
 });

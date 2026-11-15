@@ -106,6 +106,10 @@ export const ru = {
     'Этот раздел доступен только администратору. Попросите администратора выдать доступ или изменить роль.',
   'auth.sessionExpired': 'Сессия истекла — войдите снова',
 
+  'notFound.title': 'Страница не найдена',
+  'notFound.text': 'Такой страницы нет — возможно, ссылка устарела или в адресе опечатка.',
+  'notFound.home': 'На главную',
+
   'live.title': 'Данные за выбранный период (без ожидания синка)',
   'live.subtitle': 'Живые данные Метрики, обновление каждые 60 секунд',
   'live.auto': 'Автообновление',
@@ -1565,6 +1569,10 @@ export const en: Record<DictKey, string> = {
   'auth.forbidden.text':
     'This section is for administrators only. Ask an administrator to grant access or change your role.',
   'auth.sessionExpired': 'Session expired — sign in again',
+
+  'notFound.title': 'Page not found',
+  'notFound.text': 'This page does not exist — the link may be outdated or the address mistyped.',
+  'notFound.home': 'Back to home',
 
   'live.title': 'Data for the selected period (no sync wait)',
   'live.subtitle': 'Live Metrika data, refreshed every 60 seconds',
