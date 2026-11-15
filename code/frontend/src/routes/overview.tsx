@@ -54,11 +54,16 @@ export type QueryStatus = 'pending' | 'error' | 'success';
 /**
  * ANA-75 (БАГ-01): админская «Дата события» (EVENT_DATE) перекрывает эвристический дедлайн героя
  * («конец периода + 2 длины периода»): дедлайн = дата события, статус пересчитан от неё.
+ *
+ * ANA-170: отклонение — в конвенции goal-pace «forecast − deadline» (отрицательное = запас,
+ * положительное = отставание). diffDaysIso(from, to) = to − from, поэтому аргументы —
+ * (eventDate, forecastDate); прежний порядок (forecastDate, eventDate) переворачивал знак, и
+ * прогноз ПОЗЖЕ дедлайна показывался как «Успеваем: запас N дн.» (регресс прода 15.11.2026).
  */
 function applyDeadline(pace: GoalPace, eventDate?: string): GoalPace {
   if (!eventDate || pace.status === 'reached') return pace;
   const deviationDays =
-    pace.forecastDate === null ? null : diffDaysIso(pace.forecastDate, eventDate);
+    pace.forecastDate === null ? null : diffDaysIso(eventDate, pace.forecastDate);
   const status: PaceStatus =
     deviationDays === null
       ? 'unreachable'
