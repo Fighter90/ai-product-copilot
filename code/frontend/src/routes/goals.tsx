@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { B2bDeal, ChannelStat, GoalLabel } from '@pca/shared';
 import {
+  orderGoalHint,
   paidAndGap,
   periodTotals,
   formatGoalLabel,
@@ -17,6 +18,7 @@ import { forecastGoal, forecastChartOption } from '../lib/forecast';
 import { pipelineSummary } from '../lib/b2b';
 import { useKpiTarget } from '../lib/kpi-target';
 import { Card } from '../components/ui';
+import { InfoHint } from '../components/InfoHint';
 import { EChart } from '../components/charts/EChart';
 import { useT, fmtDate, fmtNum, type DictKey } from '../i18n';
 
@@ -472,8 +474,22 @@ export function GoalsView({
                 {t('an.kpi.tickets')}
               </p>
               <div className="rounded bg-slate-50 px-3 py-2">
+                {/* ANA-167: the Metrika goal figure is always dated — «с {дата} по {дата}» —
+                    and the «i» hint explains what «Заказ» is and that it is not a payment. */}
                 <p className="font-medium">
-                  {t('an.kpi.metrikaCount', { title: goalTitle, n: formatInt(b2cApplications) })}
+                  {from
+                    ? t('an.kpi.metrikaCountPeriod', {
+                        title: goalTitle,
+                        n: formatInt(b2cApplications),
+                        from: fmtDate(from, locale),
+                        to: fmtDate(to, locale),
+                      })
+                    : t('an.kpi.metrikaCount', { title: goalTitle, n: formatInt(b2cApplications) })}
+                  <InfoHint
+                    text={orderGoalHint(locale, { from, to })}
+                    align="start"
+                    className="ml-1"
+                  />
                 </p>
                 <p className="text-xs text-slate-500">
                   {goalLabel?.showApplicationsCaveat === false
