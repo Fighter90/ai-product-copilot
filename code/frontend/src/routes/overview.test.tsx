@@ -252,6 +252,7 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
         status="success"
         to="2025-01-02"
         eventDate="2025-01-20"
+        today="2025-01-05"
         stats={[
           {
             ...sample,
@@ -278,6 +279,7 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
         status="success"
         to="2025-01-02"
         eventDate="2026-02-10"
+        today="2025-01-05"
         stats={[
           {
             ...sample,
@@ -295,6 +297,63 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
     // «Не успеваем: +365 дн.» на заведомо успевающем темпе.
     expect(within(screen.getByTestId('kpi-strip')).getByTestId('pace-status')).toHaveTextContent(
       'Успеваем: запас 365 дн.',
+    );
+  });
+
+  // ANA-166: EVENT_DATE в прошлом + цель не достигнута → герой сам переходит в состояние
+  // «Дедлайн прошёл» (авто-сброс), итог вместо прогноза и SMART-формулировка цели.
+  it('ANA-166: a past EVENT_DATE switches the hero to the expired state with the SMART statement', () => {
+    renderWithProviders(
+      <OverviewView
+        status="success"
+        to="2025-01-02"
+        eventDate="2025-01-20"
+        today="2025-02-01"
+        stats={[
+          {
+            ...sample,
+            date: '2025-01-01',
+            channel: 'Direct traffic',
+            visits: 1000,
+            goalReaches: 5,
+          },
+          { ...sample, date: '2025-01-02', channel: 'vip', visits: 10, goalReaches: 9 },
+        ]}
+        b2bDeals={[{ id: 1, company: 'A', tickets: 30, stage: 'paid', dateAdded: '2025-01-01' }]}
+      />,
+    );
+    const strip = within(screen.getByTestId('kpi-strip'));
+    expect(strip.getByTestId('pace-status')).toHaveTextContent('Дедлайн прошёл');
+    // Итог = те же подтверждённые деньги, что в кольце (B2C-paid 0 + B2B-paid 30).
+    expect(strip.getByTestId('hero-expired-final')).toHaveTextContent('Итог: 30 из 300 билетов');
+    expect(strip.queryByText(/Прогноз:/)).toBeNull();
+    // SMART: expired-вариант с настроенным дедлайном (не эвристикой) и реальным прогрессом.
+    expect(strip.getByTestId('hero-smart')).toHaveTextContent(
+      'Дедлайн 20.01.2025 прошёл: 30 из 300 платных билетов',
+    );
+  });
+
+  // ANA-166 (правка ревью): без EVENT_DATE расчётный дедлайн (конец периода + 2×окно), оказавшийся
+  // в прошлом (старый период / после кемпа), — не обязательство: SMART не переключается на
+  // «прошёл», пока пилюля темпа честно отвечает «успеваем/не успеваем».
+  it('ANA-166: a past computed deadline without EVENT_DATE never flips the SMART line to «прошёл»', () => {
+    const stats = [
+      { ...sample, date: '2025-01-01', channel: 'Direct traffic', visits: 1000, goalReaches: 5 },
+      { ...sample, date: '2025-01-02', channel: 'vip', visits: 10, goalReaches: 9 },
+    ];
+    const { rerender } = renderWithProviders(
+      <OverviewView status="success" to="2025-01-02" today="2025-02-01" stats={stats} />,
+    );
+    const strip = within(screen.getByTestId('kpi-strip'));
+    // 2 fact days → deadline 2025-01-06 (+4), forecast later → «Не успеваем», no expired state.
+    expect(strip.getByTestId('pace-status')).toHaveTextContent('Не успеваем');
+    expect(strip.queryByTestId('hero-expired-final')).toBeNull();
+    expect(strip.getByTestId('hero-smart').textContent).not.toContain('прошёл');
+
+    // While the computed deadline is still ahead, SMART keeps the «к ДАТА» term.
+    rerender(<OverviewView status="success" to="2025-01-02" today="2025-01-03" stats={stats} />);
+    expect(within(screen.getByTestId('kpi-strip')).getByTestId('hero-smart')).toHaveTextContent(
+      'Достичь ≥300 платных билетов к 06.01.2025',
     );
   });
 

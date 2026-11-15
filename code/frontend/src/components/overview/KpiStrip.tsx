@@ -38,19 +38,32 @@ export function KpiStrip({
   goalIsPaid,
   showApplicationsCaveat,
   weakSpot,
+  expired,
+  smart,
 }: {
   kpi: OverviewKpi;
   pace: GoalPace;
   goalIsPaid: boolean;
   showApplicationsCaveat: boolean;
   weakSpot?: WeakSpot;
+  /**
+   * ANA-166: авто-состояние «дедлайн прошёл» (EVENT_DATE в прошлом, цель не достигнута) —
+   * считает вызывающая сторона (shared isGoalExpired), у стрипа нет своего «сегодня».
+   */
+  expired?: boolean;
+  /** ANA-166: готовая SMART-формулировка цели (shared smartGoal), ''/undefined — не показывать. */
+  smart?: string;
 }): JSX.Element {
   const { t, locale } = useT();
   // ANA-167: goal figures are always dated — the tooltip carries the selected period.
   const { from, to } = useFilters();
   const target = formatInt(kpi.target);
-  const statusText =
-    pace.status === 'reached'
+  // ANA-166: after the deadline the pace forecast loses meaning — the hero shows the final
+  // result instead of «успеваем/не успеваем» and the pill switches to the expired state.
+  const expiredActive = expired === true && pace.status !== 'reached';
+  const statusText = expiredActive
+    ? t('ov.hero.expired')
+    : pace.status === 'reached'
       ? t('ov.hero.reached')
       : pace.status === 'onTrack'
         ? t('ov.hero.onTrack', { n: Math.abs(pace.deviationDays ?? 0) })
@@ -93,11 +106,26 @@ export function KpiStrip({
             </h2>
             <span
               data-testid="pace-status"
-              className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_TONE[pace.status]}`}
+              className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                expiredActive ? 'bg-red-100 text-red-800' : STATUS_TONE[pace.status]
+              }`}
             >
               {statusText}
             </span>
-            {pace.status !== 'reached' ? (
+            {/* ANA-166: SMART-формулировка цели — конкретика + измеримость + срок одним предложением. */}
+            {smart ? (
+              <p className="text-xs leading-snug text-slate-500" data-testid="hero-smart">
+                {smart}
+              </p>
+            ) : null}
+            {expiredActive ? (
+              <>
+                <p className="text-xs text-slate-600" data-testid="hero-expired-final">
+                  {t('ov.hero.expiredFinal', { current: formatInt(kpi.paid), target })}
+                </p>
+                <p className="hidden text-xs text-amber-700 sm:block">{t('ov.hero.expiredHint')}</p>
+              </>
+            ) : pace.status !== 'reached' ? (
               <>
                 <p className="text-xs text-slate-600">
                   {pace.forecastDate

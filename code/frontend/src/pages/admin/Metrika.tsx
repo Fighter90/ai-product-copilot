@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { isGoalExpired, normalizeEventDate, resolveKpiTarget, smartGoal } from '@pca/shared';
 import { v3, type SettingView } from '../../lib/api-v3';
 import { api } from '../../lib/api';
 import { useT, type DictKey } from '../../i18n';
@@ -315,6 +316,7 @@ export function MetrikaSettings(): JSX.Element {
           </form>
         </Card>
       )}
+      {q.data && <GoalSettingsCard />}
       {q.data && <GoalsManager />}
       <Card title={t('i18n.mk.syncTitle')}>
         <p className="mb-3 text-sm text-muted">{t('i18n.mk.syncHelp', { from, to })}</p>
@@ -377,6 +379,104 @@ export function MetrikaSettings(): JSX.Element {
         </div>
       </Card>
       <B2cPaymentsCard />
+    </div>
+  );
+}
+
+/**
+ * ANA-166: карточка цели в админке — SMART-формулировка сохранённой цели (shared smartGoal:
+ * Specific/Measurable/Achievable/Relevant/Time-bound) и сброс цели после дедлайна.
+ *
+ * «Авто»: после дедлайна Обзор и KPI-страница сами помечают цель завершённой (isGoalExpired);
+ * «Кнопка»: здесь админ одним действием очищает KPI_TARGET + EVENT_DATE, чтобы задать новую
+ * цель. Сброс идёт через обычный POST /settings (значения '') — введённые оплаты не трогаются.
+ * Показывается сохранённое состояние: несохранённые правки формы здесь не учитываются.
+ */
+export function GoalSettingsCard({ today }: { today?: string }): JSX.Element {
+  const { t, locale } = useT();
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ['settings'], queryFn: v3.settings, retry: false });
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const reset = useMutation({
+    mutationFn: () => v3.saveSettings({ KPI_TARGET: '', EVENT_DATE: '' }),
+    onSuccess: () => {
+      setConfirmOpen(false);
+      setMsg(t('i18n.mk.goal.resetDone'));
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+    },
+    onError: (err) => setMsg(err.message),
+  });
+
+  // Настоящая дата — только живая админка; в render-путь отчёта она не попадает. `today`
+  // инъектится явно (тот же паттерн, что OverviewView/GoalsView) — тесты без часов машины.
+  const todayIso = today ?? new Date().toISOString().slice(0, 10);
+  const savedEvent = normalizeEventDate(q.data?.EVENT_DATE?.value ?? '');
+  const target = resolveKpiTarget(q.data?.KPI_TARGET?.value ?? '');
+  const expired = isGoalExpired(savedEvent, todayIso);
+  // Превью без `paid`: данных об оплатах здесь нет — smartGoal не выставит за них ноль.
+  const smart = smartGoal({ target, deadline: savedEvent, today: todayIso, locale });
+
+  if (q.isLoading) return <Skeleton className="h-24" />;
+  if (q.error) return <ErrorBox error={q.error} />;
+
+  return (
+    <div data-testid="goal-settings-card">
+      {msg && (
+        <div className="card mb-3 border-accent/40 p-3 text-sm" onClick={() => setMsg(null)}>
+          {msg}
+        </div>
+      )}
+      <Card title={t('i18n.mk.goal.title')}>
+        <p className="mb-2 text-sm text-muted">{t('i18n.mk.goal.subtitle')}</p>
+        <p className="mb-3 rounded bg-raised px-3 py-2 text-sm" data-testid="goal-smart-preview">
+          {smart}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {expired && (
+            <span data-testid="goal-expired-pill">
+              <Pill tone="red">{t('i18n.mk.goal.expired')}</Pill>
+            </span>
+          )}
+          <button
+            type="button"
+            className="btn-danger text-sm"
+            disabled={!expired || reset.isPending}
+            data-testid="goal-reset-btn"
+            onClick={() => setConfirmOpen(true)}
+          >
+            {t('i18n.mk.goal.reset')}
+          </button>
+          <span className="text-xs text-muted">{t('i18n.mk.goal.autoNote')}</span>
+        </div>
+        <Modal
+          open={confirmOpen}
+          title={t('i18n.mk.goal.resetConfirmTitle')}
+          onClose={() => setConfirmOpen(false)}
+        >
+          <p className="mb-3 text-sm">{t('i18n.mk.goal.resetHelp')}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setConfirmOpen(false)}
+              data-testid="goal-reset-cancel"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              type="button"
+              className="btn-danger"
+              disabled={reset.isPending}
+              data-testid="goal-reset-confirm"
+              onClick={() => reset.mutate()}
+            >
+              {t('i18n.mk.goal.reset')}
+            </button>
+          </div>
+        </Modal>
+      </Card>
     </div>
   );
 }

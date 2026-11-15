@@ -541,7 +541,8 @@ const EN: ReportText = {
   summaryHeading: 'Key results',
   goalTitle: (label) => (label?.isPaid ? 'Applications' : 'B2C applications'),
   // ANA-167: the goal line names its period explicitly.
-  summaryGoal: (title, n, from, to) => `${title} (primary goal reaches, period ${from} – ${to}): ${n}`,
+  summaryGoal: (title, n, from, to) =>
+    `${title} (primary goal reaches, period ${from} – ${to}): ${n}`,
   summaryPaid: (n) => `B2B paid (tickets): ${n}`,
   summaryGap: (n) => `Gap to target (by payments): ${n}`,
   summaryVisits: (n) => `Total visits in the channel sample: ${n}`,

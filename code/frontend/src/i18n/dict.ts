@@ -479,6 +479,10 @@ export const ru = {
     'Канал с заметным трафиком, но конверсией ниже средней — наибольший потенциал роста оплат.',
   'ov.hero.weakSpotDetail': 'CR {cr} при {visits} визитах',
   'ov.hero.noWeakSpot': 'нет явных утечек',
+  // ANA-166: авто-состояние цели после дедлайна (дедлайн прошёл, цель не достигнута).
+  'ov.hero.expired': 'Дедлайн прошёл',
+  'ov.hero.expiredFinal': 'Итог: {current} из {target} билетов — цель не достигнута',
+  'ov.hero.expiredHint': 'Задайте новую цель: Настройки → Метрика → «Сбросить цель»',
   'ov.kpi.orders': 'Заявок',
   'ov.kpi.applications': 'Заявок B2C',
   'ov.kpi.applicationsHint': 'заявка ≠ оплата',
@@ -907,6 +911,9 @@ export const ru = {
   'an.kpi.title': 'Цели ProductCamp',
   'an.kpi.mainGoal': 'Главная цель: {n} платных билетов',
   'an.kpi.deadline': 'Дедлайн: {date}',
+  // ANA-166: авто-состояние после дедлайна на KPI-странице.
+  'an.kpi.goalExpired': 'Дедлайн {date} прошёл. Итог по цели: {paid} из {target} билетов.',
+  'an.kpi.goalExpiredHint': 'Новая цель: Админ → Метрика → «Сбросить цель».',
   'an.kpi.remaining': 'Осталось:',
   'an.kpi.tickets': 'билетов',
   'an.kpi.orders': 'Заявок',
@@ -1257,6 +1264,19 @@ export const ru = {
   'i18n.mk.eventDate.label': 'Дата события (дедлайн KPI)',
   'i18n.mk.eventDate.hint':
     'Формат YYYY-MM-DD, например 2026-12-05. Задана — дедлайн KPI равен этой дате; пусто — конец периода + 2 длины периода (с оговоркой).',
+  // ANA-166: карточка цели в админке — SMART-формулировка + сброс после дедлайна.
+  'i18n.mk.goal.title': 'Цель (SMART)',
+  'i18n.mk.goal.subtitle':
+    'Главная цель инструмента: «Цель по оплатам» + «Дата события» из формы выше (сохранённые значения).',
+  'i18n.mk.goal.expired': 'Дедлайн прошёл',
+  'i18n.mk.goal.reset': 'Сбросить цель',
+  'i18n.mk.goal.resetHelp':
+    'Дедлайн KPI прошёл — цель считается завершённой. Сброс очистит «Цель по оплатам» и «Дата события»: вернутся значения по умолчанию (300 билетов, эвристический дедлайн). Введённые оплаты не удаляются.',
+  'i18n.mk.goal.resetConfirmTitle': 'Сбросить цель?',
+  'i18n.mk.goal.resetDone':
+    'Цель сброшена: задайте новую в полях «Цель по оплатам» и «Дата события».',
+  'i18n.mk.goal.autoNote':
+    'После дедлайна цель автоматически помечается завершённой на Обзоре и KPI-странице.',
   'i18n.mk.cleared': 'Кэш данных Метрики очищен',
   'i18n.mk.connection': 'Подключение',
   'i18n.mk.appliedAtOnce': 'Применяется сразу, без перезапуска сервера.',
@@ -1913,6 +1933,10 @@ export const en: Record<DictKey, string> = {
   'ov.hero.weakSpot': 'Main weak spot',
   'ov.hero.weakSpotHint':
     'A channel with notable traffic but below-average conversion — the biggest potential for more payments.',
+  // ANA-166: post-deadline goal auto-state (deadline passed, goal not reached).
+  'ov.hero.expired': 'Deadline passed',
+  'ov.hero.expiredFinal': 'Final: {current} of {target} tickets — goal not reached',
+  'ov.hero.expiredHint': 'Set a new goal: Settings → Metrika → «Reset goal»',
   'ov.hero.weakSpotDetail': 'CR {cr} on {visits} visits',
   'ov.hero.noWeakSpot': 'no obvious leaks',
   'ov.kpi.orders': 'Applications',
@@ -2344,6 +2368,9 @@ export const en: Record<DictKey, string> = {
   'an.kpi.title': 'ProductCamp goals',
   'an.kpi.mainGoal': 'Main goal: {n} paid tickets',
   'an.kpi.deadline': 'Deadline: {date}',
+  // ANA-166: post-deadline auto-state on the KPI page.
+  'an.kpi.goalExpired': 'The {date} deadline has passed. Goal final: {paid} of {target} tickets.',
+  'an.kpi.goalExpiredHint': 'New goal: Admin → Metrika → «Reset goal».',
   'an.kpi.remaining': 'Remaining:',
   'an.kpi.tickets': 'tickets',
   'an.kpi.orders': 'Applications',
@@ -2693,6 +2720,19 @@ export const en: Record<DictKey, string> = {
   'i18n.mk.eventDate.label': 'Event date (KPI deadline)',
   'i18n.mk.eventDate.hint':
     'YYYY-MM-DD format, e.g. 2026-12-05. When set, the KPI deadline equals this date; when empty — period end + 2× period length (with a caveat).',
+  // ANA-166: goal card in admin — SMART statement + post-deadline reset.
+  'i18n.mk.goal.title': 'Goal (SMART)',
+  'i18n.mk.goal.subtitle':
+    "The tool's main goal: the payments target + event date from the form above (saved values).",
+  'i18n.mk.goal.expired': 'Deadline passed',
+  'i18n.mk.goal.reset': 'Reset goal',
+  'i18n.mk.goal.resetHelp':
+    'The KPI deadline has passed — the goal counts as finished. Resetting clears the payments target and the event date: defaults return (300 tickets, heuristic deadline). Entered payments are not deleted.',
+  'i18n.mk.goal.resetConfirmTitle': 'Reset the goal?',
+  'i18n.mk.goal.resetDone':
+    'Goal reset: set a new one in the payments target and event date fields.',
+  'i18n.mk.goal.autoNote':
+    'After the deadline the goal is automatically marked as finished on Overview and the KPI page.',
   'i18n.mk.cleared': 'Metrika cache cleared',
   'i18n.mk.connection': 'Connection',
   'i18n.mk.appliedAtOnce': 'Applied immediately, no server restart.',
