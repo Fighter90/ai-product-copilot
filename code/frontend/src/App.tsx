@@ -10,6 +10,7 @@ import { applyPrefs, usePrefs } from './store/prefs';
 import { Landing } from './pages/public/Landing';
 import { Login } from './pages/public/Login';
 import { HelpCenter } from './pages/public/HelpCenter';
+import { NotFound } from './pages/app/NotFound';
 
 /**
  * Cabinet/admin pages are code-split: each loads in its own chunk on first
@@ -163,7 +164,9 @@ export function App(): JSX.Element {
                     </RequireAdmin>
                   }
                 />
-                <Route path="*" element={<Navigate to="/app" replace />} />
+                {/* ANA-174: unknown /app/* deep link → explicit 404 inside the cabinet
+                    chrome (the old silent <Navigate to="/app" replace /> hid broken links). */}
+                <Route path="*" element={<NotFound />} />
               </Route>
               {[
                 '/traffic',
@@ -179,7 +182,8 @@ export function App(): JSX.Element {
               ].map((p) => (
                 <Route key={p} path={p} element={<LegacyRedirect />} />
               ))}
-              <Route path="*" element={<Navigate to="/" replace />} />
+              {/* ANA-174: any other unknown URL → explicit 404 page, not a silent redirect to / */}
+              <Route path="*" element={<NotFound />} />
             </Routes>
             <ErrorBoundary>
               <Assistant />
