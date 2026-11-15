@@ -466,6 +466,8 @@ export const ru = {
   // БАГ-11: пустой Обзор в сегменте B2B — без совета запускать синк (данные B2B вносятся вручную).
   'ov.b2bEmpty': 'B2B-данные вносятся вручную на странице B2B-сделки.',
   'ov.b2bEmptyAction': 'Перейти к B2B-сделкам',
+  // ANA-176 (регресс БАГ-11): KPI-блок цели в сегменте B2B скрыт — цель относится к общему потоку.
+  'ov.b2bGoalHidden': 'Цель {target} относится к общему потоку; в сегменте B2B целей Метрики нет',
   'ov.strip.aria': 'Ключевые показатели',
   'ov.hero.title': 'Успеваем к {target}?',
   'ov.hero.ringAria': 'Прогресс к цели: {current} из {target}',
@@ -1927,6 +1929,9 @@ export const en: Record<DictKey, string> = {
   // БАГ-11: empty Overview in the B2B segment — no "run a sync" advice (B2B data is manual).
   'ov.b2bEmpty': 'B2B data is entered manually on the B2B deals page.',
   'ov.b2bEmptyAction': 'Open B2B deals',
+  // ANA-176 (БАГ-11 regression): the goal KPI block is hidden in the B2B segment — the goal belongs to the overall flow.
+  'ov.b2bGoalHidden':
+    'The {target} goal belongs to the overall flow; the B2B segment has no Metrika goals',
   'ov.strip.aria': 'Key metrics',
   'ov.hero.title': 'On track for {target}?',
   'ov.hero.ringAria': 'Goal progress: {current} of {target}',

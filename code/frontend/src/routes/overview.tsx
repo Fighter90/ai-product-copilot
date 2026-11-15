@@ -19,7 +19,6 @@ import {
   topPages,
   topUtmRows,
   weakSpots,
-  b2bDailyPoints,
 } from '../lib/overview';
 import {
   BOUNCE_HIGH,
@@ -499,25 +498,19 @@ export function OverviewView({
     );
 
   if (stats.length === 0) {
-    // БАГ-11: в сегменте B2B визитов Метрики нет by construction (segment-filter), но данные
-    // B2B есть в CRM (api.b2b, доступно аналитику) — показываем KPI-полосу («Оплачено B2B vs
-    // цель») и пустое состояние без совета запускать синк: аналитик — просто подсказка,
-    // админ — с переходом на страницу B2B-сделок.
+    // БАГ-11 → ANA-176: в сегменте B2B визитов Метрики нет by construction (segment-filter),
+    // а KPI-цель относится к общему потоку — стрип с нулями («Заявок 0 / Осталось 300»)
+    // вводил в заблуждение. KPI-блок цели скрыт, вместо него пояснение; оплаченные B2B-сделки
+    // остаются на /app/kpi (вкладка B2B) и странице B2B-сделок.
     if (segment === 'b2b') {
-      const goalIsPaid = goalLabel?.isPaid ?? false;
-      const deals = b2bDeals ?? [];
-      const kpi = summarizeChannels([], deals, goalIsPaid, kpiTarget, 0);
-      const pace = goalPace({
-        points: b2bDailyPoints(deals),
-        to,
-        target: kpi.target,
-        current: kpi.paid,
-        // CRM-оплаты — подтверждённые деньги, темп точный (без оговорки про заявки).
-        goalIsPaid: true,
-      });
       return (
         <section className="space-y-6">
-          <KpiStrip kpi={kpi} pace={pace} goalIsPaid={goalIsPaid} showApplicationsCaveat={false} />
+          <p
+            data-testid="b2b-goal-hidden"
+            className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600"
+          >
+            {t('ov.b2bGoalHidden', { target: formatInt(kpiTarget ?? 300) })}
+          </p>
           {afterKpi}
           <EmptyState
             message={t('ov.b2bEmpty')}
