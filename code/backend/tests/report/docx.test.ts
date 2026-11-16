@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import JSZip from 'jszip';
 import type { Decision, Hypothesis, ReportSnapshot } from '@pca/shared';
 import { reportSections } from '../../src/report/docx/sections';
 import { buildDocx, parseInline } from '../../src/report/docx/builder';
+import { determinizeDocx, resolveDeterministicDate } from '../../src/report/docx/determinize';
 import { DOCX_PARTS, readDocxXml } from './docx-xml';
 
 const hyp = (over: Partial<Hypothesis>): Hypothesis => ({
@@ -91,6 +93,24 @@ describe('reportSections re-export', () => {
     expect(headings.some((h) => h.startsWith('DL-001'))).toBe(true);
     const methodology = sections.find((s) => s.heading === 'Методология');
     expect(methodology?.lines.join(' ')).toContain('Double Diamond');
+  });
+});
+
+describe('resolveDeterministicDate (ANA-188)', () => {
+  it('passes a parseable ISO generatedAt through unchanged (same instant)', () => {
+    // The metadata date is the snapshot's own generatedAt — traceable, anti-hallucination-safe.
+    const iso = '2026-05-28T10:00:00.000Z';
+    expect(resolveDeterministicDate(iso).toISOString()).toBe(iso);
+    expect(resolveDeterministicDate(iso).getTime()).toBe(Date.parse(iso));
+  });
+
+  it('falls back to the 1980 zip-DOS epoch when generatedAt is not parseable', () => {
+    // Defensive branch: zip entry dates cannot predate 1980, so an unparseable snapshot date
+    // (SnapshotBuilder always writes ISO, but the constant must stay pinned by a test)
+    // deterministically degrades to the DOS epoch instead of the wall clock.
+    for (const garbage of ['T', 'not-a-date', '']) {
+      expect(resolveDeterministicDate(garbage).toISOString()).toBe('1980-01-01T00:00:00.000Z');
+    }
   });
 });
 
@@ -228,6 +248,92 @@ describe('buildDocx', () => {
       });
       const document = await readDocxXml(buf, DOCX_PARTS.document);
       expect(document).not.toContain('Покрытие данных');
+    });
+  });
+
+  describe('ANA-188 deterministic re-export', () => {
+    const png =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const exportTwice = async (): Promise<[Buffer, Buffer]> => {
+      const a = await buildDocx({
+        ...snapshot,
+        generatedAt: '2026-05-28T10:00:00.000Z',
+        charts: { channelBar: png, funnel: png, channelMix: png },
+        aiNarrative: '- первый пункт\n* второй пункт\n',
+      });
+      const b = await buildDocx({
+        ...snapshot,
+        generatedAt: '2026-05-28T10:00:00.000Z',
+        charts: { channelBar: png, funnel: png, channelMix: png },
+        aiNarrative: '- первый пункт\n* второй пункт\n',
+      });
+      return [a, b];
+    };
+
+    it('produces a byte-identical buffer when the same snapshot is exported again (timestamps + floating bookmarks)', async () => {
+      // The docx lib derives bookmark ids (_TocN / w:id / wp:docPr id) from process-global
+      // counters, dcterms:created/modified and the zip DOS dates from the wall clock — so a
+      // naive Packer.toBuffer differs on every call. Re-export of one snapshotId must be
+      // byte-identical (CLAUDE.md: один snapshotId → байт-идентичные файлы).
+      const [a, b] = await exportTwice();
+      expect(a.equals(b)).toBe(true);
+    });
+
+    it('stamps every zip entry and dcterms:created/modified from snapshot.generatedAt, not from the build clock', async () => {
+      const [buf] = await exportTwice();
+      const iso = '2026-05-28T10:00:00.000Z';
+      const zip = await JSZip.loadAsync(buf);
+      const dated = Object.values(zip.files).filter((f) => !f.dir);
+      expect(dated.length).toBeGreaterThan(0);
+      for (const entry of dated) expect(entry.date.toISOString()).toBe(iso);
+      const core = await readDocxXml(buf, DOCX_PARTS.coreProps);
+      expect(core).toContain(`<dcterms:created xsi:type="dcterms:W3CDTF">${iso}</dcterms:created>`);
+      expect(core).toContain(
+        `<dcterms:modified xsi:type="dcterms:W3CDTF">${iso}</dcterms:modified>`,
+      );
+      // Bookmark names/ids and drawing ids are sequential from 1, regardless of how many
+      // exports happened in this process before (плавающие закладки — главный симптом ANA-188).
+      const document = await readDocxXml(buf, DOCX_PARTS.document);
+      const starts = [
+        ...document.matchAll(/<w:bookmarkStart w:name="_Toc(\d+)" w:id="(\d+)"/g),
+      ].map((m) => `${m[1]}/${m[2]}`);
+      expect(starts.length).toBeGreaterThan(0);
+      expect(starts).toEqual(starts.map((_, i) => `${i + 1}/${i + 1}`));
+      expect(document).toContain('wp:docPr id="1"');
+    });
+
+    it('renumbers _Toc names only in w:name / w:anchor / PAGEREF contexts — visible text stays intact', async () => {
+      // A snapshot narrative can legitimately contain «_Toc7» as visible content (e.g. a pasted
+      // hypothesis title). Only the navigational contexts — bookmarkStart w:name, hyperlink
+      // w:anchor and PAGEREF field instructions — may be renumbered; anything else is document
+      // content and must pass through byte-for-byte.
+      const raw = new JSZip();
+      raw.file(
+        'word/document.xml',
+        [
+          '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+          '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>',
+          '<w:p><w:r><w:t>Гипотеза _Toc7 и ещё _Toc12 — видимый текст</w:t></w:r></w:p>',
+          '<w:p><w:bookmarkStart w:name="_Toc5" w:id="99"/><w:r><w:t>Заголовок</w:t></w:r>',
+          '<w:bookmarkEnd w:id="99"/></w:p>',
+          '<w:p><w:hyperlink w:anchor="_Toc5"><w:r><w:t>якорь</w:t></w:r></w:hyperlink></w:p>',
+          '<w:p><w:r><w:instrText xml:space="preserve"> PAGEREF _Toc5 \\h </w:instrText></w:r></w:p>',
+          '</w:body></w:document>',
+        ].join(''),
+      );
+      raw.file('docProps/core.xml', '<cp:coreProperties xmlns:cp="…"/>');
+      const out = await determinizeDocx(
+        await raw.generateAsync({ type: 'nodebuffer' }),
+        resolveDeterministicDate('2026-05-28T10:00:00.000Z'),
+      );
+      const document = await readDocxXml(out, DOCX_PARTS.document);
+      // Visible text untouched…
+      expect(document).toContain('Гипотеза _Toc7 и ещё _Toc12 — видимый текст');
+      // …while every navigational context was renumbered to the same sequential value.
+      expect(document).toContain('w:name="_Toc1"');
+      expect(document).toContain('w:anchor="_Toc1"');
+      expect(document).toContain(' PAGEREF _Toc1 \\h ');
+      expect(document).not.toContain('_Toc5');
     });
   });
 

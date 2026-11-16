@@ -18,6 +18,7 @@ import {
 import { reportPeriodLabel, type ReportLocale, type ReportSnapshot } from '@pca/shared';
 import { reportSections, isFrontMatter, type ReportSection } from './sections';
 import { REPORT_CHROME } from './chrome';
+import { determinizeDocx, resolveDeterministicDate } from './determinize';
 
 /**
  * ГОСТ-2 layout (эталон заказчика, поля в twips):
@@ -38,8 +39,9 @@ import { REPORT_CHROME } from './chrome';
  *  - Defaults: Times New Roman 14pt, 1.5 line spacing (line=360), justified body, page number
  *    centered in the footer. Heading styles are forced to black (overrides the lib's blue).
  *
- * Content is deterministic (see reportSections); the .docx container carries zip timestamps, so
- * byte-identity is approximated via content-determinism.
+ * Content is deterministic (see reportSections); the container's clock/process-global
+ * footprints (zip timestamps, dcterms dates, _Toc bookmarks, drawing ids) are rewritten to
+ * snapshot-derived values by determinizeDocx — one snapshotId re-exports byte-identically (ANA-188).
  * Supports markdown tables, **bold**, *italic*, and `code` inline formatting.
  */
 
@@ -369,5 +371,12 @@ export async function buildDocx(
       },
     ],
   });
-  return Packer.toBuffer(doc);
+  // ANA-188: strip the packer's wall-clock/process-global footprints (zip DOS timestamps,
+  // dcterms:created/modified, _Toc bookmark names/ids, wp:docPr drawing ids) so the same
+  // immutable snapshot re-exports to a byte-identical file. Metadata dates derive from the
+  // snapshot itself — no Date.now() enters the render path.
+  return determinizeDocx(
+    await Packer.toBuffer(doc),
+    resolveDeterministicDate(snapshot.generatedAt),
+  );
 }
