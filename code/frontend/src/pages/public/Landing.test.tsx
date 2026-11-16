@@ -42,31 +42,30 @@ describe('Landing detail (ANA-71)', () => {
   });
 
   /**
-   * ANA-172: the footer «История изменений» link (and the VersionBadge next to it) must
-   * point at the project's own repository — the old ai-product-copilot URLs 404 after the
-   * repo was renamed to yandex-metrika-analyse-dashboard.
+   * ANA-172 (re-verified 16.11): the footer «История изменений» link was REMOVED — both
+   * candidate URLs 404 for any visitor (the old repo name does not exist, the current
+   * repo `ai-product-copilot` is private). The version badge is plain text now.
    */
-  it.each(['ru', 'en'] as const)(
-    '[%s] footer changelog links point at the project repo (ANA-172)',
-    (locale) => {
-      setTestLocale(locale);
-      const { container } = renderWithProviders(<Landing />);
-      const changelogLinks = Array.from(
-        container.querySelectorAll<HTMLAnchorElement>('a[href*="CHANGELOG.md"]'),
-      );
-      expect(changelogLinks.length).toBeGreaterThan(0);
-      for (const link of changelogLinks) {
-        expect(link.getAttribute('href')).toBe(
-          'https://github.com/Fighter90/yandex-metrika-analyse-dashboard/blob/main/CHANGELOG.md',
-        );
-      }
-      // No anchor anywhere on the landing may keep the stale (404) repo name.
-      const stale = Array.from(container.querySelectorAll('a')).filter((a) =>
-        (a.getAttribute('href') ?? '').includes('ai-product-copilot'),
-      );
-      expect(stale).toEqual([]);
-    },
-  );
+  it.each(['ru', 'en'] as const)('[%s] footer has no dead changelog link (ANA-172)', (locale) => {
+    setTestLocale(locale);
+    const { container } = renderWithProviders(<Landing />);
+    const anchors = Array.from(container.querySelectorAll('a'));
+    const changelogLinks = anchors.filter((a) =>
+      (a.getAttribute('href') ?? '').includes('CHANGELOG.md'),
+    );
+    expect(changelogLinks).toEqual([]);
+    // Neither the dead old repo name nor the private current repo name may appear as links.
+    const deadRepoLinks = anchors.filter((a) =>
+      (a.getAttribute('href') ?? '').includes('yandex-metrika-analyse-dashboard'),
+    );
+    expect(deadRepoLinks).toEqual([]);
+    const privateRepoLinks = anchors.filter((a) =>
+      (a.getAttribute('href') ?? '').includes('ai-product-copilot'),
+    );
+    expect(privateRepoLinks).toEqual([]);
+    // The version badge still renders the build label (now as plain text, not a link).
+    expect(document.querySelector('[data-testid="version-badge"]')).not.toBeNull();
+  });
 });
 
 /** Router location probe (MemoryRouter does not touch window.location). */

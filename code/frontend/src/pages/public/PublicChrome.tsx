@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { BrandMark } from '../../components/BrandMark';
-import { LangToggle, ThemeToggle, VersionBadge, GITHUB_CHANGELOG_URL } from '../../components/ui';
+import { LangToggle, ThemeToggle, VersionBadge } from '../../components/ui';
 import { BuildMismatchBadge, BuildMismatchBanner } from '../../components/BuildMismatchBadge';
 import { useT } from '../../i18n';
 import { useAuth } from '../../auth/AuthContext';
@@ -99,9 +99,8 @@ export function PublicFooter(): JSX.Element {
           <Link to="/help" className="hover:text-ink">
             {t('nav.help')}
           </Link>
-          <a href={GITHUB_CHANGELOG_URL} className="hover:text-ink">
-            {t('footer.changelog')}
-          </a>
+          {/* ANA-172: external changelog link removed — the repo is private, the URL 404s
+              for any visitor. Re-add once a publicly viewable changelog exists. */}
           <span className="flex items-center gap-2">
             {/* ANA-43: warns when the landing/help bundle is older than the running backend. */}
             <BuildMismatchBadge />

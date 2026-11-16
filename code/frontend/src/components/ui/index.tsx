@@ -4,10 +4,6 @@ import { usePrefs } from '../../store/prefs';
 import { useT, fmtNum } from '../../i18n';
 import { FRONTEND_BUILD, buildLabel } from '../../lib/build-info';
 
-/** ANA-172: CHANGELOG of the project's own repo (ai-product-copilot was renamed → 404). */
-export const GITHUB_CHANGELOG_URL =
-  'https://github.com/Fighter90/yandex-metrika-analyse-dashboard/blob/main/CHANGELOG.md';
-
 /** Page title block with optional actions. */
 export function PageHeader({
   title,
@@ -407,16 +403,13 @@ export function LangToggle({
 /** «v3.1.0 · a1b2c3d · 25.10.2026» — version, git SHA and build date injected at build time. */
 export function VersionBadge({ className = '' }: { className?: string }): JSX.Element {
   return (
-    <a
-      href={GITHUB_CHANGELOG_URL}
-      target="_blank"
-      rel="noreferrer"
+    <span
       data-testid="version-badge"
-      className={`font-mono text-[11px] text-muted hover:text-accent ${className}`}
+      className={`font-mono text-[11px] text-muted ${className}`}
       title={`build ${FRONTEND_BUILD.sha} · ${FRONTEND_BUILD.date}`}
     >
       {buildLabel(FRONTEND_BUILD)}
-    </a>
+    </span>
   );
 }
 
