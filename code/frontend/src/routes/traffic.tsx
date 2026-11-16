@@ -159,6 +159,10 @@ export function TrafficView({
   const { segment } = useFilters();
   const { t, locale } = useT();
   const [sankeyOpen, setSankeyOpen] = useState(false);
+  // ANA-139: in the B2B segment the Metrika UTM set is empty BY DESIGN (segment-filter:
+  // Metrika never tags a visit as B2B) — rendering the UTM table/flow anyway produced an
+  // empty table plus a false «UTM покрытие 0.0%» warning, read on prod as lost data.
+  const isB2bSegment = segment === 'b2b';
   if (status === 'pending') return <p className="text-slate-500">{t('common.loading')}</p>;
   if (status === 'error')
     return (
@@ -174,6 +178,8 @@ export function TrafficView({
   const rows = channelRows(stats);
   const utmTable = utmRows(utm);
   const channelInsights = computeChannelInsights(stats, t, locale);
+  // Consumed only by the non-b2b UTM block below — in b2b the set is empty by design and the
+  // block is replaced by the honest note, so a segment-gated computation here would be dead.
   const utmInsights = computeUtmInsights(utm, stats, t);
   const untaggedHint = untaggedChannelHint(stats);
   const channelLabel = (c: string) => channelName(c, locale);
@@ -244,26 +250,39 @@ export function TrafficView({
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">{t('an.tr.flow')}</h2>
-          <button
-            type="button"
-            onClick={() => setSankeyOpen(true)}
-            className="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
-          >
-            {`⛶ ${t('an.tr.fullscreen')}`}
-          </button>
+          {!isB2bSegment && (
+            <button
+              type="button"
+              onClick={() => setSankeyOpen(true)}
+              className="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+            >
+              {`⛶ ${t('an.tr.fullscreen')}`}
+            </button>
+          )}
         </div>
-        <EChart
-          option={utmSankeyOption(utm, {
-            terminal: t('an.col.applications'),
-            noUtm: t('an.noUtm'),
-          })}
-          height={460}
-        />
-        <ChartCaption
-          correct={t('cap.tr.flow.correct')}
-          caveat={t('cap.tr.flow.caveat')}
-          advice={t('cap.tr.flow.advice')}
-        />
+        {isB2bSegment ? (
+          <div
+            role="status"
+            className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+          >
+            {t('an.tr.flowB2b')}
+          </div>
+        ) : (
+          <>
+            <EChart
+              option={utmSankeyOption(utm, {
+                terminal: t('an.col.applications'),
+                noUtm: t('an.noUtm'),
+              })}
+              height={460}
+            />
+            <ChartCaption
+              correct={t('cap.tr.flow.correct')}
+              caveat={t('cap.tr.flow.caveat')}
+              advice={t('cap.tr.flow.advice')}
+            />
+          </>
+        )}
       </div>
 
       {/* Fullscreen Sankey — readable on a large canvas */}
@@ -332,36 +351,51 @@ export function TrafficView({
         <h2 className="text-lg font-semibold">
           <Tooltip text={t('an.tr.utmHint')}>{t('an.tr.utm')}</Tooltip>
         </h2>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[40rem] text-sm">
-            <thead>
-              <tr className="text-left text-slate-500">
-                <th className="py-1">Source</th>
-                <th>Medium</th>
-                <th>Campaign</th>
-                <th>{t('an.col.visits')}</th>
-                <th>{t('an.col.applications')}</th>
-                <th>CR</th>
-              </tr>
-            </thead>
-            <tbody>
-              {utmTable.map((u) => (
-                <tr
-                  key={`${u.source} ${u.medium} ${u.campaign}`}
-                  className="border-t border-slate-100"
-                >
-                  <td className="py-1">{u.source}</td>
-                  <td>{u.medium}</td>
-                  <td>{u.campaign}</td>
-                  <td>{formatInt(u.visits)}</td>
-                  <td>{formatInt(u.goalReaches)}</td>
-                  <td>{formatPercent(u.conversionRate)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {utmInsights.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{utmInsights}</div>}
+        {isB2bSegment ? (
+          /* ANA-139: in b2b the Metrika UTM set is empty by design — an honest note instead of
+             an empty table + a false «0.0%» coverage warning (the prod ANA-139 report). */
+          <div
+            role="status"
+            className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+          >
+            {t('an.tr.utmB2b')}
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[40rem] text-sm">
+                <thead>
+                  <tr className="text-left text-slate-500">
+                    <th className="py-1">Source</th>
+                    <th>Medium</th>
+                    <th>Campaign</th>
+                    <th>{t('an.col.visits')}</th>
+                    <th>{t('an.col.applications')}</th>
+                    <th>CR</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {utmTable.map((u) => (
+                    <tr
+                      key={`${u.source} ${u.medium} ${u.campaign}`}
+                      className="border-t border-slate-100"
+                    >
+                      <td className="py-1">{u.source}</td>
+                      <td>{u.medium}</td>
+                      <td>{u.campaign}</td>
+                      <td>{formatInt(u.visits)}</td>
+                      <td>{formatInt(u.goalReaches)}</td>
+                      <td>{formatPercent(u.conversionRate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {utmInsights.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">{utmInsights}</div>
+            )}
+          </>
+        )}
       </div>
     </section>
   );
