@@ -58,8 +58,51 @@ describe('KpiStrip (ANA-146 mobile no-overflow)', () => {
     render(
       <KpiStrip kpi={kpi} pace={pace} goalIsPaid={false} showApplicationsCaveat weakSpot={weak} />,
     );
+    // Heuristic deadline: 1 fact day → to + 2 = 2025-01-03.
+    const date = new Date('2025-01-03T00:00:00').toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+    expect(screen.getByText(`до ${date}`)).toBeInTheDocument();
+  });
+
+  it('ANA-176: b2b segment hides the goal/remaining tiles and shows the explanation', () => {
+    setTestLocale('ru');
+    const kpi = summarizeChannels([ch('2025-01-01', 'podcast', 420, 12)], [], false, 300, 0);
+    const pace = goalPace({
+      points: [{ date: '2025-01-01', visits: 420, reaches: 12 }],
+      to: '2025-01-01',
+      target: kpi.target,
+      current: kpi.paid,
+      goalIsPaid: false,
+    });
+    useFilters.setState({ segment: 'b2b' });
+    render(
+      <KpiStrip kpi={kpi} pace={pace} goalIsPaid={false} showApplicationsCaveat weakSpot={weak} />,
+    );
+    // Плитки цели и остатка скрыты, на их месте — пояснение.
+    expect(screen.queryByText('Цель (платных билетов)')).toBeNull();
+    expect(screen.queryByText('Осталось до цели')).toBeNull();
+    expect(screen.getByText(/Цель 300 относится к общему потоку/)).toBeTruthy();
+    useFilters.setState({ segment: 'b2c_b2b' });
+  });
+
+  it('ANA-184: the target tile date always shows the year («до 3 янв. 2025 г.»)', () => {
     // 1 fact day → deadline = 2025-01-01 + 2 = 2025-01-03; the «Цель» tile repeats the date.
     // ANA-184: the year is part of the date — «без года» is ambiguous when a horizon crosses it.
+    setTestLocale('ru');
+    const kpi = summarizeChannels([ch('2025-01-01', 'podcast', 420, 12)], [], false, 300, 0);
+    const pace = goalPace({
+      points: [{ date: '2025-01-01', visits: 420, reaches: 12 }],
+      to: '2025-01-01',
+      target: kpi.target,
+      current: kpi.paid,
+      goalIsPaid: false,
+    });
+    render(
+      <KpiStrip kpi={kpi} pace={pace} goalIsPaid={false} showApplicationsCaveat weakSpot={weak} />,
+    );
     const date = new Date('2025-01-03T00:00:00').toLocaleDateString('ru-RU', {
       day: 'numeric',
       month: 'short',

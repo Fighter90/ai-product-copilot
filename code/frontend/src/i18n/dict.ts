@@ -513,6 +513,8 @@ export const ru = {
   'ov.kpi.applicationsHint': 'заявка ≠ оплата',
   'ov.kpi.b2bPaid': 'Оплачено B2B',
   'ov.kpi.gap': 'Осталось до цели',
+  'ov.kpi.b2bNoGoal':
+    'Цель 300 относится к общему потоку визитов — в сегменте B2B целей Метрики нет, поэтому плитки цели и остатка скрыты.',
   'ov.kpi.targetDeadline': 'до {date}',
   'ov.kpi.gapHint': '{paid} оплачено из {target}',
   'ov.quality.title': 'Качество данных ({n})',
@@ -2024,6 +2026,8 @@ export const en: Record<DictKey, string> = {
   'ov.kpi.applicationsHint': 'application ≠ payment',
   'ov.kpi.b2bPaid': 'B2B paid',
   'ov.kpi.gap': 'Gap to goal',
+  'ov.kpi.b2bNoGoal':
+    'The 300-ticket goal applies to the overall traffic — the B2B segment has no Metrika goals, so the goal and remaining tiles are hidden.',
   'ov.kpi.targetDeadline': 'by {date}',
   'ov.kpi.gapHint': '{paid} paid of {target}',
   'ov.quality.title': 'Data quality ({n})',

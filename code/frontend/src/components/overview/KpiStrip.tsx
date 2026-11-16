@@ -58,7 +58,10 @@ export function KpiStrip({
 }): JSX.Element {
   const { t, locale } = useT();
   // ANA-167: goal figures are always dated — the tooltip carries the selected period.
-  const { from, to } = useFilters();
+  const { from, to, segment } = useFilters();
+  // ANA-176: в сегменте B2B целей Метрики нет — плитки «Цель 300» и «Осталось до цели»
+  // показывали бессмысленные нули (регресс ANA-86); вместо них — пояснение.
+  const isB2bSegment = segment === 'b2b';
   const target = formatInt(kpi.target);
   // ANA-166: after the deadline the pace forecast loses meaning — the hero shows the final
   // result instead of «успеваем/не успеваем» and the pill switches to the expired state.
@@ -168,14 +171,23 @@ export function KpiStrip({
         </div>
 
         <div className="grid grid-cols-2 gap-3" data-testid="kpi-tiles">
-          <Kpi
-            label={t('kpi.ticketGoal')}
-            value={target}
-            define={t('hint.metric.target')}
-            /* ANA-168: the deadline date accompanies the goal everywhere — the tile repeats
-               the same date as the hero forecast line. */
-            note={t('ov.kpi.targetDeadline', { date: deadline })}
-          />
+          {isB2bSegment ? (
+            <div
+              className="col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-snug text-amber-800"
+              data-testid="kpi-b2b-goal-note"
+            >
+              {t('ov.kpi.b2bNoGoal')}
+            </div>
+          ) : (
+            <Kpi
+              label={t('kpi.ticketGoal')}
+              value={target}
+              define={t('hint.metric.target')}
+              /* ANA-168: the deadline date accompanies the goal everywhere — the tile repeats
+                 the same date as the hero forecast line. */
+              note={t('ov.kpi.targetDeadline', { date: deadline })}
+            />
+          )}
           <Kpi
             label={goalIsPaid ? t('ov.kpi.orders') : t('ov.kpi.applications')}
             value={formatInt(kpi.applications)}
@@ -191,12 +203,14 @@ export function KpiStrip({
             value={formatInt(kpi.b2bPaid)}
             define={t('hint.metric.b2bPaid')}
           />
-          <Kpi
-            label={t('ov.kpi.gap')}
-            value={formatInt(kpi.gap)}
-            define={t('hint.metric.gap')}
-            hint={t('ov.kpi.gapHint', { paid: formatInt(kpi.paid), target })}
-          />
+          {isB2bSegment ? null : (
+            <Kpi
+              label={t('ov.kpi.gap')}
+              value={formatInt(kpi.gap)}
+              define={t('hint.metric.gap')}
+              hint={t('ov.kpi.gapHint', { paid: formatInt(kpi.paid), target })}
+            />
+          )}
         </div>
       </div>
     </section>
