@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import type { ChannelStat, B2bDeal, PageStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
+import { fireObservedResize } from '../test/resize-observer';
+import { OUTSIDE_LABEL_GUTTER } from '../lib/funnel';
 
 vi.mock('../lib/api', () => ({
   api: {
@@ -15,10 +17,14 @@ vi.mock('../lib/api', () => ({
 // ANA-124: capture the chart options the route hands to EChart so option-level guards
 // (grid.containLabel) are unit-testable without a canvas. The testid matches the real
 // EChart markup so existing waitFor assertions keep working.
-const { chartOptions } = vi.hoisted(() => ({ chartOptions: [] as object[] }));
+const { chartOptions, chartHeights } = vi.hoisted(() => ({
+  chartOptions: [] as object[],
+  chartHeights: [] as number[],
+}));
 vi.mock('../components/charts/EChart', () => ({
-  EChart: ({ option }: { option: object }) => {
+  EChart: ({ option, height }: { option: object; height?: number }) => {
     chartOptions.push(option);
+    chartHeights.push(height ?? 300);
     return <div data-testid="echart" />;
   },
 }));
@@ -442,5 +448,88 @@ describe('FunnelView — chart option guards (ANA-124)', () => {
     ) as { grid: { containLabel?: boolean } } | undefined;
     expect(crChart).toBeDefined();
     expect(crChart?.grid.containLabel).toBe(true);
+  });
+
+  it('funnel chart reserves vertical room for wrapped stage labels: height ≥ 360 (ANA-177)', () => {
+    // ANA-177: a wrapped 4-line label (~64px) does not fit a 300px chart's stage band
+    // (~56px) — it bleeds into the neighbouring stage's label («наложено»).
+    chartOptions.length = 0;
+    chartHeights.length = 0;
+    render(<FunnelView status="success" stats={stats} deals={deals} geoDevice={[]} pages={[]} />);
+    return waitFor(() => expect(chartOptions.length).toBeGreaterThanOrEqual(3)).then(() => {
+      const funnelIdx = chartOptions.findIndex(
+        (o) => (o as { series?: Array<{ type?: string }> }).series?.[0]?.type === 'funnel',
+      );
+      expect(funnelIdx).toBeGreaterThanOrEqual(0);
+      expect(chartHeights[funnelIdx]).toBeGreaterThanOrEqual(360);
+    });
+  });
+});
+
+// ANA-177 review round 3: the jsdom ResizeObserver stub used to be fully inert, so the
+// measured-width hook (`useMeasuredWidth`) never fired in any test — the feature's core
+// mechanism (measured canvas width driving the pixel-based label threshold) had zero
+// coverage in the component path. The capturing stub (test/resize-observer.ts) lets tests
+// fire it with a real width and watch the funnel option rebuild.
+describe('FunnelView — measured canvas width drives the label decision (ANA-177 round 3)', () => {
+  // Stages 100 → 20 → 33 → 15: every stage ≥ 128px at a 900px canvas (min share 15% × 900
+  // = 135px), but the 15% stage is only 54.9px at the unmeasured 366px default — so the
+  // measured vs default width must flip this stage's label placement.
+  const wideStats: ChannelStat[] = [
+    { ...stats[0]!, visits: 100, goalReaches: 20, conversionRate: 0.2 },
+  ];
+  const wideDeals: B2bDeal[] = [
+    { id: 1, company: 'Acme', tickets: 18, stage: 'lead', dateAdded: '2025-01-01' },
+    { id: 2, company: 'Beta', tickets: 15, stage: 'paid', dateAdded: '2025-01-01' },
+  ];
+
+  type FunnelSeries = {
+    type?: string;
+    left?: number;
+    right?: number;
+    data: Array<{ label?: { position?: string } }>;
+  };
+  const lastFunnelSeries = (): FunnelSeries => {
+    const funnelOptions = chartOptions.filter(
+      (o) => (o as { series?: FunnelSeries[] }).series?.[0]?.type === 'funnel',
+    );
+    const option = funnelOptions[funnelOptions.length - 1] as { series: FunnelSeries[] };
+    return option.series[0]!;
+  };
+
+  it('the measured width overrides the default: a stage outside at 366px fits inside at 900px', async () => {
+    chartOptions.length = 0;
+    render(
+      <FunnelView status="success" stats={wideStats} deals={wideDeals} geoDevice={[]} pages={[]} />,
+    );
+    await waitFor(() => expect(chartOptions.length).toBeGreaterThanOrEqual(3));
+    // jsdom reports nothing yet → the builder falls back to its documented 366px default:
+    // the 15%-share stage is under 128px → outside label + reserved left gutter.
+    expect(lastFunnelSeries().left).toBe(OUTSIDE_LABEL_GUTTER);
+    // The ResizeObserver delivers the real container width (900px desktop card)…
+    act(() => fireObservedResize(900));
+    // …and the funnel re-renders with a rebuilt option driven by that measurement.
+    await waitFor(() => expect(chartOptions.length).toBeGreaterThanOrEqual(4));
+    const measured = lastFunnelSeries();
+    // Every stage ≥ 128px at 900px → all labels fit inside, no gutter is reserved…
+    expect(measured.left).toBeUndefined();
+    expect(measured.right).toBeUndefined();
+    // …and no per-item outside label survives the rebuild.
+    for (const d of measured.data) expect(d.label?.position).toBeUndefined();
+  });
+
+  it('measurements without a usable width are ignored (no rerender, default stays)', async () => {
+    chartOptions.length = 0;
+    render(
+      <FunnelView status="success" stats={wideStats} deals={wideDeals} geoDevice={[]} pages={[]} />,
+    );
+    await waitFor(() => expect(chartOptions.length).toBeGreaterThanOrEqual(3));
+    const before = chartOptions.length;
+    // An empty entry list (contentRect absent) and a 0-width measurement — neither may move
+    // the option off its documented default (width > 0 is the only accepted measurement).
+    act(() => fireObservedResize());
+    act(() => fireObservedResize(0));
+    expect(chartOptions.length).toBe(before);
+    expect(lastFunnelSeries().left).toBe(OUTSIDE_LABEL_GUTTER);
   });
 });

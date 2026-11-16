@@ -8,8 +8,10 @@ import { usePrefs } from '../../store/prefs';
  *   (textBorder/textShadow/shadow — источник «непонятной» обводки);
  * - явно заданные билдером настройки (цвет, formatter, позиция) сохраняются.
  * Мутация идемпотентна: option пересобирается билдерами на каждый рендер.
+ * Экспортирована для контракта-теста: выносные подписи воронки без явного цвета получают
+ * цвет темы и выигрывают глубокий merge у белого series-level лейбла (ANA-177 review).
  */
-function applyLabelStyle(node: unknown, dark: boolean): void {
+export function applyLabelStyle(node: unknown, dark: boolean): void {
   if (Array.isArray(node)) {
     node.forEach((item) => applyLabelStyle(item, dark));
     return;

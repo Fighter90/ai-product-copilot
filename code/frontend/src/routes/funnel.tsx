@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
 import type { ChannelStat, B2bDeal, GeoDeviceStat, PageStat } from '@pca/shared';
 import { aggregatePeriod, pageKey, periodTotals } from '@pca/shared';
 import { api } from '../lib/api';
@@ -12,6 +13,7 @@ import {
   funnelOption,
   hasFunnelData,
   valuesFromStages,
+  type FunnelStage,
 } from '../lib/funnel';
 import { EChart } from '../components/charts/EChart';
 import { ChartCaption } from '../components/charts/ChartCaption';
@@ -132,6 +134,49 @@ function FunnelLossAnalysis({
           </span>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Observe the chart container's width (ANA-177 review round 2): the inside/outside label
+ * decision in `funnelOption` is pixel-based (stage trapezoid vs the 128px block), so the real
+ * canvas width decides placement instead of an assumed breakpoint. `0` = not measured yet —
+ * the option builder then falls back to its documented default.
+ */
+function useMeasuredWidth<T extends HTMLElement>(): [React.RefObject<T>, number] {
+  const ref = useRef<T>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      if (w > 0) setWidth(Math.round(w));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, width];
+}
+
+/** The «Воронка конверсии» chart with a pixel-accurate inside/outside label decision. */
+function FunnelChart({ stages }: { stages: FunnelStage[] }): JSX.Element {
+  const { t } = useT();
+  const [ref, width] = useMeasuredWidth<HTMLDivElement>();
+  return (
+    <div ref={ref}>
+      {/* ANA-177: 360px keeps ~69px per stage band so a wrapped 4-line label (~64px)
+          fits its band instead of bleeding into the neighbour's label. Round 2: the
+          measured width drives the pixel-based narrow-stage threshold (ANA-177 review). */}
+      <EChart
+        option={funnelOption(
+          stages,
+          t('an.fn.funnel.prevShort'),
+          width > 0 ? { chartWidthPx: width } : {},
+        )}
+        height={360}
+      />
     </div>
   );
 }
@@ -290,7 +335,7 @@ export function FunnelView({
         <h3 className="mb-2 text-lg font-semibold">{t('an.fn.conversionFunnel')}</h3>
         {hasFunnelData(stages) ? (
           <>
-            <EChart option={funnelOption(stages, t('an.fn.funnel.prevShort'))} />
+            <FunnelChart stages={stages} />
             {/* Text mirror of the funnel: every stage with its absolute and % of the previous
                 one, readable without the canvas (screen readers, copy-paste). */}
             <ol
