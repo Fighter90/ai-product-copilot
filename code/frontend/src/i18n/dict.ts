@@ -239,6 +239,8 @@ export const ru = {
   'admin.ai.test': 'Проверить соединение',
   'admin.ai.testing': 'Проверяю…',
   'admin.ai.lastTestFailed': 'последняя проверка неуспешна — провайдер исключён из цепочки',
+  // ANA-183: включённая карточка без ключа тоже вне цепочки «Авто» — помечаем ⚠-бейджем.
+  'admin.ai.noKeyExcluded': 'ключ не настроен — провайдер исключён из цепочки',
   'admin.ai.usage': 'Использование за 30 дней',
   'admin.ai.calls': 'вызовов',
   'admin.ai.failures': 'ошибок',
@@ -1710,6 +1712,8 @@ export const en: Record<DictKey, string> = {
   'admin.ai.test': 'Test connection',
   'admin.ai.testing': 'Testing…',
   'admin.ai.lastTestFailed': 'last test failed — provider excluded from the chain',
+  // ANA-183: an enabled card without a key is also out of the “Auto” chain — marked with ⚠.
+  'admin.ai.noKeyExcluded': 'no API key — provider excluded from the chain',
   'admin.ai.usage': 'Usage, last 30 days',
   'admin.ai.calls': 'calls',
   'admin.ai.failures': 'failures',

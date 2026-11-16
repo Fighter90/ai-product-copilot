@@ -96,6 +96,16 @@ function ProviderCard({ p }: { p: ProviderView }): JSX.Element {
               </span>
             </Pill>
           )}
+          {/* ANA-183: включённая карточка без ключа тоже вне цепочки «Авто» и /ai/available
+              (бэкенд: usable = enabled + ключ + последний тест не провален), но до сих пор
+              выглядела рабочей — помечаем ⚠-бейджем. */}
+          {p.enabled && !p.hasSecret && (
+            <Pill tone="amber">
+              <span title={t('admin.ai.noKeyExcluded')} className="inline-flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" /> {t('admin.ai.noKeyExcluded')}
+              </span>
+            </Pill>
+          )}
         </span>
       }
       actions={

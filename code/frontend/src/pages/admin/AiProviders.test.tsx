@@ -198,3 +198,57 @@ describe('AiProviders model catalog (ANA-151)', () => {
     );
   });
 });
+
+/**
+ * ANA-183: an «on» card that the backend keeps OUT of the «Авто» chain must carry the ⚠ badge.
+ * The chain admits a provider only when enabled + key set + last test not failed (backend
+ * `usable()`); REG-07 marked the failed-test case, but an enabled card with NO key still rendered
+ * a plain «on» pill with no warning while «Авто» silently skipped it.
+ */
+describe('AiProviders on+excluded badge (ANA-183)', () => {
+  beforeEach(() => {
+    vi.mocked(v3.providers).mockResolvedValue([{ ...yandexgpt, enabled: true }]);
+    vi.mocked(v3.aiUsage).mockResolvedValue([]);
+    vi.mocked(v3.testProvider).mockResolvedValue({ ok: true, message: 'ok', ms: 1 });
+    vi.mocked(v3.providerModels).mockResolvedValue({ source: 'static' as const, models: [] });
+  });
+  afterEach(() => setTestLocale('ru'));
+
+  it('marks an enabled provider without a key as excluded from the chain', async () => {
+    renderWithProviders(<AiProviders />);
+    await screen.findByText('YandexGPT (AI Studio)');
+    expect(
+      await screen.findByText('ключ не настроен — провайдер исключён из цепочки'),
+    ).toBeInTheDocument();
+  });
+
+  it('EN parity: the same badge in English, no Cyrillic leakage', async () => {
+    setTestLocale('en');
+    const { container } = renderWithProviders(<AiProviders />);
+    await screen.findByText('YandexGPT (AI Studio)');
+    expect(
+      await screen.findByText('no API key — provider excluded from the chain'),
+    ).toBeInTheDocument();
+    expectNoCyrillic(container);
+  });
+
+  it('badge stays specific: REG-07 and healthy cards keep their view', async () => {
+    vi.mocked(v3.providers).mockResolvedValue([
+      {
+        ...openrouter,
+        lastTest: { at: '2026-10-29T00:00:00Z', ok: false, message: 'HTTP 400: credit balance' },
+      },
+      { ...yandexgpt, enabled: true },
+      { ...openrouter, id: 'anthropic', name: 'Anthropic' },
+    ]);
+    renderWithProviders(<AiProviders />);
+    await screen.findByText('Anthropic');
+    // REG-07 badge (failed last test) is untouched — once, on the failed card…
+    expect(
+      screen.getAllByText('последняя проверка неуспешна — провайдер исключён из цепочки'),
+    ).toHaveLength(1);
+    // …and the keyless badge appears exactly once: on the keyless enabled card only,
+    // not on the healthy enabled Anthropic card.
+    expect(screen.getAllByText('ключ не настроен — провайдер исключён из цепочки')).toHaveLength(1);
+  });
+});
