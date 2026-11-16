@@ -885,6 +885,12 @@ export const ru = {
   'an.tr.utm': 'UTM-разбивка',
   'an.tr.utmHint':
     'UTM-покрытие = визиты с UTM-метками / все визиты за период. Чем выше, тем точнее атрибуция источников.',
+  // ANA-139: в сегменте B2B данных UTM Метрики нет по построению — пояснение вместо пустой
+  // таблицы и ложного «покрытие 0.0%».
+  'an.tr.utmB2b':
+    'В сегменте B2B UTM-разметки Метрики нет — B2B-продажи учитываются вручную (b2b_manual). UTM-разбивка доступна в сегментах B2C и B2C+B2B.',
+  'an.tr.flowB2b':
+    'В сегменте B2B UTM-разметки Метрики нет — поток «источник → кампания → заявки» не строится. Переключитесь на сегмент B2C+B2B.',
   'an.beh.error': 'Не удалось загрузить поведение.',
   'an.beh.averages': 'Средние: отказы {bounce} · CR {cr}',
   'an.beh.entryCount': 'Страниц входа',
@@ -2399,6 +2405,12 @@ export const en: Record<DictKey, string> = {
   'an.tr.utm': 'UTM breakdown',
   'an.tr.utmHint':
     'UTM coverage = visits with UTM tags / all visits in the period. The higher it is, the more accurate the source attribution.',
+  // ANA-139: the B2B segment carries no Metrika UTM data by construction — an honest note
+  // instead of an empty table and a false «0.0% coverage» warning.
+  'an.tr.utmB2b':
+    'The B2B segment carries no Metrika UTM tags — B2B sales are tracked manually (b2b_manual). The UTM breakdown is available in the B2C and B2C+B2B segments.',
+  'an.tr.flowB2b':
+    'The B2B segment carries no Metrika UTM tags, so the source → campaign → applications flow cannot be built. Switch to the B2C+B2B segment.',
   'an.beh.error': 'Failed to load behaviour data.',
   'an.beh.averages': 'Averages: bounce {bounce} · CR {cr}',
   'an.beh.entryCount': 'Entry pages',

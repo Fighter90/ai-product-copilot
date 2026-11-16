@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import type { ChannelStat, UtmStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
+import { isoDaysAgo, useFilters } from '../store/filters';
 
 vi.mock('../lib/api', () => ({ api: { channels: vi.fn(), utm: vi.fn() } }));
 import { api } from '../lib/api';
@@ -160,6 +161,146 @@ describe('Traffic (data wrapper)', () => {
     renderWithProviders(<Traffic />);
     expect(await screen.findByText('Каналы — визиты')).toBeInTheDocument();
     expect(screen.getByText('UTM-разбивка')).toBeInTheDocument();
+  });
+});
+
+describe('Traffic (data wrapper — ANA-139 data path)', () => {
+  afterEach(() => {
+    useFilters.setState({ segment: 'b2c_b2b', from: isoDaysAgo(13), to: isoDaysAgo(0) });
+  });
+
+  // Prod-shaped payload (ANA-139 report, 17.11): GET /api/metrics/utm?from=2026-11-10&to=
+  // 2026-11-16 returned 201 per-day utm_stats rows with named campaigns while the
+  // «UTM-разбивка» table rendered 0 rows / «покрытие 0.0%». The issue body does not record
+  // the reporter's segment, so the NON-b2b path is pinned end to end here through the real
+  // data wrapper: api.utm → applyTestTrafficFilter → filterUtmBySegment (passthrough outside
+  // b2b) → utmRows → table. Named campaigns AND the «(none)» bucket must survive, per-day
+  // rows must aggregate, and the coverage insight must show the computed share — never the
+  // false «0.0%». (segment-filter.test.ts pins the filter unit; this pins the composed path.)
+  const prodLikeUtm: UtmStat[] = [
+    utmStat({
+      date: '2026-11-10',
+      utmSource: 'vk',
+      utmMedium: 'cpc',
+      utmCampaign: 'pcamp_nov',
+      visits: 60,
+      goalReaches: 6,
+    }),
+    utmStat({
+      date: '2026-11-11',
+      utmSource: 'vk',
+      utmMedium: 'cpc',
+      utmCampaign: 'pcamp_nov',
+      visits: 55,
+      goalReaches: 5,
+    }),
+    utmStat({
+      date: '2026-11-10',
+      utmSource: 'telegram',
+      utmMedium: 'social',
+      utmCampaign: 'ambassadors',
+      visits: 40,
+      goalReaches: 4,
+    }),
+    utmStat({
+      date: '2026-11-10',
+      utmSource: '(none)',
+      utmMedium: '(none)',
+      utmCampaign: '(none)',
+      visits: 5,
+      goalReaches: 0,
+    }),
+  ];
+
+  it.each(['b2c_b2b', 'b2c'] as const)(
+    'segment %s keeps every API UTM row and shows the computed coverage, not a false «0.0%»',
+    async (segment) => {
+      useFilters.setState({ segment, from: '2026-11-10', to: '2026-11-16' });
+      // 200 channel visits vs 155 tagged → coverage 77.5% (≥ 70% → «хорошая атрибуция»).
+      channels.mockResolvedValue([
+        stat({ channel: 'Ad traffic', utmSource: null, visits: 100 }),
+        stat({ channel: 'Direct traffic', utmSource: null, visits: 100 }),
+      ]);
+      utm.mockResolvedValue(prodLikeUtm);
+
+      renderWithProviders(<Traffic />);
+      expect(await screen.findByText('UTM-разбивка')).toBeInTheDocument();
+      // The exact request from the issue body reaches the API untouched.
+      expect(utm).toHaveBeenCalledWith({ from: '2026-11-10', to: '2026-11-16' });
+      // Named campaigns are in the table…
+      expect(screen.getByText('ambassadors')).toBeInTheDocument();
+      // …and per-day rows aggregate into one triple: 60 + 55 visits, 6 + 5 applications.
+      const vkRow = screen.getByRole('row', { name: /vk cpc pcamp_nov/ });
+      expect(within(vkRow).getByText('115')).toBeInTheDocument();
+      expect(within(vkRow).getByText('11')).toBeInTheDocument();
+      // The «(none)» bucket the issue criterion asks for is on the period too.
+      expect(screen.getAllByText('(none)').length).toBeGreaterThan(0);
+      // Coverage is computed from the data — no «0.0%» false alarm from the prod report.
+      expect(screen.getByText(/UTM покрытие 77\.5% — хорошая атрибуция/)).toBeInTheDocument();
+    },
+  );
+
+  it('segment b2b empties the UTM set through the segment filter itself, while the API rows stay intact', async () => {
+    // The only segment whose UTM set can be empty by design: Metrika never tags a visit as
+    // B2B (segment-filter.filterUtmBySegment → []). Pinned through the REAL data wrapper:
+    // the API returns the rows, the segment filter drops them, and the honest note replaces
+    // the table — the mechanism behind the b2b arm, not lost data.
+    useFilters.setState({ segment: 'b2b', from: '2026-11-10', to: '2026-11-16' });
+    channels.mockResolvedValue([stat({ channel: 'b2b_manual', utmSource: null })]);
+    utm.mockResolvedValue(prodLikeUtm);
+
+    renderWithProviders(<Traffic />);
+    expect(await screen.findByText(/UTM-разбивка доступна в сегментах/)).toBeInTheDocument();
+    expect(screen.queryByText('Source')).toBeNull();
+    expect(screen.queryByText(/UTM покрытие/)).toBeNull();
+  });
+});
+
+describe('TrafficView (b2b segment — ANA-139)', () => {
+  afterEach(() => {
+    useFilters.setState({ segment: 'b2c_b2b' });
+  });
+
+  it('ANA-139: b2b shows no misleading «UTM покрытие 0.0%» warning or empty UTM table', () => {
+    // Prod report (17.11, v3.4.57): the section rendered an empty table plus «UTM покрытие
+    // 0.0% — часть трафика не атрибутирована» while GET /api/metrics/utm returned 201 rows.
+    // The issue body does not record the reporter's segment; b2b is the ONLY segment whose
+    // UTM set is empty BY DESIGN (Metrika never tags B2B visits — segment-filter
+    // .filterUtmBySegment), and the data-wrapper tests below pin that every non-b2b segment
+    // keeps all API rows. Here: no false zero-coverage alarm in that arm.
+    useFilters.setState({ segment: 'b2b' });
+    render(<TrafficView status="success" stats={[stat({ channel: 'Ручные сделки' })]} utm={[]} />);
+    // No false «0.0% coverage» insight — the zero here is by construction, not a data problem.
+    expect(screen.queryByText(/UTM покрытие 0\.0%/)).toBeNull();
+    expect(screen.queryByText(/часть трафика не атрибутирована/)).toBeNull();
+    // No empty UTM table (no «Source» column header) — an honest note instead.
+    expect(screen.queryByText('Source')).toBeNull();
+    expect(screen.getByText(/B2B-продажи учитываются вручную \(b2b_manual\)/)).toBeInTheDocument();
+  });
+
+  it('ANA-139: b2b replaces the empty source→campaign→applications flow chart with a note', () => {
+    useFilters.setState({ segment: 'b2b' });
+    render(<TrafficView status="success" stats={[stat({ channel: 'Ручные сделки' })]} utm={[]} />);
+    // The flow block must not render a blank 460px ECharts canvas: honest note instead.
+    expect(
+      screen.getByText(/поток «источник → кампания → заявки» не строится/),
+    ).toBeInTheDocument();
+    // The fullscreen sankey button is pointless in b2b — hidden with the chart.
+    expect(screen.queryByRole('button', { name: /Развернуть на весь экран/ })).toBeNull();
+  });
+
+  it('ANA-139: non-b2b segments keep the UTM table and the coverage insight', () => {
+    useFilters.setState({ segment: 'b2c_b2b' });
+    render(
+      <TrafficView
+        status="success"
+        stats={[stat({ utmSource: null, visits: 100 })]}
+        utm={[utmStat({ visits: 10 })]}
+      />,
+    );
+    expect(screen.getByText('Source')).toBeInTheDocument();
+    expect(screen.getByText(/UTM покрытие/)).toBeInTheDocument();
+    expect(screen.queryByText(/B2B-продажи учитываются вручную/)).toBeNull();
   });
 });
 
