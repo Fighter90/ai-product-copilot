@@ -345,6 +345,8 @@ export const ru = {
   'kpi.whatif.deviationLabel': 'К дедлайну {date}',
   // REG-04 (ANA-93): the period is only partially covered by the synced data.
   'kpi.whatif.partialData': 'прогноз по неполным данным',
+  // ANA-171 (заявка ≠ оплата): the what-if model extrapolates goal reaches, not payments.
+  'kpi.whatif.appsNotPaid': 'прогноз по заявкам, не по оплатам',
   'kpi.whatif.deviationAhead': '−{n} дн. (запас)',
   'kpi.whatif.deviationBehind': '+{n} дн. (отставание)',
   'kpi.whatif.onTime': 'точно в дедлайн',
@@ -1817,6 +1819,8 @@ export const en: Record<DictKey, string> = {
   'kpi.whatif.deviationLabel': 'To the deadline {date}',
   // REG-04 (ANA-93): the period is only partially covered by the synced data.
   'kpi.whatif.partialData': 'forecast based on partial data',
+  // ANA-171 (заявка ≠ оплата): the what-if model extrapolates goal reaches, not payments.
+  'kpi.whatif.appsNotPaid': 'forecast by applications, not payments',
   'kpi.whatif.deviationAhead': '−{n} d (ahead)',
   'kpi.whatif.deviationBehind': '+{n} d (behind)',
   'kpi.whatif.onTime': 'exactly on the deadline',

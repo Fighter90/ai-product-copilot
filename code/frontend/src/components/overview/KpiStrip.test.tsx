@@ -109,6 +109,23 @@ describe('KpiStrip (ANA-146 mobile no-overflow)', () => {
     expect(screen.getByTestId('hero-smart')).toHaveTextContent('Достичь ≥300 платных билетов');
   });
 
+  it('ANA-171: a paid pace shows «Темп оплат», never the applications upper-estimate line', () => {
+    setTestLocale('ru');
+    const kpi = summarizeChannels([ch('2025-01-01', 'podcast', 420, 12)], [], false, 300, 0);
+    const pace = goalPace({
+      points: [{ date: '2025-01-01', visits: 0, reaches: 15 }],
+      to: '2025-01-01',
+      target: kpi.target,
+      current: 15,
+      goalIsPaid: true,
+    });
+    render(
+      <KpiStrip kpi={kpi} pace={pace} goalIsPaid showApplicationsCaveat={false} weakSpot={weak} />,
+    );
+    expect(screen.getByText(/Темп оплат: 15/)).toBeInTheDocument();
+    expect(screen.queryByText(/Темп заявок/)).toBeNull();
+  });
+
   it('ANA-166: after the deadline the hero switches to the expired state — итог instead of forecast', () => {
     setTestLocale('ru');
     const kpi = summarizeChannels([ch('2025-01-01', 'podcast', 420, 12)], [], false, 300, 0);

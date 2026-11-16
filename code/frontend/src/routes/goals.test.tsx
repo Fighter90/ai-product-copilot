@@ -158,6 +158,25 @@ describe('KPI & forecast (GoalsView)', () => {
     expect(screen.queryByTestId('forecast-partial')).not.toBeInTheDocument();
   });
 
+  // ANA-171 (заявка ≠ оплата): the what-if model extrapolates goal reaches — the amber caption
+  // sits right at the forecast date, so «Дата достижения цели» never reads as a payments date.
+  it('ANA-171: captions the forecast date «прогноз по заявкам, не по оплатам»', () => {
+    view();
+    const flag = screen.getByTestId('forecast-apps-not-paid');
+    expect(flag).toHaveTextContent('прогноз по заявкам, не по оплатам');
+    // …right at the date («Дата достижения цели»).
+    expect(flag.parentElement).toHaveTextContent('Дата достижения цели');
+  });
+
+  it('ANA-171: the applications-forecast caption has no Cyrillic in en', () => {
+    setTestLocale('en');
+    const { container } = view();
+    expect(screen.getByTestId('forecast-apps-not-paid')).toHaveTextContent(
+      'forecast by applications, not payments',
+    );
+    expectNoCyrillic(container);
+  });
+
   it('REG-04 (ANA-93): captions the partial forecast without Cyrillic in en', () => {
     setTestLocale('en');
     const { container } = view({ from: '2024-12-25', coverageFrom: '2025-01-01' });
