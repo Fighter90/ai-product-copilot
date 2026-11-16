@@ -55,10 +55,9 @@ export function audienceBarOption(rows: AudienceRow[], title: string): object {
   };
 }
 
-/** ECharts donut: share of visits by device category (title from the caller — dict-driven). */
-export function deviceShareOption(rows: AudienceRow[], title: string): object {
+/** ECharts donut: share of visits by device category (no built-in title — the Overview Card header carries it, ANA-185). */
+export function deviceShareOption(rows: AudienceRow[]): object {
   return {
-    title: { text: title, left: 'center', textStyle: { fontSize: 13 } },
     tooltip: { trigger: 'item', ...intTooltip },
     legend: { data: rows.map((r) => r.label), bottom: 0 },
     series: [
