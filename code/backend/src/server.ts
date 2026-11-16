@@ -69,6 +69,8 @@ async function main(): Promise<void> {
     hypotheses,
     decisions,
     b2b,
+    // ANA-165: the Marketing page's weekly grid joins the snapshot (report + AI analysis).
+    marketing,
     kpiTarget: () => settings.get('KPI_TARGET'),
     primaryGoalId: () => settings.getNumber('GOAL_ID'),
     b2cPaid: (range) => b2cPayments.sumTickets(range),

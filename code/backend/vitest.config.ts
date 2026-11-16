@@ -6,13 +6,15 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
     // scrypt-backed suites (secrets, passwords) are CPU-bound and blow the 5 s default on a
     // loaded box; vitest 4 fails them even when the overrun comes from a blocked event loop.
-    testTimeout: 20_000,
+    // 60 s: the ANA-165 gate saw POST /api/users (scrypt) overrun the 20 s ceiling at 22.7 s
+    // while backend+frontend coverage ran in parallel on one box (ANA-125 precedent, ×4 headroom).
+    testTimeout: 60_000,
     // Same hazard in hooks: vitest 4 caps beforeEach at its own 10 s default regardless of
     // testTimeout. build()-style beforeEach (scrypt users + SQLite migrations + Fastify ready)
     // blow it under parallel --coverage load; the hook then never assigns the test ctx and
     // afterEach crashes with «Cannot read properties of undefined (reading 'app')», failing
     // every test in the file (ANA-125 review round 3 gate failure).
-    hookTimeout: 20_000,
+    hookTimeout: 60_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
