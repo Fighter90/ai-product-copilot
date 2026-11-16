@@ -131,6 +131,9 @@ export class SnapshotBuilder {
         b2cApplications,
         b2bPaidTickets,
         gap,
+        // ANA-193: exact paid B2C rides in the snapshot, so History's plan→fact meta is
+        // exact (not the credited target−gap header) and overshoots are not capped.
+        b2cPaidTickets,
       },
       // The cache array is shared+frozen (ANA-154) — the snapshot gets its own copy so the
       // stored payload stays mutable-typed and independent of the cache's identity.

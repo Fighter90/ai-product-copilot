@@ -3,6 +3,7 @@ import { KPI_TARGET_PAID_TICKETS, resolveKpiTarget } from '@pca/shared';
 import type { MetricsRepo } from '../db/repositories/metrics-repo';
 import { resolvePrimaryGoal } from '../metrika/primary-goal';
 import { PC_GOALS_REFERENCE } from '../metrika/pc-goals-reference';
+import { isIsoDay } from '../utils/date-range';
 
 export interface MetricsRouteOptions {
   readonly repo: MetricsRepo;
@@ -132,5 +133,26 @@ export async function metricsRoutes(
       // zeros — the FilterBar badge «N дней защищены от перезаписи» reads this.
       protectedDays: opts.repo.countProtectedDays(),
     }),
+  );
+
+  // ANA-139 (12.11 prod feedback): the missing DAYS of every derived stat table inside a window —
+  // per-table min/max cannot show a hole INSIDE the window (utm carries day 1 and day 14 while
+  // 2..13 are missing). Machine-readable «Метрика vs дашборд» hole report: the evidence JSON for
+  // the UTM reconciliation and the refill source (POST /api/sync/gaps).
+  app.get(
+    '/metrics/gaps',
+    { schema: { tags: ['metrics'], summary: 'Per-table missing-day ranges (holes) in a window' } },
+    async (req, reply) => {
+      const q = req.query as { from?: string; to?: string };
+      if (!q.from || !q.to) {
+        return reply.code(400).send({ error: 'from and to are required' });
+      }
+      // ANA-139 (round-3 review): a garbage date iterates zero days → a clean-looking
+      // «всё покрыто» report for an invalid window. Reject the format before the repo.
+      if (!isIsoDay(q.from) || !isIsoDay(q.to)) {
+        return reply.code(400).send({ error: 'from and to must be YYYY-MM-DD' });
+      }
+      return { from: q.from, to: q.to, tables: opts.repo.statsCoverageGaps(q.from, q.to) };
+    },
   );
 }

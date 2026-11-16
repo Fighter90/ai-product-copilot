@@ -177,6 +177,9 @@ export function buildServer(
       : deps.runSync,
     // ANA-15: record every run so the admin sync-status UI can show the result + step errors.
     recordRun: cab ? new SyncRunRepo(cab.db) : undefined,
+    // ANA-139: the refill endpoint (POST /api/sync/gaps) reads the per-table hole report from
+    // the same cached repo answers as /metrics/coverage.
+    coverageGaps: (from, to) => deps.metrics.statsCoverageGaps(from, to),
   });
   app.register(reportRoutes, {
     prefix: '/api',

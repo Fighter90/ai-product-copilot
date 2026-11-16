@@ -131,6 +131,17 @@ describe('requiresAdmin', () => {
     expect(requiresAdmin('post', '/api/sync?x=1')).toBe(true);
   });
 
+  // ANA-139 (round-3 review): the gap refill spends Metrika quota exactly like /sync — prove the
+  // ADMIN_RULES prefix (not a per-route option) covers POST /api/sync/gaps too, so the guard is
+  // enforced by the global onRequest hook no matter how the route plugin is registered.
+  it('the gap-refill route /api/sync/gaps is admin-only via the same prefix rule', () => {
+    expect(requiresAdmin('POST', '/api/sync/gaps')).toBe(true);
+    expect(requiresAdmin('post', '/api/sync/gaps?x=1')).toBe(true);
+    // method-less prefix rule: every method under /api/sync* is admin-only (incl. GET /status,
+    // which feeds the admin sync-status UI).
+    expect(requiresAdmin('GET', '/api/sync/gaps')).toBe(true);
+  });
+
   it('settings sub-routes (refresh, datalens token) and PATCH are admin-only', () => {
     expect(requiresAdmin('POST', '/api/settings/refresh')).toBe(true);
     expect(requiresAdmin('POST', '/api/settings/datalens-token')).toBe(true);

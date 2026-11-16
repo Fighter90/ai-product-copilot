@@ -129,6 +129,46 @@ export function FilterBar(): JSX.Element {
     coverage && staleTables[0] ? (coverage.tables?.[staleTables[0]]?.to ?? null) : null;
   const staleLabels = staleTables.map((k) => t(TABLE_LABEL[k]));
 
+  // ANA-139 round 2: interior holes — a table can carry the period edges while the days between
+  // are missing (the step failed on the days the local machine was off). Per-table min/max cannot
+  // see that; probe the exact missing-day report (GET /metrics/gaps) for the selected period.
+  // Advisory like coverage: a failed probe just hides the prompt; re-probed after every refill.
+  const [gaps, setGaps] = useState<Record<string, Array<{ from: string; to: string }>> | null>(
+    null,
+  );
+  useEffect(() => {
+    let alive = true;
+    http<{ tables: Record<string, Array<{ from: string; to: string }>> }>(
+      `/metrics/gaps?from=${from}&to=${to}`,
+    )
+      .then((g) => {
+        if (alive) setGaps(g.tables);
+      })
+      .catch(() => {
+        if (alive) setGaps(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [from, to, backfill]);
+  const holeTables = gaps ? DERIVED_TABLE_KEYS.filter((k) => (gaps[k]?.length ?? 0) > 0) : [];
+  const holeLabels = holeTables.map((k) => t(TABLE_LABEL[k]));
+
+  // ANA-139 round 2 review: a coverage entry present without a usable `to` (empty string from a
+  // half-written backend response) made staleTables non-empty with a falsy staleDate, which
+  // fell into the holes branch and rendered «У  есть пропуски…» with an EMPTY table list.
+  // Compute the one honest sentence first; no sentence → no banner (it is advisory and both
+  // probes re-run constantly, so a real problem re-surfaces on the next tick).
+  const bannerText =
+    staleTables.length > 0 && staleDate
+      ? t('dq.coverageStale', {
+          tables: staleLabels.join(', '),
+          date: fmtDate(staleDate, locale),
+        })
+      : holeLabels.length > 0
+        ? t('dq.coverageHoles', { tables: holeLabels.join(', ') })
+        : null;
+
   const runBackfill = async (): Promise<void> => {
     if (!coverageFrom) return;
     setBackfill('running');
@@ -143,12 +183,14 @@ export function FilterBar(): JSX.Element {
     }
   };
 
-  // ANA-139: the gap sits INSIDE the selected period (channels cover it) → re-sync the period
-  // end to end so the lagging utm/geo/page datasets are re-parsed («допарсить»).
+  // ANA-139: the gap sits INSIDE the selected period (channels cover it) → «допарсить» refills
+  // EXACTLY the missing days (POST /sync/gaps): an interior run of missing days is invisible to
+  // per-table min/max, and a whole-period re-sync would spend Metrika quota rewriting history
+  // that is already good. The refill is idempotent — existing days are never re-fetched.
   const runStaleBackfill = async (): Promise<void> => {
     setBackfill('running');
     try {
-      await api.sync({ from, to });
+      await api.syncGaps({ from, to });
       setBackfill('done'); // the [backfill] effect re-probes coverage
     } catch {
       setBackfill('failed');
@@ -278,18 +320,15 @@ export function FilterBar(): JSX.Element {
         )}
 
         {/* ANA-139: a derived dataset (UTM/гео/страницы) stops INSIDE the selected period while
-            channel_stats covers it — say so and offer a re-sync of the period («допарсить»). */}
-        {!needsBackfill && staleTables.length > 0 && staleDate && (
+            channel_stats covers it — say so and offer a refill of exactly the missing days
+            («допарсить»). Round 2: also fires for INTERIOR holes (edges present, days between
+            missing), which per-table min/max cannot see. */}
+        {!needsBackfill && bannerText !== null && (
           <div
             role="status"
             className="flex w-full flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800 md:w-auto"
           >
-            <span>
-              {t('dq.coverageStale', {
-                tables: staleLabels.join(', '),
-                date: fmtDate(staleDate, locale),
-              })}
-            </span>
+            <span>{bannerText}</span>
             {isAdmin && (
               <button
                 type="button"

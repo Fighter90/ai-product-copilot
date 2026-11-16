@@ -1,4 +1,5 @@
 import type { DB } from '../connection';
+import { contiguousRanges, MS_PER_DAY, type DateChunk } from '../../utils/date-range';
 import type {
   ChannelStat,
   DemoStatus,
@@ -867,6 +868,69 @@ export class MetricsRepo {
         win.min_date && win.max_date ? { from: win.min_date, to: win.max_date } : null;
     }
     for (const v of Object.values(out)) Object.freeze(v); // per-table windows freeze too
+    Object.freeze(out);
+    this.statCache.set(key, { at: this.now(), rows: [out] });
+    return out;
+  }
+
+  /**
+   * ANA-139 (12.11 prod feedback): the missing DAYS of every derived stat table inside a window —
+   * per-table min/max (`statsCoverageTables`) cannot show a hole INSIDE a window: utm_stats can
+   * carry day 1 and day 14 while days 2..13 are missing (an optional sync step failed on the days
+   * the local machine was off), and the dashboard shows an empty UTM breakdown while Metrika has
+   * the data. Each hole is reported as a contiguous [from, to] range — exactly the window a refill
+   * sync must pull («дыры → дозагрузка»), so the good history around the hole is never re-fetched
+   * or rewritten (idempotent refill).
+   *
+   * ANA-142: live (is_demo = 0) rows win per table, same rule as statsCoverageTables — when a
+   * table holds ANY live row, its demo rows are noise and do not count as covered days.
+   *
+   * ANA-154: cached per (from, to) window in the shared statCache, frozen like every cached stat
+   * read; every write path invalidates it (invalidateStatCache clears the whole map).
+   */
+  statsCoverageGaps(from: string, to: string): Record<string, DateChunk[]> {
+    const key = `gaps|${from}|${to}`;
+    const hit = this.statCache.get(key);
+    if (hit && this.now() - hit.at < STAT_CACHE_TTL_MS) {
+      return hit.rows[0] as Record<string, DateChunk[]>;
+    }
+    const sources: Array<[string, string]> = [
+      ['channels', 'channel_stats'],
+      ['utm', 'utm_stats'],
+      ['geoDevice', 'geo_device_stats'],
+      ['pages', 'page_stats'],
+      ['exitPages', 'exit_page_stats'],
+    ];
+    const out: Record<string, DateChunk[]> = {};
+    for (const [keyTable, table] of sources) {
+      const hasLive = this.db
+        .prepare(`SELECT EXISTS(SELECT 1 FROM ${table} WHERE is_demo = 0) AS live`)
+        .get() as { live: number };
+      const demoFilter = hasLive.live ? 'AND is_demo = 0' : '';
+      const rows = this.db
+        .prepare(
+          `SELECT DISTINCT date FROM ${table}
+           WHERE date >= ? AND date <= ? ${demoFilter}
+           ORDER BY date`,
+        )
+        .all(from, to) as Array<{ date: string }>;
+      // Every window day minus the covered ones → contiguous refill windows.
+      const covered = new Set(rows.map((r) => r.date));
+      const missing: string[] = [];
+      for (
+        let t = new Date(`${from}T00:00:00Z`).getTime();
+        t <= new Date(`${to}T00:00:00Z`).getTime();
+        t += MS_PER_DAY
+      ) {
+        const day = new Date(t).toISOString().slice(0, 10);
+        if (!covered.has(day)) missing.push(day);
+      }
+      out[keyTable] = contiguousRanges(missing);
+    }
+    for (const ranges of Object.values(out)) {
+      Object.freeze(ranges);
+      for (const r of ranges) Object.freeze(r);
+    }
     Object.freeze(out);
     this.statCache.set(key, { at: this.now(), rows: [out] });
     return out;

@@ -39,6 +39,7 @@ describe('migrate', () => {
       '022_ana148_stat_date_indexes.sql',
       '023_ana153_protected_days.sql',
       '024_ana169_decision_status.sql',
+      '025_ana193_snapshot_kpi_meta.sql',
     ]);
   });
 
@@ -225,6 +226,7 @@ describe('migrate', () => {
       '022_ana148_stat_date_indexes.sql',
       '023_ana153_protected_days.sql',
       '024_ana169_decision_status.sql',
+      '025_ana193_snapshot_kpi_meta.sql',
     ]);
 
     const typeOf = (number: string): string | null =>
@@ -321,6 +323,7 @@ describe('migrate', () => {
       '022_ana148_stat_date_indexes.sql',
       '023_ana153_protected_days.sql',
       '024_ana169_decision_status.sql',
+      '025_ana193_snapshot_kpi_meta.sql',
     ]);
 
     const dates = (table: string): string[] =>
@@ -429,7 +432,7 @@ describe('migrate', () => {
     );
 
     const applied = migrate(db);
-    expect(applied).toEqual(['024_ana169_decision_status.sql']);
+    expect(applied).toEqual(['024_ana169_decision_status.sql', '025_ana193_snapshot_kpi_meta.sql']);
 
     const row = (number: string): { decision: string; status: string } =>
       db.prepare('SELECT decision, status FROM decisions WHERE number = ?').get(number) as {
@@ -440,6 +443,72 @@ describe('migrate', () => {
     expect(row('DL-001')).toEqual({ decision: 'масштабируем подкаст', status: 'accepted' });
     // A manual conclusion was a made decision → «Принято»; an AI draft stays a proposal → «В работе».
     expect(row('DL-002')).toEqual({ decision: 'проверить гипотезу: A/B', status: 'in_progress' });
+
+    // Idempotent: a second run applies nothing.
+    expect(migrate(db)).toEqual([]);
+  });
+
+  it('025 backfills kpi plan→fact meta columns from stored payloads (ANA-193)', () => {
+    db = openDb(':memory:');
+    // Stage the pre-ANA-193 state: snapshots have no kpi meta columns, legacy payloads have
+    // no exact b2cPaidTickets — the credited rule (target − gap, B2B fact wins) reconstructs
+    // the figures the reports of that era printed themselves.
+    const before = migrate(db, { until: '025_ana193_snapshot_kpi_meta.sql' });
+    expect(before).not.toContain('025_ana193_snapshot_kpi_meta.sql');
+    const columns = (
+      db.prepare('PRAGMA table_info(report_snapshots)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(columns).not.toContain('kpi_target');
+    expect(columns).not.toContain('kpi_paid');
+
+    const insert = db.prepare(
+      `INSERT INTO report_snapshots (id, generated_at, date_from, date_to, payload, created_by, docx_path, pdf_path)
+       VALUES (?, '2026-11-01T00:00:00.000Z', '2026-10-01', '2026-10-31', ?, 'a@x.ru', NULL, NULL)`,
+    );
+    // Legacy exact-recovery case: paid 95 = B2C 75 + B2B 20 (new-style payload already stored).
+    insert.run(
+      'leg-new',
+      JSON.stringify({
+        kpi: {
+          target: 300,
+          b2cApplications: 400,
+          b2cPaidTickets: 75,
+          b2bPaidTickets: 20,
+          gap: 205,
+        },
+      }),
+    );
+    // Legacy credited rule: the era's reports printed credited = target − gap = 20; a B2B
+    // overshoot (320 > target) wins over the capped header.
+    insert.run(
+      'leg-old',
+      JSON.stringify({
+        kpi: { target: 300, b2cApplications: 7, b2bPaidTickets: 20, gap: 280 },
+      }),
+    );
+    insert.run(
+      'leg-b2b-over',
+      JSON.stringify({
+        kpi: { target: 300, b2cApplications: 0, b2bPaidTickets: 320, gap: 0 },
+      }),
+    );
+    // Garbage/absent kpi → NULL meta (anti-hallucination: no invented numbers).
+    insert.run('leg-none', JSON.stringify({ ok: true }));
+    insert.run('leg-junk', 'not-json-at-all');
+
+    const applied = migrate(db);
+    expect(applied).toEqual(['025_ana193_snapshot_kpi_meta.sql']);
+
+    const row = (id: string): { kpi_target: number | null; kpi_paid: number | null } =>
+      db.prepare('SELECT kpi_target, kpi_paid FROM report_snapshots WHERE id = ?').get(id) as {
+        kpi_target: number | null;
+        kpi_paid: number | null;
+      };
+    expect(row('leg-new')).toEqual({ kpi_target: 300, kpi_paid: 95 });
+    expect(row('leg-old')).toEqual({ kpi_target: 300, kpi_paid: 20 });
+    expect(row('leg-b2b-over')).toEqual({ kpi_target: 300, kpi_paid: 320 });
+    expect(row('leg-none')).toEqual({ kpi_target: null, kpi_paid: null });
+    expect(row('leg-junk')).toEqual({ kpi_target: null, kpi_paid: null });
 
     // Idempotent: a second run applies nothing.
     expect(migrate(db)).toEqual([]);

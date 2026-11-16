@@ -54,6 +54,14 @@ export interface SyncSummary {
   exitPageRows: number;
 }
 
+/** ANA-139: POST /sync/gaps answer — the echoed hole report plus each refill run. */
+export interface SyncGapsReport {
+  from: string;
+  to: string;
+  gaps: Record<string, Array<{ from: string; to: string }>>;
+  synced: Array<{ from: string; to: string; summary: SyncSummary }>;
+}
+
 export interface SnapshotSummary {
   id: string;
   generatedAt: string;
@@ -61,6 +69,13 @@ export interface SnapshotSummary {
   dateTo: string;
   /** ANA-39: who built the snapshot (user email in cabinet mode; null in legacy mode). */
   author?: string | null;
+  /**
+   * ANA-193: план→факт, зафиксированные в снапшоте (KPI-цель и подтверждённые оплаты;
+   * извлечены бэкендом из payload'а, null — извлечь нельзя). «История» отслеживает план
+   * без парсинга payload'ов; «заявка ≠ оплата» — в оплате только подтверждённые деньги.
+   */
+  kpiTarget?: number | null;
+  kpiPaid?: number | null;
 }
 
 /** ANA-133: poll-facing view of one background AI generation job (mirrors the backend). */
@@ -279,6 +294,13 @@ export const api = {
   getAiJob: (jobId: string) => http<AiJobView>(`/report/ai-jobs/${encodeURIComponent(jobId)}`),
   sync: (body: { from: string; to: string; goalId?: number }) =>
     http<SyncSummary>('/sync', { method: 'POST', body: JSON.stringify(body) }),
+  /**
+   * ANA-139: refill ONLY the missing days (holes) of the derived stat tables in the period —
+   * an interior run of missing days is invisible to per-table coverage and a full re-sync
+   * would spend Metrika quota on days that are already good.
+   */
+  syncGaps: (body: { from: string; to: string }) =>
+    http<SyncGapsReport>('/sync/gaps', { method: 'POST', body: JSON.stringify(body) }),
   /** List all report snapshots (for the History page). */
   listSnapshots: () => http<SnapshotSummary[]>('/report/snapshots'),
   /** REG-10: delete a snapshot (admin only; REG-11 reuses it for one-off cleanup). */

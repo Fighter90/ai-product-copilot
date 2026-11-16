@@ -448,6 +448,9 @@ export const ru = {
   'dq.coverageStale':
     'Данные {tables} обрываются {date}: часть выбранного периода не синхронизирована',
   'dq.staleBackfillAction': 'Догрузить период',
+  // ANA-139 round 2: interior holes — a table carries the period edges while days between are
+  // missing (an optional sync step failed while the local machine was off).
+  'dq.coverageHoles': 'У {tables} есть пропуски внутри выбранного периода',
   // ANA-153: zero-protection — дни, восстановленные из raw_responses после сброса счётчика.
   'dq.protectedDays': '{n} дн. защищены от перезаписи',
   'dq.protectedDaysHint':
@@ -632,6 +635,11 @@ export const ru = {
   'hist.col.report': 'Отчёт',
   'hist.col.generated': 'Сформирован',
   'hist.col.period': 'Период',
+  // ANA-193: план→факт, зафиксированные в каждом снапшоте, — отслеживание плановых 300 билетов.
+  'hist.col.target': 'Цель',
+  'hist.col.paid': 'Оплачено',
+  'hist.paid.pct': '{pct}% от цели',
+  'hist.kpiHint': 'План и подтверждённые оплаты, зафиксированные в снапшоте (заявка ≠ оплата).',
   'hist.col.action': 'Действие',
   'hist.view': 'Просмотреть',
   // ANA-180: badge on the freshest snapshot (generated_at DESC) — «текущий».
@@ -1941,6 +1949,9 @@ export const en: Record<DictKey, string> = {
   'dq.table.exitPages': 'exit pages',
   'dq.coverageStale': 'Data for {tables} stops {date}: part of the selected period is not synced',
   'dq.staleBackfillAction': 'Backfill the period',
+  // ANA-139 round 2: interior holes — a table carries the period edges while days between are
+  // missing (an optional sync step failed while the local machine was off).
+  'dq.coverageHoles': '{tables} have missing days inside the selected period',
   // ANA-153: zero-protection — days restored from raw_responses after the counter reset.
   'dq.protectedDays': '{n} days protected from overwrite',
   'dq.protectedDaysHint':
@@ -2126,6 +2137,11 @@ export const en: Record<DictKey, string> = {
   'hist.col.report': 'Report',
   'hist.col.generated': 'Generated',
   'hist.col.period': 'Period',
+  // ANA-193: plan→fact pinned in each snapshot — tracking the planned 300 tickets.
+  'hist.col.target': 'Target',
+  'hist.col.paid': 'Paid',
+  'hist.paid.pct': '{pct}% of target',
+  'hist.kpiHint': 'Plan and confirmed payments pinned in the snapshot (applications ≠ payments).',
   'hist.col.action': 'Action',
   'hist.view': 'View',
   // ANA-180: badge on the freshest snapshot (generated_at DESC) — «текущий».

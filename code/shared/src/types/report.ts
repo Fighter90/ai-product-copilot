@@ -46,6 +46,12 @@ export interface ReportKpi {
   readonly b2cApplications: number;
   readonly b2bPaidTickets: number;
   readonly gap: number;
+  /**
+   * ANA-193: подтверждённые B2C-оплаты периода (ручной ввод/CSV) — делает «Оплачено» в
+   * Истории точным (b2cPaid + b2bPaid вместо зачтённой шапки target − gap). Optional, so
+   * snapshots built before ANA-193 stay type-compatible (legacy правило — snapshotKpiMeta).
+   */
+  readonly b2cPaidTickets?: number;
 }
 
 /** B2B pipeline summary for the report. */

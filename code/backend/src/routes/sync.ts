@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { SyncRunStatus, SyncStepError } from '@pca/shared';
 import type { SyncSummary } from '../metrika/sync-service';
+import { contiguousRanges, dayChunks, isIsoDay, type DateChunk } from '../utils/date-range';
 
 const SyncBody = z.object({
   from: z.string(),
@@ -14,6 +15,30 @@ const SyncBody = z.object({
    */
   force: z.boolean().optional(),
 });
+
+/** ANA-139: same body as /sync — the refill endpoint pulls exactly the missing days instead. */
+const SyncGapsBody = z.object({
+  // Round-3 review: a garbage date iterates zero hole days and no-ops with 200 — validate
+  // the window before the holes source (unlike /sync, whose runner reports a bad window).
+  from: z.string().refine(isIsoDay, 'date must be YYYY-MM-DD'),
+  to: z.string().refine(isIsoDay, 'date must be YYYY-MM-DD'),
+  force: z.boolean().optional(),
+});
+
+/**
+ * ANA-139: how many separate hole windows the refill may pull individually before it falls back
+ * to ONE whole-window sync — many scattered 1-day holes cost more Metrika calls (pages/exit stay
+ * per-day loops) than a single range pass over the whole period.
+ */
+export const MAX_GAP_RANGES = 16;
+
+/** ANA-139: what POST /api/sync/gaps did — the echoed hole report plus each refill run. */
+export interface SyncGapsResult {
+  readonly from: string;
+  readonly to: string;
+  readonly gaps: Record<string, DateChunk[]>;
+  readonly synced: Array<{ from: string; to: string; summary: SyncSummary }>;
+}
 
 export type SyncRunner = (body: z.infer<typeof SyncBody>) => Promise<SyncSummary>;
 
@@ -64,6 +89,11 @@ export interface SyncRouteOptions {
   readonly runSync: SyncRunner;
   /** ANA-15: when present, every run is recorded and readable via GET /sync/status. */
   readonly recordRun?: SyncRunRecorder;
+  /**
+   * ANA-139: per-table missing-day ranges (MetricsRepo.statsCoverageGaps) — the refill endpoint's
+   * source. Absent in legacy test wirings: POST /api/sync/gaps answers 503 there.
+   */
+  readonly coverageGaps?: (from: string, to: string) => Record<string, DateChunk[]>;
 }
 
 /** `POST /api/sync` — pull Metrika data into SQLite for the given period. */
@@ -91,6 +121,58 @@ export async function syncRoutes(app: FastifyInstance, opts: SyncRouteOptions): 
       ]);
       throw err;
     }
+  });
+
+  // ANA-139 (12.11 prod feedback): refill the derived stat tables EXACTLY where they have holes —
+  // an interior run of missing days (an optional sync step failed while the local machine was off)
+  // is invisible to per-table min/max and a full-window re-sync would spend Metrika quota on days
+  // that are already good. The holes of all tables are unioned into the fewest contiguous windows
+  // (one refill fills every table's hole in that window), synced oldest-first; the good history
+  // around the holes is never re-fetched, so the refill is idempotent («дыры → дозагрузка»).
+  // Admin-only like /sync (same prefix, ADMIN_RULES) — a refill spends Metrika quota.
+  app.post('/sync/gaps', async (req, reply) => {
+    const parsed = SyncGapsBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });
+    }
+    if (!opts.coverageGaps) {
+      return reply.code(503).send({ error: 'gap detection is not wired' });
+    }
+    const { from, to, force } = parsed.data;
+    const gaps = opts.coverageGaps(from, to);
+    // Union of the missing days across tables → the fewest refill windows (oldest first).
+    const days = new Set<string>();
+    for (const ranges of Object.values(gaps)) {
+      for (const r of ranges) {
+        for (const chunk of dayChunks(r.from, r.to)) days.add(chunk.from);
+      }
+    }
+    const merged = contiguousRanges([...days]);
+    const windows = merged.length > MAX_GAP_RANGES ? [{ from, to }] : merged;
+    const synced: SyncGapsResult['synced'] = [];
+    for (const window of windows) {
+      const body = force === true ? { ...window, force: true } : window;
+      // REG-05 parity with /sync: every refill run is recorded (it spends Metrika quota) and the
+      // admin sync-status UI shows it; a failed window re-throws after its failed record.
+      const runId = opts.recordRun?.start(window.from, window.to) ?? -1;
+      try {
+        const summary = await opts.runSync(body);
+        const errors = summary.errors ?? [];
+        opts.recordRun?.finish(
+          runId,
+          outcomeOf(summary),
+          summary as unknown as Record<string, unknown>,
+          errors,
+        );
+        synced.push({ from: window.from, to: window.to, summary });
+      } catch (err) {
+        opts.recordRun?.finish(runId, 'failed', undefined, [
+          { step: 'sync', message: (err as Error).message },
+        ]);
+        throw err;
+      }
+    }
+    return reply.code(200).send({ from, to, gaps, synced } satisfies SyncGapsResult);
   });
 
   // ANA-15: the last sync outcome (status + per-step errors) for the admin sync-status UI.

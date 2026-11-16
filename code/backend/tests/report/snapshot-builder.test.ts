@@ -103,7 +103,14 @@ describe('SnapshotBuilder', () => {
       to: '2025-01-07',
     });
     expect(snap.id).toBe('snap-1');
-    expect(snap.kpi).toEqual({ target: 300, b2cApplications: 7, b2bPaidTickets: 20, gap: 280 });
+    // ANA-193: the snapshot also pins exact paid B2C (0 — no b2cPaid dep in this builder).
+    expect(snap.kpi).toEqual({
+      target: 300,
+      b2cApplications: 7,
+      b2bPaidTickets: 20,
+      gap: 280,
+      b2cPaidTickets: 0,
+    });
     expect(snap.channels).toHaveLength(1);
     expect(snap.hypotheses.problems).toHaveLength(1);
     expect(snap.hypotheses.solutions).toHaveLength(1);
@@ -234,7 +241,14 @@ describe('SnapshotBuilder', () => {
     const opts = { id: 'm', generatedAt: 'T', from: '2025-01-01', to: '2025-01-07' };
     const snap = new SnapshotBuilder({ ...deps, b2cPaid: (r) => b2c.sumTickets(r) }).build(opts);
     // gap = 300 − 12 (B2C in period) − 20 (B2B) = 268; the 5 out-of-period tickets don't count.
-    expect(snap.kpi).toEqual({ target: 300, b2cApplications: 7, b2bPaidTickets: 20, gap: 268 });
+    // ANA-193: exact paid B2C (12) rides in the kpi block — History's meta stays exact.
+    expect(snap.kpi).toEqual({
+      target: 300,
+      b2cApplications: 7,
+      b2bPaidTickets: 20,
+      gap: 268,
+      b2cPaidTickets: 12,
+    });
     // Without the dep (legacy single-user mode) the B2C money is simply absent → gap 280.
     expect(builder.build(opts).kpi.gap).toBe(280);
   });

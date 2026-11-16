@@ -90,6 +90,17 @@ describe('api client', () => {
     expect(String(seen[6]?.body)).toContain('goalId');
   });
 
+  it('POSTs the ANA-139 gap refill to /sync/gaps', async () => {
+    const seen: RequestInit[] = [];
+    mockFetch((_url, init) => {
+      if (init) seen.push(init);
+      return ok({ from: 'a', to: 'b', gaps: {}, synced: [] });
+    });
+    await api.syncGaps({ from: '2025-01-01', to: '2025-01-07' });
+    expect(seen[0]?.method).toBe('POST');
+    expect(String(seen[0]?.body)).toBe('{"from":"2025-01-01","to":"2025-01-07"}');
+  });
+
   it('B2B mutations use the right method, path and body', async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     mockFetch((url, init) => {

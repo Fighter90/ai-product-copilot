@@ -112,4 +112,59 @@ describe('SnapshotRepo', () => {
     repo.remove('poll-1');
     expect(repo.getById('poll-1')).toBeUndefined();
   });
+
+  // ANA-193 (фидбек старшей команды 16.11): История должна показывать зафиксированный план
+  // (300 билетов) и факт по каждому снапшоту — save() извлекает «цель → оплачено» из
+  // payload'а в скалярные колонки, list() отдаёт их БЕЗ парсинга payload'ов (ANA-154 жива).
+  describe('kpi meta columns (ANA-193)', () => {
+    const saveWith = (id: string, payload: unknown): void =>
+      repo.save({
+        id,
+        generatedAt: '2026-11-16T00:00:00.000Z',
+        dateFrom: '2026-11-06',
+        dateTo: '2026-11-15',
+        payload,
+      });
+
+    it('new snapshot: pins exact plan+paid (b2cPaidTickets) and serves them from list()', () => {
+      saveWith('kpi-new', {
+        kpi: {
+          target: 300,
+          b2cApplications: 400,
+          b2cPaidTickets: 75,
+          b2bPaidTickets: 20,
+          gap: 205,
+        },
+      });
+      const [meta] = repo.list();
+      expect(meta).toMatchObject({ id: 'kpi-new', kpiTarget: 300, kpiPaid: 95 });
+      expect(meta).not.toHaveProperty('payload');
+    });
+
+    it('legacy payload (без b2cPaidTickets): зачтено = target − gap, факт B2B важнее шапки', () => {
+      saveWith('kpi-leg', {
+        kpi: { target: 300, b2cApplications: 0, b2bPaidTickets: 320, gap: 0 },
+      });
+      expect(repo.list()[0]).toMatchObject({ kpiTarget: 300, kpiPaid: 320 });
+    });
+
+    it('payload без kpi-блока → null-мета (никаких выдуманных чисел)', () => {
+      saveWith('kpi-none', { ok: true });
+      expect(repo.list()[0]).toMatchObject({ kpiTarget: null, kpiPaid: null });
+    });
+
+    it('re-save пересчитывает мету из нового payload (INSERT OR REPLACE)', () => {
+      saveWith('kpi-rs', { kpi: { target: 300, b2bPaidTickets: 20, gap: 280 } });
+      saveWith('kpi-rs', {
+        kpi: {
+          target: 300,
+          b2cApplications: 400,
+          b2cPaidTickets: 75,
+          b2bPaidTickets: 20,
+          gap: 205,
+        },
+      });
+      expect(repo.list()[0]).toMatchObject({ kpiTarget: 300, kpiPaid: 95 });
+    });
+  });
 });

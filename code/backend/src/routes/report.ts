@@ -64,6 +64,9 @@ export interface ReportRunner {
     dateTo: string;
     /** ANA-39: who built the snapshot (user email in cabinet mode, null otherwise). */
     author?: string | null;
+    /** ANA-193: план→факт, зафиксированные в снапшоте (null — извлечь нельзя). */
+    kpiTarget?: number | null;
+    kpiPaid?: number | null;
   }>;
   generate: (snapshotId: string, format: ReportFormat) => Promise<{ filePath: string } | undefined>;
   /** Generate + persist the AI narrative for a snapshot (ANA-33: `providerId` pins a provider).

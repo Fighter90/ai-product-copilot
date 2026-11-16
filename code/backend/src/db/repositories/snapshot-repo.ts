@@ -1,4 +1,5 @@
 import type { DB } from '../connection';
+import { snapshotKpiMeta } from '@pca/shared';
 
 export interface ReportSnapshotRecord {
   readonly id: string;
@@ -45,6 +46,9 @@ interface SnapshotMetaRow {
   created_by: string | null;
   docx_path: string | null;
   pdf_path: string | null;
+  /** ANA-193: plan→fact pinned by save() from the payload (see {@link snapshotKpiMeta}). */
+  kpi_target: number | null;
+  kpi_paid: number | null;
 }
 
 /**
@@ -61,6 +65,14 @@ export interface ReportSnapshotMeta {
   readonly createdBy?: string | null;
   readonly docxPath?: string;
   readonly pdfPath?: string;
+  /**
+   * ANA-193: зафиксированный план (KPI-цель, платные билеты) и подтверждённые оплаты,
+   * извлечённые из payload'а при сохранении (и бэкфилл-нутые миграцией 025 для старых строк).
+   * История показывает «план → факт» без парсинга payload'ов; null — извлечь нельзя
+   * (снапшот до KPI-блока), показывается «—», никогда не ноль.
+   */
+  readonly kpiTarget: number | null;
+  readonly kpiPaid: number | null;
 }
 
 function toMeta(r: SnapshotMetaRow): ReportSnapshotMeta {
@@ -72,6 +84,8 @@ function toMeta(r: SnapshotMetaRow): ReportSnapshotMeta {
     createdBy: r.created_by,
     docxPath: r.docx_path ?? undefined,
     pdfPath: r.pdf_path ?? undefined,
+    kpiTarget: r.kpi_target ?? null,
+    kpiPaid: r.kpi_paid ?? null,
   };
 }
 
@@ -90,11 +104,16 @@ export class SnapshotRepo {
   private parsedSlot: { id: string; record: ReportSnapshotRecord } | undefined;
 
   save(record: ReportSnapshotRecord): void {
+    // ANA-193: pin the plan→fact scalars from the payload at save time, so list() never has
+    // to parse payloads (ANA-154) and History can track the fixed KPI plan over time.
+    const kpiMeta = snapshotKpiMeta(record.payload);
     this.db
       .prepare(
         `INSERT OR REPLACE INTO report_snapshots
-           (id, generated_at, date_from, date_to, payload, created_by, docx_path, pdf_path)
-         VALUES (@id, @generated_at, @date_from, @date_to, @payload, @created_by, @docx_path, @pdf_path)`,
+           (id, generated_at, date_from, date_to, payload, created_by, docx_path, pdf_path,
+            kpi_target, kpi_paid)
+         VALUES (@id, @generated_at, @date_from, @date_to, @payload, @created_by, @docx_path,
+                 @pdf_path, @kpi_target, @kpi_paid)`,
       )
       .run({
         id: record.id,
@@ -105,6 +124,8 @@ export class SnapshotRepo {
         created_by: record.createdBy ?? null,
         docx_path: record.docxPath ?? null,
         pdf_path: record.pdfPath ?? null,
+        kpi_target: kpiMeta.kpiTarget,
+        kpi_paid: kpiMeta.kpiPaid,
       });
     this.parsedSlot = undefined;
   }
@@ -123,7 +144,8 @@ export class SnapshotRepo {
     return (
       this.db
         .prepare(
-          `SELECT id, generated_at, date_from, date_to, created_by, docx_path, pdf_path
+          `SELECT id, generated_at, date_from, date_to, created_by, docx_path, pdf_path,
+                  kpi_target, kpi_paid
            FROM report_snapshots ORDER BY generated_at DESC`,
         )
         .all() as SnapshotMetaRow[]

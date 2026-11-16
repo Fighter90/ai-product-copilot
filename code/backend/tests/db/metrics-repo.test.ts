@@ -383,6 +383,84 @@ describe('MetricsRepo — statsCoverageTables (ANA-139)', () => {
   });
 });
 
+// ANA-139 (round 2, the 12.11 prod feedback): per-table min/max cannot show a hole INSIDE a
+// window — utm_stats can carry day 1 and day 14 while days 2..13 are missing (a failed optional
+// step on the days the local machine was off), and the dashboard shows an empty UTM breakdown
+// while Metrika has the data. statsCoverageGaps() lists the missing days as contiguous ranges —
+// the exact windows a refill sync must pull («дыры → дозагрузка»), so the good history around
+// the holes is never re-fetched or rewritten.
+describe('MetricsRepo — statsCoverageGaps (ANA-139)', () => {
+  it('reports no gaps when every table covers the whole window', () => {
+    for (const day of ['2025-01-01', '2025-01-02', '2025-01-03']) {
+      repo.upsertChannelStats([stat(day)]);
+      repo.upsertUtmStats([utm(day, { utmCampaign: `c${day}` })]);
+      repo.upsertGeoDeviceStats([geo(day)]);
+      repo.upsertPageStats([page(day, { page: '/lp' })]);
+      repo.upsertExitPageStats([page(day, { page: '/out' })]);
+    }
+    expect(repo.statsCoverageGaps('2025-01-01', '2025-01-03')).toEqual({
+      channels: [],
+      utm: [],
+      geoDevice: [],
+      pages: [],
+      exitPages: [],
+    });
+  });
+
+  it('reports the fully-missing window as one range for every table', () => {
+    repo.upsertChannelStats([stat('2025-02-01')]); // outside the window → still a full gap
+    expect(repo.statsCoverageGaps('2025-01-01', '2025-01-03')).toEqual({
+      channels: [{ from: '2025-01-01', to: '2025-01-03' }],
+      utm: [{ from: '2025-01-01', to: '2025-01-03' }],
+      geoDevice: [{ from: '2025-01-01', to: '2025-01-03' }],
+      pages: [{ from: '2025-01-01', to: '2025-01-03' }],
+      exitPages: [{ from: '2025-01-01', to: '2025-01-03' }],
+    });
+  });
+
+  it('finds the interior utm hole while channels are complete (the reported symptom)', () => {
+    repo.upsertChannelStats([stat('2025-01-01'), stat('2025-01-02'), stat('2025-01-03')]);
+    repo.upsertUtmStats([utm('2025-01-01'), utm('2025-01-03', { utmCampaign: 'x' })]);
+    const gaps = repo.statsCoverageGaps('2025-01-01', '2025-01-03');
+    expect(gaps.channels).toEqual([]);
+    expect(gaps.utm).toEqual([{ from: '2025-01-02', to: '2025-01-02' }]);
+  });
+
+  it('reports head and tail gaps next to the interior one', () => {
+    repo.upsertUtmStats([utm('2025-01-02')]);
+    expect(repo.statsCoverageGaps('2025-01-01', '2025-01-04').utm).toEqual([
+      { from: '2025-01-01', to: '2025-01-01' },
+      { from: '2025-01-03', to: '2025-01-04' },
+    ]);
+  });
+
+  it('follows the ANA-142 live-wins rule: demo-only days do not count as covered', () => {
+    repo.upsertUtmStats([
+      utm('2025-01-01', { isDemo: true }),
+      utm('2025-01-03', { utmCampaign: 'live' }),
+    ]);
+    // Demo day 1 is not real coverage; only the live day 3 fills its gap.
+    expect(repo.statsCoverageGaps('2025-01-01', '2025-01-03').utm).toEqual([
+      { from: '2025-01-01', to: '2025-01-02' },
+    ]);
+  });
+
+  it('caches the answer per window and invalidates it on a write', () => {
+    repo.upsertUtmStats([utm('2025-01-02')]);
+    const first = repo.statsCoverageGaps('2025-01-01', '2025-01-03');
+    expect(repo.statsCoverageGaps('2025-01-01', '2025-01-03')).toBe(first); // cached
+    repo.upsertUtmStats([utm('2025-01-01')]);
+    expect(repo.statsCoverageGaps('2025-01-01', '2025-01-03').utm).toEqual([
+      { from: '2025-01-03', to: '2025-01-03' },
+    ]);
+  });
+
+  it('freezes the answer (a mutating caller throws instead of poisoning the cache)', () => {
+    const gaps = repo.statsCoverageGaps('2025-01-01', '2025-01-03');
+    expect(() => (gaps.utm as unknown[]).push({ from: 'x', to: 'x' })).toThrow();
+  });
+});
+
 // ANA-18 (appended): demo rows carry is_demo = 1 across every dataset; the demo banner reads
 // demoStatus() and the first successful sync calls deleteDemoRows() — demo and live data must
 // never mix in the KPIs.

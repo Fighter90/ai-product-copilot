@@ -225,6 +225,10 @@ export function makeReportRunner(
         dateFrom: r.dateFrom,
         dateTo: r.dateTo,
         author: r.createdBy,
+        // ANA-193: the plan→fact pinned per snapshot — History tracks the fixed KPI plan
+        // (target / confirmed paid) without parsing payloads. null → «—» in the UI.
+        kpiTarget: r.kpiTarget,
+        kpiPaid: r.kpiPaid,
       })),
     // REG-10: only the snapshot row goes — report files on disk and all other tables stay.
     remove: (id) => snapshots.remove(id),

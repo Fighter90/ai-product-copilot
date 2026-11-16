@@ -31,6 +31,62 @@ export function paidAndGap(input: PaidAndGapInput): PaidAndGap {
   return { paid, gap: Math.max(0, input.target - paid) };
 }
 
+export interface SnapshotKpiMeta {
+  /** Зафиксированная KPI-цель (платные билеты); null — извлечь нельзя (мусор/нет kpi-блока). */
+  readonly kpiTarget: number | null;
+  /** Подтверждённые оплаты, зафиксированные в снапшоте (B2C paid + B2B paid); null — нельзя. */
+  readonly kpiPaid: number | null;
+}
+
+const finiteNumber = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) ? v : null;
+
+/**
+ * ANA-193 (фидбек старшей команды 16.11): «История»/бэкфилл не дают зафиксировать и
+ * отслеживать плановые 300 билетов — план есть только внутри payload'а каждого снапшота.
+ * Единое правило извлечения «цель → оплачено» из зафиксированного KPI-блока: бэкенд кладёт
+ * его в скалярные колонки `report_snapshots.kpi_target/kpi_paid` (список Истории остаётся
+ * без парсинга payload'ов — ANA-154), миграция `025_ana193_snapshot_kpi_meta.sql` бэкфилл-ит
+ * старые строки той же логикой в SQL. Инвариант «заявка ≠ оплата»: в оплату входят только
+ * подтверждённые деньги — b2cPaidTickets/b2bPaidTickets, никогда b2cApplications.
+ *
+ * Правило «Оплачено» (единое с WHERE миграции 025 — паритет проверяет тест
+ * snapshot-kpi-meta-parity: pre-025 и post-025 строки с одинаковым payload показывают
+ * одинаковый план→факт):
+ * - новый payload (числовые b2cPaidTickets И b2bPaidTickets) — точно: max(0, b2c) + max(0, b2b);
+ * - legacy payload (b2c нет, b2b и gap числовые) — зачтено = max(0, target − gap), но факт B2B
+ *   важнее шапки, когда B2B один превысил цель (старые отчёты печатали именно credited = target − gap);
+ * - всё остальное (частичные данные: b2c без b2b, b2b без gap, мусор) → null ОБЕ колонки —
+ *   ровно то, что делает WHERE миграции (строка не обновляется вовсе). Полуправда
+ *   {target, null} расходилась бы с бэкфиллом; никаких выдуманных чисел (анти-галлюцинация).
+ */
+export function snapshotKpiMeta(payload: unknown): SnapshotKpiMeta {
+  const kpi =
+    typeof payload === 'object' &&
+    payload !== null &&
+    typeof (payload as { kpi?: unknown }).kpi === 'object'
+      ? ((payload as { kpi: Record<string, unknown> }).kpi as Record<string, unknown>)
+      : null;
+  const target = kpi ? finiteNumber(kpi.target) : null;
+  if (!kpi || target === null) return { kpiTarget: null, kpiPaid: null };
+  const b2b = finiteNumber(kpi.b2bPaidTickets);
+  const b2c = finiteNumber(kpi.b2cPaidTickets);
+  if (b2c !== null && b2b !== null) {
+    return { kpiTarget: target, kpiPaid: Math.max(0, b2c) + Math.max(0, b2b) };
+  }
+  if (b2c === null && b2b !== null) {
+    const gap = finiteNumber(kpi.gap);
+    if (gap === null) return { kpiTarget: null, kpiPaid: null }; // SQL WHERE skips the row
+    return {
+      kpiTarget: target,
+      kpiPaid: Math.max(Math.max(0, target - Math.max(0, gap)), Math.max(0, b2b)),
+    };
+  }
+  // b2c без b2b (или ни того, ни другого) — WHERE миграции 025 пропускает строку целиком:
+  // обе колонки остаются NULL. Shared-функция обязана вернуть то же самое.
+  return { kpiTarget: null, kpiPaid: null };
+}
+
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**

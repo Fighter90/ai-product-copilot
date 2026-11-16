@@ -8,6 +8,16 @@ function appWith(runSync: SyncRunner): FastifyInstance {
   return app;
 }
 
+/** ANA-139: same harness with a gaps source wired (the refill endpoint's dependency). */
+function appWithGaps(
+  runSync: SyncRunner,
+  coverageGaps: NonNullable<Parameters<typeof syncRoutes>[1]>['coverageGaps'],
+): FastifyInstance {
+  const app = Fastify();
+  app.register(syncRoutes, { prefix: '/api', runSync, coverageGaps });
+  return app;
+}
+
 describe('POST /api/sync', () => {
   it('runs the sync and returns the summary', async () => {
     const runSync = vi.fn().mockResolvedValue({
@@ -57,6 +67,199 @@ describe('POST /api/sync', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(runSync).toHaveBeenCalledWith({ from: '2025-01-01', to: '2025-01-07', force: true });
+    await app.close();
+  });
+});
+
+// ANA-139 (12.11 prod feedback): interior holes in the derived stat tables (utm/geo/pages) are
+// invisible to the per-table min/max and can only be repaired by re-parsing exactly the missing
+// days — a full-window re-sync would spend Metrika quota on days that are already good.
+describe('POST /api/sync/gaps (ANA-139 refill)', () => {
+  const summary = {
+    goals: 1,
+    days: 1,
+    channelRows: 1,
+    utmRows: 1,
+    geoDeviceRows: 0,
+    pageRows: 0,
+    exitPageRows: 0,
+  };
+
+  it('refills exactly the merged holes and echoes the gap report', async () => {
+    const runSync = vi.fn().mockResolvedValue(summary);
+    // ANA-139 review: capture the window the holes source received — the route must probe the
+    // requested period verbatim (no clamping or derivation), otherwise the echoed report would
+    // describe a different window than the one the admin asked to refill.
+    const probed: Array<{ from: string; to: string }> = [];
+    const app = appWithGaps(runSync as unknown as SyncRunner, (from, to) => {
+      probed.push({ from, to });
+      return {
+        channels: [],
+        utm: [{ from: '2025-01-03', to: '2025-01-04' }],
+        geoDevice: [],
+        pages: [{ from: '2025-01-04', to: '2025-01-05' }],
+        exitPages: [],
+      };
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sync/gaps',
+      payload: { from: '2025-01-01', to: '2025-01-10' },
+    });
+    expect(res.statusCode).toBe(200);
+    // from/to plumbing: the source received the requested window verbatim, exactly once.
+    expect(probed).toEqual([{ from: '2025-01-01', to: '2025-01-10' }]);
+    // The utm hole (03–04) and the pages hole (04–05) overlap → ONE merged window 03–05.
+    expect(runSync).toHaveBeenCalledTimes(1);
+    expect(runSync).toHaveBeenCalledWith({ from: '2025-01-03', to: '2025-01-05' });
+    expect(res.json()).toEqual({
+      from: '2025-01-01',
+      to: '2025-01-10',
+      gaps: {
+        channels: [],
+        utm: [{ from: '2025-01-03', to: '2025-01-04' }],
+        geoDevice: [],
+        pages: [{ from: '2025-01-04', to: '2025-01-05' }],
+        exitPages: [],
+      },
+      synced: [{ from: '2025-01-03', to: '2025-01-05', summary }],
+    });
+    await app.close();
+  });
+
+  it('never calls the runner when the window has no gaps (quota untouched)', async () => {
+    const runSync = vi.fn().mockResolvedValue(summary);
+    const app = appWithGaps(runSync as unknown as SyncRunner, () => ({
+      channels: [],
+      utm: [],
+      geoDevice: [],
+      pages: [],
+      exitPages: [],
+    }));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sync/gaps',
+      payload: { from: '2025-01-01', to: '2025-01-03' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(runSync).not.toHaveBeenCalled();
+    expect(res.json().synced).toEqual([]);
+    await app.close();
+  });
+
+  it('falls back to one whole-window sync when the holes are too scattered', async () => {
+    const runSync = vi.fn().mockResolvedValue(summary);
+    // 17 pairwise non-adjacent single-day holes (Jan 1, 3, 5 … Feb 2) — pulling each one costs
+    // more Metrika calls (pages/exit stay per-day loops) than one range pass over the window.
+    const scattered = Array.from({ length: 17 }, (_, i) => {
+      const day = new Date(Date.UTC(2025, 0, 1 + i * 2)).toISOString().slice(0, 10);
+      return { from: day, to: day };
+    });
+    const app = appWithGaps(runSync as unknown as SyncRunner, () => ({
+      channels: [],
+      utm: scattered,
+      geoDevice: [],
+      pages: [],
+      exitPages: [],
+    }));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sync/gaps',
+      payload: { from: '2025-01-01', to: '2025-02-28' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(runSync).toHaveBeenCalledTimes(1);
+    expect(runSync).toHaveBeenCalledWith({ from: '2025-01-01', to: '2025-02-28' });
+    await app.close();
+  });
+
+  it('passes force through to the runner (admin-explicit overwrite mode)', async () => {
+    const runSync = vi.fn().mockResolvedValue(summary);
+    const app = appWithGaps(runSync as unknown as SyncRunner, () => ({
+      channels: [],
+      utm: [{ from: '2025-01-02', to: '2025-01-02' }],
+      geoDevice: [],
+      pages: [],
+      exitPages: [],
+    }));
+    await app.inject({
+      method: 'POST',
+      url: '/api/sync/gaps',
+      payload: { from: '2025-01-01', to: '2025-01-03', force: true },
+    });
+    expect(runSync).toHaveBeenCalledWith({ from: '2025-01-02', to: '2025-01-02', force: true });
+    await app.close();
+  });
+
+  it('answers 503 when the wiring has no gaps source (legacy mode)', async () => {
+    const runSync = vi.fn().mockResolvedValue(summary);
+    const app = appWith(runSync as unknown as SyncRunner);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sync/gaps',
+      payload: { from: '2025-01-01', to: '2025-01-03' },
+    });
+    expect(res.statusCode).toBe(503);
+    expect(runSync).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('rejects an invalid body with 400', async () => {
+    const app = appWithGaps(vi.fn() as unknown as SyncRunner, () => ({
+      channels: [],
+      utm: [],
+      geoDevice: [],
+      pages: [],
+      exitPages: [],
+    }));
+    const res = await app.inject({ method: 'POST', url: '/api/sync/gaps', payload: { from: 1 } });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  // ANA-139 (round-3 review): a garbage date made the route iterate zero hole days and no-op
+  // with 200 — the admin's refill silently did nothing. Validate the window before the source.
+  it('rejects malformed dates with 400 and never touches the runner or the holes source', async () => {
+    const runSync = vi.fn();
+    const coverageGaps = vi.fn(() => ({
+      channels: [],
+      utm: [],
+      geoDevice: [],
+      pages: [],
+      exitPages: [],
+    }));
+    const app = appWithGaps(runSync as unknown as SyncRunner, coverageGaps);
+    const malformed = [
+      { from: 'not-a-date', to: '2025-01-07' },
+      { from: '2025-01-01', to: '07.01.2025' },
+      { from: '2025-13-01', to: '2025-01-07' },
+      { from: '2025-02-30', to: '2025-03-01' },
+    ];
+    for (const payload of malformed) {
+      const res = await app.inject({ method: 'POST', url: '/api/sync/gaps', payload });
+      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+      expect(res.json().error).toBe('invalid body');
+    }
+    expect(runSync).not.toHaveBeenCalled();
+    expect(coverageGaps).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('propagates a failing refill run (the remaining holes stay for a retry)', async () => {
+    const runSync = vi.fn().mockRejectedValue(new Error('Metrika 429 quota'));
+    const app = appWithGaps(runSync as unknown as SyncRunner, () => ({
+      channels: [],
+      utm: [{ from: '2025-01-02', to: '2025-01-02' }],
+      geoDevice: [],
+      pages: [],
+      exitPages: [],
+    }));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sync/gaps',
+      payload: { from: '2025-01-01', to: '2025-01-03' },
+    });
+    expect(res.statusCode).toBe(500);
     await app.close();
   });
 });
@@ -206,6 +409,41 @@ describe('sync run recording (ANA-15)', () => {
     expect(rec.finish).toHaveBeenCalledWith(1, 'failed', undefined, [
       { step: 'sync', message: 'token expired' },
     ]);
+    await app.close();
+  });
+
+  // ANA-139: a gap refill spends Metrika quota too — every refill window is recorded like a
+  // /sync run (REG-05 parity), so the admin sync-status UI shows what the refill pulled.
+  it('records each gap-refill window as its own run (ANA-139)', async () => {
+    const rec = recorder();
+    const summary = { goals: 1, days: 2, channelRows: 2 };
+    const app = Fastify();
+    app.register(syncRoutes, {
+      prefix: '/api',
+      runSync: vi.fn().mockResolvedValue(summary) as unknown as SyncRunner,
+      recordRun: rec as unknown as never,
+      coverageGaps: () => ({
+        channels: [],
+        utm: [
+          { from: '2025-01-02', to: '2025-01-03' },
+          { from: '2025-01-06', to: '2025-01-06' },
+        ],
+        geoDevice: [],
+        pages: [],
+        exitPages: [],
+      }),
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sync/gaps',
+      payload: { from: '2025-01-01', to: '2025-01-07' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(rec.start).toHaveBeenCalledTimes(2);
+    expect(rec.start).toHaveBeenNthCalledWith(1, '2025-01-02', '2025-01-03');
+    expect(rec.start).toHaveBeenNthCalledWith(2, '2025-01-06', '2025-01-06');
+    expect(rec.finish).toHaveBeenCalledTimes(2);
+    expect(rec.finish).toHaveBeenCalledWith(1, 'ok', summary, []);
     await app.close();
   });
 

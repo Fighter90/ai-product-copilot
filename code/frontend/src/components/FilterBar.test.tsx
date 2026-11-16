@@ -16,6 +16,10 @@ const mocks = vi.hoisted(() => ({
   // ANA-153: days zero-protection defended (undefined = old backend response → no badge).
   protectedDays: undefined as number | undefined,
   sync: vi.fn(),
+  // ANA-139 round 2: the «допарсить» action refills exactly the missing days (POST /sync/gaps).
+  syncGaps: vi.fn(),
+  // ANA-139 round 2: GET /metrics/gaps answer for the selected period (undefined = probe fails).
+  gapsTables: undefined as Record<string, Array<{ from: string; to: string }>> | undefined,
 }));
 vi.mock('../auth/AuthContext', () => ({
   useAuth: () => ({
@@ -45,9 +49,13 @@ vi.mock('../lib/api', () => ({
         ...(mocks.protectedDays !== undefined ? { protectedDays: mocks.protectedDays } : {}),
       };
     }
+    if (path.startsWith('/metrics/gaps')) {
+      if (mocks.gapsTables === undefined) throw new Error('gaps probe failed (advisory)');
+      return { from: '', to: '', tables: mocks.gapsTables };
+    }
     throw new Error(`unexpected fetch in FilterBar tests: ${path}`);
   },
-  api: { sync: mocks.sync },
+  api: { sync: mocks.sync, syncGaps: mocks.syncGaps },
 }));
 
 const initial = useFilters.getState();
@@ -408,6 +416,8 @@ describe('FilterBar — stale derived tables (ANA-139)', () => {
     mocks.coverageFrom = new Date(Date.now() - 15 * 86_400_000).toISOString().slice(0, 10);
     mocks.coverageTables = undefined;
     mocks.sync.mockClear();
+    mocks.syncGaps.mockClear();
+    mocks.gapsTables = undefined;
     setTestLocale('ru');
   });
 
@@ -424,7 +434,7 @@ describe('FilterBar — stale derived tables (ANA-139)', () => {
     expect(screen.getByRole('button', { name: /Догрузить период/ })).toBeEnabled();
   });
 
-  it('the stale-period action re-syncs the whole selected range', async () => {
+  it('the stale-period action refills exactly the gaps, not the whole period', async () => {
     mocks.coverageTables = {
       ...fullTables(),
       utm: { from: isoOffset(-15), to: isoOffset(-4) },
@@ -433,8 +443,10 @@ describe('FilterBar — stale derived tables (ANA-139)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Догрузить период/ }));
     await act(async () => {});
-    // Default range = the last 14 days; the re-sync covers it end to end (допарсить).
-    expect(mocks.sync).toHaveBeenCalledWith({ from: isoOffset(-13), to: today });
+    // ANA-139 round 2: «допарсить» targets ONLY the missing days (POST /sync/gaps) — the good
+    // history inside the period is never re-fetched or rewritten (idempotent refill).
+    expect(mocks.syncGaps).toHaveBeenCalledWith({ from: isoOffset(-13), to: today });
+    expect(mocks.sync).not.toHaveBeenCalled();
   });
 
   it('shows the warning without the action for non-admins (REG-04 parity)', async () => {
@@ -481,7 +493,7 @@ describe('FilterBar — stale derived tables (ANA-139)', () => {
   });
 
   it('surfaces a failed stale-period re-sync next to the banner', async () => {
-    mocks.sync.mockRejectedValueOnce(new Error('quota'));
+    mocks.syncGaps.mockRejectedValueOnce(new Error('quota'));
     mocks.coverageTables = {
       ...fullTables(),
       utm: { from: isoOffset(-15), to: isoOffset(-4) },
@@ -490,6 +502,56 @@ describe('FilterBar — stale derived tables (ANA-139)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Догрузить период/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/Не удалось догрузить/);
+  });
+
+  // ANA-139 round 2: interior holes — every table reaches the selected end (per-table min/max
+  // sees nothing stale) while days INSIDE the period are missing. The gaps probe must surface
+  // it, otherwise a failed sync step on an offline day leaves an unrepairable-from-UI hole.
+  it('warns about interior holes even when every table reaches the selected end', async () => {
+    mocks.coverageTables = fullTables();
+    mocks.gapsTables = { utm: [{ from: isoOffset(-8), to: isoOffset(-6) }] };
+    renderBar();
+
+    const banner = await screen.findByRole('status');
+    expect(banner).toHaveTextContent(/UTM/);
+    expect(banner).toHaveTextContent(/пропуски/);
+    expect(screen.getByRole('button', { name: /Догрузить период/ })).toBeEnabled();
+  });
+
+  it('the holes action refills exactly the missing days of the period', async () => {
+    mocks.coverageTables = fullTables();
+    mocks.gapsTables = { utm: [{ from: isoOffset(-8), to: isoOffset(-6) }] };
+    renderBar();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Догрузить период/ }));
+    await act(async () => {});
+    expect(mocks.syncGaps).toHaveBeenCalledWith({ from: isoOffset(-13), to: today });
+    expect(mocks.sync).not.toHaveBeenCalled();
+  });
+
+  it('localises the holes banner in en', async () => {
+    setTestLocale('en');
+    mocks.coverageTables = fullTables();
+    mocks.gapsTables = { utm: [{ from: isoOffset(-8), to: isoOffset(-6) }] };
+    const { container } = renderBar();
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/missing days/);
+    expectNoCyrillic(container);
+  });
+
+  // ANA-139 round 2 review: a coverage entry present but without a usable `to` (empty string
+  // from a half-written backend response) used to fall into the holes branch with an EMPTY
+  // table list — «У  есть пропуски внутри выбранного периода» with a double space. The banner
+  // is advisory: say nothing rather than an empty claim.
+  it('stays silent when a stale table has no usable date and the gaps probe found no holes', async () => {
+    mocks.coverageTables = { ...fullTables(), utm: { from: isoOffset(-15), to: '' } };
+    mocks.gapsTables = {};
+    renderBar();
+
+    await act(async () => {});
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/пропуски/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Догрузить период/ })).not.toBeInTheDocument();
   });
 
   it('shows no staleness banner when the response carries no tables (older backend)', async () => {

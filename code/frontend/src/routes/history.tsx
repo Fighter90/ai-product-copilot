@@ -49,6 +49,13 @@ export interface SnapshotRow {
   dateTo: string;
   /** ANA-39: who built the snapshot (user email in cabinet mode; null in legacy mode). */
   author?: string | null;
+  /**
+   * ANA-193: план→факт, зафиксированные в снапшоте бэкендом (KPI-цель и подтверждённые
+   * оплаты; null — снапшот до миграции 025). История таблицей отслеживает плановые 300
+   * билетов по времени; «—» когда меты нет — никогда не выдуманный ноль.
+   */
+  kpiTarget?: number | null;
+  kpiPaid?: number | null;
 }
 
 /**
@@ -386,6 +393,10 @@ export function HistoryView({
                 <th className="py-1">{t('hist.col.report')}</th>
                 <th>{t('hist.col.generated')}</th>
                 <th>{t('hist.col.period')}</th>
+                {/* ANA-193: зафиксированный план и подтверждённые оплаты — История таблицей
+                    отслеживает плановые 300 билетов между сборками отчётов. */}
+                <th title={t('hist.kpiHint')}>{t('hist.col.target')}</th>
+                <th title={t('hist.kpiHint')}>{t('hist.col.paid')}</th>
                 <th>{t('fx.hist.author')}</th>
                 <th>{t('hist.col.action')}</th>
               </tr>
@@ -415,6 +426,27 @@ export function HistoryView({
                   <td>{fmtDate(s.generatedAt, locale, true)}</td>
                   <td>
                     {fmtDate(s.dateFrom, locale)} — {fmtDate(s.dateTo, locale)}
+                  </td>
+                  {/* ANA-193: план→факт, зафиксированные в снапшоте. «—» когда меты нет
+                      (снапшот до миграции 025) — никогда не выдуманный ноль. */}
+                  <td className="whitespace-nowrap" title={t('hist.kpiHint')}>
+                    {s.kpiTarget != null ? formatInt(s.kpiTarget) : '—'}
+                  </td>
+                  <td className="whitespace-nowrap" title={t('hist.kpiHint')}>
+                    {s.kpiPaid != null ? (
+                      <>
+                        {formatInt(s.kpiPaid)}
+                        {s.kpiTarget != null && s.kpiTarget > 0 && (
+                          <span className="ml-1 text-xs text-slate-500">
+                            {t('hist.paid.pct', {
+                              pct: ((s.kpiPaid / s.kpiTarget) * 100).toFixed(1),
+                            })}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td
                     className="max-w-[12rem] truncate text-xs text-slate-500"

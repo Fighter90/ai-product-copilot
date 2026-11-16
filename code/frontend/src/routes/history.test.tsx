@@ -138,6 +138,40 @@ describe('HistoryView', () => {
       .closest('tr');
     expect(within(olderRow!).queryByText('текущий')).not.toBeInTheDocument();
   });
+
+  it('ANA-193: shows the plan→fact pinned in each snapshot (Цель / Оплачено)', () => {
+    const snapshots = [
+      {
+        id: 'snap-plan',
+        generatedAt: '2026-11-16T00:00:00Z',
+        dateFrom: '2026-11-06',
+        dateTo: '2026-11-15',
+        kpiTarget: 300,
+        kpiPaid: 95,
+      },
+      {
+        // Снапшот до миграции 025 — скалярных мет-колонок нет, показываем «—», не нули.
+        id: 'snap-legacy',
+        generatedAt: '2026-11-01T00:00:00Z',
+        dateFrom: '2026-10-01',
+        dateTo: '2026-10-31',
+        kpiTarget: null,
+        kpiPaid: null,
+      },
+    ];
+    renderWithProviders(<HistoryView status="success" snapshots={snapshots} />);
+    // Column headers exist (plan fixation and its tracking live right in the history table).
+    expect(screen.getByText('Цель')).toBeInTheDocument();
+    expect(screen.getByText('Оплачено')).toBeInTheDocument();
+    // The fixed plan (300) and the credited paid fact with the share of the target.
+    const planRow = screen.getByText('snap-pla…').closest('tr');
+    expect(within(planRow!).getByText('300')).toBeInTheDocument();
+    expect(within(planRow!).getByText('95')).toBeInTheDocument();
+    expect(within(planRow!).getByText('31.7% от цели')).toBeInTheDocument();
+    // A pre-ANA-193 snapshot has no meta — «—», never an invented number.
+    const legacyRow = screen.getByText('snap-leg…').closest('tr');
+    expect(within(legacyRow!).getAllByText('—')).toHaveLength(2);
+  });
 });
 
 describe('authorMatches (ANA-39: фильтр истории по автору)', () => {
