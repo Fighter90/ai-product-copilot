@@ -10,6 +10,7 @@ export * from './echarts-layout';
 export * from './goal-classifier';
 export * from './format-goal';
 export * from './kpi';
+export * from './kpi-plan';
 export * from './goal-smart';
 export * from './period-totals';
 export * from './aggregate';

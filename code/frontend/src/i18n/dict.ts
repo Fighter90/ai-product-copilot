@@ -331,6 +331,16 @@ export const ru = {
   'kpi.ticketGoal': 'Цель (платных билетов)',
   // ANA-142: честная база KPI — только реальные данные Метрики (с первого реального дня).
   'kpi.dataWindow': 'Данных {days} дн. (с {date})',
+  // ANA-193: «план → факт по неделям» — отдельный учёт движения к плановым 300 билетам.
+  'kpi.plan.title': 'План → факт по неделям',
+  'kpi.plan.hint':
+    'Движение к цели от базы до дедлайна. База — первый live-день данных Метрики в БД; план — цель, распределённая по дням окна равномерно; факт — только подтверждённые оплаты (B2C-платежи и B2B-paid) с датой внутри окна. Заявки Метрики — не оплаты и в факт не входят.',
+  'kpi.plan.baseline': 'Окно плана: {date} → {deadline} · Цель: {target}',
+  'kpi.plan.colWeek': 'Неделя',
+  'kpi.plan.colPlan': 'План (накоп.)',
+  'kpi.plan.colFact': 'Факт (накоп.)',
+  'kpi.plan.colDelta': 'Δ к плану',
+  'kpi.plan.summary': 'Факт на сегодня: {fact} из плана {plan} · До дедлайна: {days} дн.',
   'kpi.whatif.title': 'Что если',
   'kpi.whatif.hint':
     'Прогноз по линейному темпу достижений цели за выбранный период. Сценарии — прикидка, не факт: Метрика не покрывает шаг заявка→оплата.',
@@ -1824,6 +1834,16 @@ export const en: Record<DictKey, string> = {
   'kpi.ticketGoal': 'Goal (paid tickets)',
   // ANA-142: honest KPI base — real Metrika data only (from the first real day).
   'kpi.dataWindow': 'Data for {days} days (since {date})',
+  // ANA-193: weekly plan → fact tracking toward the planned paid-ticket target.
+  'kpi.plan.title': 'Plan → fact by week',
+  'kpi.plan.hint':
+    'Movement toward the goal from the base date to the deadline. The base is the first live Metrika day stored in the DB; the plan spreads the target evenly over the window; the fact counts confirmed payments only (B2C payments and B2B-paid dated inside the window). Metrika applications are not payments and never count.',
+  'kpi.plan.baseline': 'Plan window: {date} → {deadline} · Target: {target}',
+  'kpi.plan.colWeek': 'Week',
+  'kpi.plan.colPlan': 'Plan (cum.)',
+  'kpi.plan.colFact': 'Fact (cum.)',
+  'kpi.plan.colDelta': 'Δ vs plan',
+  'kpi.plan.summary': 'Fact to date: {fact} of plan {plan} · {days} days to the deadline',
   'kpi.whatif.title': 'What if',
   'kpi.whatif.hint':
     'Linear pace forecast from goal reaches over the selected period. Scenarios are estimates, not facts: Metrika does not track the application→payment step.',
