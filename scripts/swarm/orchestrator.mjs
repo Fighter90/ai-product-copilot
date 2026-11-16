@@ -131,8 +131,7 @@ async function watchRun(id, timeoutMs = 45 * 60_000) {
 }
 
 async function worker(role, vars, { timeoutMs = 40 * 60_000, cwd = ROOT } = {}) {
-  let prompt = ROLES[role];
-  for (const [k, v] of Object.entries(vars)) prompt = prompt.replaceAll(`{{${k}}}`, v ?? '');
+  const prompt = applyVars(ROLES[role], vars);
   log(`  [${role}] worker started (timeout ${Math.round(timeoutMs / 60000)}m)`);
   let r = await run('opencode', ['run', '--auto', '--agent', 'executor', prompt], {
     timeoutMs,
@@ -167,6 +166,42 @@ async function clerk(op) {
 }
 
 // ---------- pipeline steps ----------
+
+// ANA-194: the reviewer may judge ONLY the inline diff — its prompt forbids reading the
+// repository — so a silently sliced diff is indistinguishable from a complete one, and
+// big changes were reviewed on their first 60k characters (false RETURNs across the
+// backlog). The cap is generous (~50k tokens of code, far under the ~1MB argv limit of
+// `opencode run`) and any remaining cut carries an explicit, self-describing marker.
+export const REVIEW_DIFF_CAP = 200_000;
+
+export function reviewDiffBlock(diffOut, cap = REVIEW_DIFF_CAP) {
+  const text = String(diffOut);
+  const totalChars = text.length;
+  if (totalChars <= cap) {
+    return {
+      block: `<DIFF>\n${text}\n</DIFF>`,
+      truncated: false,
+      totalChars,
+      shownChars: totalChars,
+    };
+  }
+  const block =
+    `<DIFF>\n${text.slice(0, cap)}\n` +
+    `[DIFF TRUNCATED by the swarm: showing first ${cap} of ${totalChars} characters] — ` +
+    'judge the visible part and note in the verdict what the cut prevented you from ' +
+    'verifying\n</DIFF>';
+  return { block, truncated: true, totalChars, shownChars: cap };
+}
+
+// Placeholder substitution for role templates. A string replacement would interpret
+// `$&`, `` $` ``, `$'` and `$$` inside the value as replacement patterns and corrupt the
+// very diffs this pipeline passes to the reviewer (ANA-194) — the function form inserts
+// values literally.
+export function applyVars(template, vars) {
+  let prompt = template;
+  for (const [k, v] of Object.entries(vars)) prompt = prompt.replaceAll(`{{${k}}}`, () => v ?? '');
+  return prompt;
+}
 
 export function parsePickOutput(out) {
   if (/\bSWARM_PICK::NONE\b/.test(out)) return null;
@@ -552,13 +587,18 @@ async function main() {
 
           log(`-- round ${round + 1}: review`);
           const diff = await sh(`git -C ${JSON.stringify(WT)} diff origin/main...HEAD`);
+          // stdout only — stderr noise must not eat the reviewer's diff budget (ANA-194).
+          const d = reviewDiffBlock(diff.out);
+          log(
+            `  diff: ${d.shownChars}/${d.totalChars} chars${d.truncated ? ' — TRUNCATED, marker added' : ''}`,
+          );
           const rev = await worker(
             'reviewer',
             {
               IDENTIFIER: issue.identifier,
               TITLE: issue.title,
               DESCRIPTION: '(the executor fetched the issue body; judge the diff below)',
-              DIFF: `<DIFF>\n${diff.all.slice(0, 60_000)}\n</DIFF>`,
+              DIFF: d.block,
             },
             { timeoutMs: 12 * 60_000 },
           );
