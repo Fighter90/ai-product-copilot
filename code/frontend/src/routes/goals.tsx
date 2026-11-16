@@ -10,6 +10,14 @@ import {
   resolveKpiDeadline,
   isGoalExpired,
   smartGoal,
+  // ANA-193: «план → факт по неделям» — движение к плановым 300 билетам от базы до дедлайна.
+  kpiPlanFact,
+  mergePaidByDay,
+  planWeekStatus,
+  type KpiPlanFact,
+  type KpiPlanWeek,
+  type PaidDayPoint,
+  type PlanWeekStatus,
 } from '@pca/shared';
 import { api, http } from '../lib/api';
 import { v3 } from '../lib/api-v3';
@@ -372,6 +380,87 @@ function WhatIfForecast({
   );
 }
 
+/**
+ * ANA-193: «план → факт по неделям» — отдельный учёт движения к плановым 300 билетам (фидбек
+ * старшей команды 16.11: прошлых данных не хватает, чтобы KPI фиксировать и двигаться по нему).
+ * База окна — первый live-день данных Метрики (coverage), дедлайн — тот же resolveKpiDeadline,
+ * что у всей страницы; план = цель равномерно по дням окна, факт = только подтверждённые оплаты
+ * (B2C-платежи + B2B-paid) с датой внутри окна. Вся математика — в shared/kpi-plan (тесты там).
+ */
+function PlanFactCard({ plan }: { plan: KpiPlanFact }): JSX.Element {
+  const { t, locale } = useT();
+  const deltaColor = (status: PlanWeekStatus): string =>
+    status === 'ok' ? 'text-green-700' : status === 'warn' ? 'text-amber-700' : 'text-red-700';
+  // Целые значения — без дробной части (300, а не «300,0»); дробные — 1 знак.
+  const fmtPlan = (n: number): string => fmtNum(n, locale, Number.isInteger(n) ? 0 : 1);
+  const deltaText = (w: KpiPlanWeek): string => {
+    // null-отклонение бывает только у будущих недель — «—» рендерится прямо здесь,
+    // одной точкой правды для всей колонки Δ.
+    if (w.deviation === null) return '—';
+    const abs = fmtPlan(Math.abs(w.deviation));
+    if (w.deviation > 0) return `+${abs}`;
+    if (w.deviation < 0) return `-${abs}`;
+    return '0';
+  };
+
+  return (
+    <Card title={t('kpi.plan.title')} hint={t('kpi.plan.hint')}>
+      <div data-testid="kpi-plan-fact">
+        <p className="text-xs text-slate-500" data-testid="kpi-plan-baseline">
+          {t('kpi.plan.baseline', {
+            date: fmtDate(plan.base, locale),
+            deadline: fmtDate(plan.deadline, locale),
+            target: formatInt(plan.target),
+          })}
+        </p>
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-left text-slate-500">
+                <th className="px-3 py-2">{t('kpi.plan.colWeek')}</th>
+                <th className="px-3 py-2">{t('kpi.plan.colPlan')}</th>
+                <th className="px-3 py-2">{t('kpi.plan.colFact')}</th>
+                <th className="px-3 py-2">{t('kpi.plan.colDelta')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plan.weeks.map((w) => {
+                const status = planWeekStatus(w.factCum, w.planCum, w.future);
+                return (
+                  <tr
+                    key={w.weekStart}
+                    data-testid="kpi-plan-row"
+                    className="border-t border-slate-100"
+                  >
+                    <td className="px-3 py-2">
+                      {fmtDate(w.weekStart, locale)}–{fmtDate(w.weekEnd, locale)}
+                    </td>
+                    <td className="px-3 py-2">{fmtPlan(w.planCum)}</td>
+                    <td className="px-3 py-2">{w.future ? '—' : formatInt(w.factCum)}</td>
+                    <td
+                      data-testid="kpi-plan-delta"
+                      className={`px-3 py-2 font-medium ${w.future ? 'text-slate-400' : deltaColor(status)}`}
+                    >
+                      {deltaText(w)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-xs text-slate-500" data-testid="kpi-plan-summary">
+          {t('kpi.plan.summary', {
+            fact: formatInt(plan.factTotal),
+            plan: fmtPlan(plan.planToDate),
+            days: formatInt(plan.daysLeft),
+          })}
+        </p>
+      </div>
+    </Card>
+  );
+}
+
 /** Pure presentational Goals view. */
 export function GoalsView({
   status,
@@ -391,6 +480,7 @@ export function GoalsView({
   coverageFrom,
   coverageDays,
   today,
+  paidByDay,
 }: {
   status: QueryStatus;
   target: number;
@@ -423,6 +513,11 @@ export function GoalsView({
    * передаёт настоящую дату из роута; тесты — явную (в render-пути отчёта Date.now() нет).
    */
   today?: string;
+  /**
+   * ANA-193: суммарный ряд подтверждённых оплат по датам (B2C-платежи + B2B-paid) — факт
+   * недельной таблицы «план → факт». Пустой ряд допустим: факт просто 0.
+   */
+  paidByDay?: PaidDayPoint[];
 }): JSX.Element {
   const { t, locale } = useT();
   if (status === 'pending') return <p className="text-slate-500">{t('common.loading')}</p>;
@@ -455,6 +550,16 @@ export function GoalsView({
   // поэтому isGoalExpired проверяет именно eventDate.
   const todayIso = today ?? new Date().toISOString().slice(0, 10);
   const goalExpired = isGoalExpired(eventDate ?? '', todayIso);
+  // ANA-193: «план → факт по неделям» — база окна = первый live-день (coverage), дедлайн —
+  // тот же resolveKpiDeadline, что выше; факт — подтверждённые оплаты по датам. Чистая
+  // математика без Date.now(): сегодня приходит извне (ANA-166).
+  const plan = kpiPlanFact({
+    base: coverageFrom ?? '',
+    deadline: kpiDeadline.deadline,
+    target,
+    paidByDay: paidByDay ?? [],
+    today: todayIso,
+  });
   const smart = smartGoal({
     target,
     paid: current,
@@ -575,6 +680,9 @@ export function GoalsView({
           </div>
         </div>
       </div>
+
+      {/* ANA-193: «план → факт по неделям» — движение к плановым 300 билетам от базы до дедлайна. */}
+      {!plan.empty && <PlanFactCard plan={plan} />}
 
       {/* Funnel metrics */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -744,6 +852,14 @@ export function Goals(): JSX.Element {
     queryKey: ['b2b'],
     queryFn: () => api.b2b(),
   });
+  // ANA-193: недельная таблица «план → факт» строится по ВСЕЙ истории оплат в БД, а не по
+  // выбранному периоду фильтра — движение к цели считается от базы до дедлайна. Вызов без
+  // аргументов — это именно «вся история»: GET /payments/b2c без from/to попадает в
+  // B2cPaymentsRepo.list(undefined) → SELECT * FROM b2c_payments (без периода).
+  const b2cAllQ = useQuery({
+    queryKey: ['b2c-payments-all'],
+    queryFn: () => api.b2cPayments(),
+  });
   const goalQ = useQuery({ queryKey: ['primary-goal'], queryFn: api.primaryGoal, retry: false });
   const kpiTarget = useKpiTarget();
   // ANA-75 (БАГ-02): B2C-платежи (ручной ввод / CSV) входят в «Оплачено» — как на Обзоре.
@@ -783,6 +899,16 @@ export function Goals(): JSX.Element {
   // Overview and Funnel. The same rows collapse into the daily series for the pace forecast.
   const totals = periodTotals(data);
   const points = useMemo(() => dailySeries(data), [data]);
+  // ANA-193: суммарный ряд оплат по датам — B2C-платежи + только «paid»-сделки B2B
+  // (инвариант «оплата = подтверждённые деньги»; заявки Метрики сюда не входят).
+  const paidByDay = useMemo(
+    () =>
+      mergePaidByDay(
+        b2cAllQ.data ?? [],
+        (b2bQ.data ?? []).filter((d) => d.stage === 'paid'),
+      ),
+    [b2cAllQ.data, b2bQ.data],
+  );
   const b2bPaid = calcB2bPaid(deals);
   const b2bPipeline = calcB2bPipeline(deals);
 
@@ -804,6 +930,7 @@ export function Goals(): JSX.Element {
       eventDate={eventDate}
       coverageFrom={coverageQ.data?.from ?? null}
       coverageDays={coverageQ.data?.days ?? null}
+      paidByDay={paidByDay}
     />
   );
 }

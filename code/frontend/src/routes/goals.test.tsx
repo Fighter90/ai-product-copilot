@@ -324,3 +324,147 @@ describe('KPI & forecast (GoalsView)', () => {
     );
   });
 });
+
+// ANA-193 (фидбек старшей команды 16.11): плановые 300 билетов не имеют исторической базы —
+// на /app/kpi нужен отдельный учёт «план → факт по неделям»: окно [первый live-день → дедлайн],
+// план = цель равномерно, факт = подтверждённые оплаты с датой в окне.
+describe('ANA-193: план → факт по неделям', () => {
+  const planPaid = [
+    { date: '2026-11-07', tickets: 5 },
+    { date: '2026-11-12', tickets: 10 },
+    { date: '2026-11-20', tickets: 3 },
+  ];
+
+  const cells = (row: HTMLElement): string[] =>
+    Array.from(row.querySelectorAll('td')).map((td) => td.textContent ?? '');
+
+  it('строит недельную таблицу от базы до дедлайна: план равномерно, факт — оплаты окна', () => {
+    view({
+      coverageFrom: '2026-11-06',
+      coverageDays: 10,
+      today: '2026-11-15',
+      eventDate: '2026-11-21',
+      paidByDay: planPaid,
+    });
+    expect(screen.getByText('План → факт по неделям')).toBeInTheDocument();
+    // Окно плана: база — первый live-день (coverage), дедлайн — EVENT_DATE, цель 300.
+    expect(screen.getByTestId('kpi-plan-baseline')).toHaveTextContent(
+      `Окно плана: ${fmtDate('2026-11-06', 'ru')} → ${fmtDate('2026-11-21', 'ru')} · Цель: 300`,
+    );
+    // Недели с понедельника недели базы; последняя обрезана дедлайном (16–21).
+    const rows = screen.getAllByTestId('kpi-plan-row');
+    expect(rows).toHaveLength(3);
+    // Неделя 1 (2–8 нояб.): план 3/16 × 300 = 56,3; факт 5 (11-07); Δ = 5 − 56,3.
+    expect(cells(rows[0]!)).toEqual([
+      `${fmtDate('2026-11-02', 'ru')}–${fmtDate('2026-11-08', 'ru')}`,
+      '56,3',
+      '5',
+      '-51,3',
+    ]);
+    // Неделя 2 (9–15): план 10/16 × 300 = 187,5; факт 15; Δ = −172,5.
+    expect(cells(rows[1]!)).toEqual([
+      `${fmtDate('2026-11-09', 'ru')}–${fmtDate('2026-11-15', 'ru')}`,
+      '187,5',
+      '15',
+      '-172,5',
+    ]);
+    // Неделя 3 (16–21) будущая: план 300, факта ещё нет — «—» вместо факта и Δ.
+    expect(cells(rows[2]!)).toEqual([
+      `${fmtDate('2026-11-16', 'ru')}–${fmtDate('2026-11-21', 'ru')}`,
+      '300',
+      '—',
+      '—',
+    ]);
+    // Сводка движения к цели: факт 15 (в окне на сегодня) из плана 187,5; до дедлайна 6 дней.
+    const summary = screen.getByTestId('kpi-plan-summary');
+    expect(summary).toHaveTextContent('Факт на сегодня: 15 из плана 187,5');
+    expect(summary).toHaveTextContent('До дедлайна: 6 дн.');
+  });
+
+  it('окрашивает Δ светофором: опережение зелёным, отставание красным', () => {
+    // Цель 10: неделя 1 план 1,9 — факт 10 опережает план.
+    const first = view({
+      coverageFrom: '2026-11-06',
+      coverageDays: 10,
+      today: '2026-11-15',
+      eventDate: '2026-11-21',
+      target: 10,
+      paidByDay: [{ date: '2026-11-07', tickets: 10 }],
+    });
+    const rows = screen.getAllByTestId('kpi-plan-row');
+    expect(rows[0]!.querySelector('[data-testid="kpi-plan-delta"]')).toHaveClass('text-green-700');
+    first.unmount();
+
+    // Пустой факт — отставание от плана красным.
+    const second = view({
+      coverageFrom: '2026-11-06',
+      coverageDays: 10,
+      today: '2026-11-15',
+      eventDate: '2026-11-21',
+      target: 10,
+      paidByDay: [],
+    });
+    const emptyRows = second.getAllByTestId('kpi-plan-row');
+    expect(emptyRows[0]!.querySelector('[data-testid="kpi-plan-delta"]')).toHaveClass(
+      'text-red-700',
+    );
+  });
+
+  it('Δ = 0 (факт равен плану недели) — «0», а будущая неделя — «—» через тот же deltaText', () => {
+    // Цель 16, окно 16 дней → 1 билет/день: план недели 1 = 3, факт = 3 → отклонение ровно 0.
+    const zero = view({
+      coverageFrom: '2026-11-06',
+      coverageDays: 10,
+      today: '2026-11-15',
+      eventDate: '2026-11-21',
+      target: 16,
+      paidByDay: [{ date: '2026-11-07', tickets: 3 }],
+    });
+    const zeroRows = screen.getAllByTestId('kpi-plan-row');
+    const zeroDelta = zeroRows[0]!.querySelector('[data-testid="kpi-plan-delta"]');
+    expect(zeroDelta).toHaveTextContent('0');
+    expect(zeroDelta).toHaveClass('text-green-700'); // факт ≥ план → ok
+    zero.unmount();
+
+    // Будущая неделя (отклонение null) рендерит «—» тем же deltaText — одна точка правды.
+    const future = view({
+      coverageFrom: '2026-11-06',
+      coverageDays: 10,
+      today: '2026-11-15',
+      eventDate: '2026-11-21',
+      target: 16,
+      paidByDay: [],
+    });
+    const futureRows = screen.getAllByTestId('kpi-plan-row');
+    expect(futureRows[2]!.querySelector('[data-testid="kpi-plan-delta"]')).toHaveTextContent('—');
+    future.unmount();
+  });
+
+  it('не показывается без базы (coverage неизвестен) или вне окна', () => {
+    view({ coverageFrom: null, coverageDays: null, paidByDay: planPaid });
+    expect(screen.queryByTestId('kpi-plan-fact')).not.toBeInTheDocument();
+    // Мусорная база → пустое окно → карточка скрыта.
+    view({ coverageFrom: 'не дата', coverageDays: 3, paidByDay: planPaid });
+    expect(screen.queryByTestId('kpi-plan-fact')).not.toBeInTheDocument();
+  });
+
+  it('держит английскую формулировку (без Cyrillic в en)', () => {
+    setTestLocale('en');
+    const { container } = view({
+      coverageFrom: '2026-11-06',
+      coverageDays: 10,
+      today: '2026-11-15',
+      eventDate: '2026-11-21',
+      paidByDay: planPaid,
+    });
+    expect(screen.getByText('Plan → fact by week')).toBeInTheDocument();
+    expect(screen.getByTestId('kpi-plan-baseline')).toHaveTextContent(
+      `Plan window: ${fmtDate('2026-11-06', 'en')} → ${fmtDate('2026-11-21', 'en')} · Target: 300`,
+    );
+    expect(screen.getByTestId('kpi-plan-summary')).toHaveTextContent(
+      'Fact to date: 15 of plan 187.5',
+    );
+    expect(screen.getByTestId('kpi-plan-summary')).toHaveTextContent('6 days to the deadline');
+    expectNoCyrillic(container);
+  });
+});
