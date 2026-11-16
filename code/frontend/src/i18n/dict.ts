@@ -550,6 +550,10 @@ export const ru = {
     'Нажмите «Собрать отчёт», чтобы собрать неизменяемый отчёт за выбранный период. Гипотезы генерируются автоматически, если настроен AI-провайдер.',
   'rep.fullReport': 'Полный отчёт',
   'rep.fullReportNote': 'Полный отчёт ({n} разделов) — идентичен экспортируемым DOCX и PDF.',
+  // ANA-180: ?snapshot=<id> not found (deleted / mistyped) — explicit failure instead of the
+  // silent empty preview.
+  'rep.snapshotMissing':
+    'Отчёт по ссылке не найден — возможно, срез был удалён. Соберите новый отчёт за нужный период или выберите другой в «Истории».',
   // --- ANA-33/39 (fx.*): provider choice, attribution, human snapshot meta, report TOC ---
   'fx.snapshot.meta': 'Отчёт «{period}» · сформирован {at}',
   'fx.snapshot.uuidTitle': 'Срез данных: {id}',
@@ -625,6 +629,8 @@ export const ru = {
   'hist.col.period': 'Период',
   'hist.col.action': 'Действие',
   'hist.view': 'Просмотреть',
+  // ANA-180: badge on the freshest snapshot (generated_at DESC) — «текущий».
+  'hist.current': 'текущий',
   // REG-10: admin deletes a snapshot from History (with confirmation).
   'hist.delete': 'Удалить',
   'hist.delete.confirm': 'Удалить {name}? Действие необратимо.',
@@ -2014,6 +2020,10 @@ export const en: Record<DictKey, string> = {
     'Click “Build report” to assemble an immutable report for the selected period. Hypotheses are generated automatically when an AI provider is configured.',
   'rep.fullReport': 'Full report',
   'rep.fullReportNote': 'Full report ({n} sections) — identical to the exported DOCX and PDF.',
+  // ANA-180: ?snapshot=<id> not found (deleted / mistyped) — explicit failure instead of the
+  // silent empty preview.
+  'rep.snapshotMissing':
+    'The report behind this link was not found — it may have been deleted. Build a new report for the period you need or pick another one in the History.',
   // --- ANA-33/39 (fx.*): provider choice, attribution, human snapshot meta, report TOC ---
   'fx.snapshot.meta': 'Report “{period}” · generated {at}',
   'fx.snapshot.uuidTitle': 'Data snapshot: {id}',
@@ -2090,6 +2100,8 @@ export const en: Record<DictKey, string> = {
   'hist.col.period': 'Period',
   'hist.col.action': 'Action',
   'hist.view': 'View',
+  // ANA-180: badge on the freshest snapshot (generated_at DESC) — «текущий».
+  'hist.current': 'current',
   // REG-10: admin deletes a snapshot from History (with confirmation).
   'hist.delete': 'Delete',
   'hist.delete.confirm': 'Delete {name}? This cannot be undone.',

@@ -186,6 +186,12 @@ function AIProgress({ progress, stage }: { progress: number; stage: string }): J
 
 export interface ReportPreviewProps {
   snapshot: ReportSnapshot | undefined;
+  /**
+   * ANA-180: the ?snapshot= link could not be loaded (deleted or unknown id). Before this, the
+   * page silently fell back to the generic «Нажмите «Собрать отчёт»» empty preview and the user
+   * never learned the requested report was gone. Rendered as an explicit alert instead.
+   */
+  snapshotError?: boolean;
   isPending: boolean;
   onBuild: () => void;
   onExport: (snapshotId: string, format: 'docx' | 'pdf') => void;
@@ -319,6 +325,7 @@ export function HypothesisDraftCard({
 /** Pure preview: the snapshot summary that DOCX/PDF render from, plus export. */
 export function ReportPreviewView({
   snapshot,
+  snapshotError,
   isPending,
   onBuild,
   onExport,
@@ -675,6 +682,14 @@ export function ReportPreviewView({
 
           <ReportFullView snapshot={snapshot} />
         </div>
+      ) : snapshotError ? (
+        // ANA-180: a broken ?snapshot= id must not silently degrade to the empty preview.
+        <p
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+        >
+          {t('rep.snapshotMissing')}
+        </p>
       ) : (
         <p className="text-slate-500">{t('rep.empty')}</p>
       )}
@@ -709,6 +724,9 @@ export function ReportPreview(): JSX.Element {
   });
 
   const snapshot = existingSnapshot.data ?? buildMut.data;
+  // ANA-180: a ?snapshot= id that cannot be loaded (deleted / mistyped) must not silently fall
+  // back to the empty preview — surface the load failure as an explicit alert.
+  const snapshotError = !!snapshotId && existingSnapshot.isError;
   // ANA-132: сбой до-генерации гипотез живёт в отдельном состоянии компонента, а не в данных
   // мутации — мутация завершается сразу после нарратива, и «Сгенерировано…» не ждёт фоновую
   // задачу до ~16-минутного таймаута поллинга (см. mutationFn ниже).
@@ -825,6 +843,7 @@ export function ReportPreview(): JSX.Element {
       {exportError && <ErrorBox error={exportError} />}
       <ReportPreviewView
         snapshot={effectiveSnapshot}
+        snapshotError={snapshotError}
         isPending={buildMut.isPending}
         onBuild={() => buildMut.mutate({ from, to })}
         onExport={doExport}

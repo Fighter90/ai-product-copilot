@@ -91,6 +91,20 @@ describe('ReportPreviewView', () => {
     expect(screen.getByRole('button', { name: 'Собираю…' })).toBeDisabled();
   });
 
+  it('ANA-180: a broken ?snapshot= link shows an explicit alert instead of the silent empty preview', () => {
+    render(<ReportPreviewView {...baseProps} snapshotError />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(/не найден/i);
+    // The generic «Нажмите «Собрать отчёт»…» hint must not silently replace the requested report.
+    expect(screen.queryByText(/Нажмите «Собрать отчёт»/)).not.toBeInTheDocument();
+  });
+
+  it('ANA-180: without a load failure the generic build hint stays and no alert renders', () => {
+    render(<ReportPreviewView {...baseProps} />);
+    expect(screen.getByText(/Нажмите «Собрать отчёт»/)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('shows a human-readable meta line and keeps the UUID only in the tooltip (ANA-39)', () => {
     render(<ReportPreviewView {...baseProps} snapshot={snapshot} />);
     // Not month-aligned → the shared reportPeriodLabel prints «01.01.2025 – 07.01.2025», no UUID.
@@ -392,6 +406,15 @@ describe('ReportPreview (wrapper)', () => {
       '/api/report/download/snap-1/docx',
       'productcamp-report-snap-1.docx',
     );
+  });
+
+  it('ANA-180: a broken ?snapshot= id fails loudly instead of the silent empty preview', async () => {
+    vi.mocked(api.getSnapshot).mockRejectedValue(new Error('404 not found'));
+    renderWithProviders(<ReportPreview />, '/app/report?snapshot=broken-id');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/не найден/i);
+    // The generic build hint must not silently replace the requested report.
+    expect(screen.queryByText(/Нажмите «Собрать отчёт»/)).not.toBeInTheDocument();
   });
 
   it('generates an AI narrative for the snapshot', async () => {
