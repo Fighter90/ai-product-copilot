@@ -6,7 +6,7 @@
 // that is not a real Linear identifier (e.g. ANA-123).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePickOutput, verifyProdHealth } from './orchestrator.mjs';
+import { parsePickOutput, verifyProdHealth, reviewDiffBlock, applyVars } from './orchestrator.mjs';
 
 test('parses a real pick line', () => {
   const issue = parsePickOutput(
@@ -76,4 +76,48 @@ test('verifyProdHealth rejects non-JSON, unhealthy and versionless payloads', ()
     /status=error/,
   );
   assert.throws(() => verifyProdHealth('{"status":"ok"}', '3.4.7'), /no version field/);
+});
+
+// ANA-194: the reviewer judges ONLY the inline diff (its prompt forbids reading the
+// repository), so a silently sliced diff is indistinguishable from a complete one — large
+// changes were reviewed on their first 60k characters and falsely RETURNed as
+// "insufficient context" across the whole backlog. reviewDiffBlock must pass normal diffs
+// through whole and mark any remaining cut with an explicit, self-describing marker.
+test('reviewDiffBlock passes a diff that fits whole', () => {
+  const diff = 'diff --git a/x.ts b/x.ts\n+++ b/x.ts\n+const ok = true;\n';
+  const d = reviewDiffBlock(diff);
+  assert.equal(d.truncated, false);
+  assert.equal(d.totalChars, diff.length);
+  assert.equal(d.shownChars, diff.length);
+  assert.ok(d.block.startsWith('<DIFF>\n'));
+  assert.ok(d.block.endsWith('\n</DIFF>'));
+  assert.ok(!d.block.includes('TRUNCATED'));
+});
+
+test('reviewDiffBlock marks an oversized diff instead of cutting it silently', () => {
+  const big = `${'a'.repeat(500)}TAIL_BEYOND_CAP`;
+  const d = reviewDiffBlock(big, 500);
+  assert.equal(d.truncated, true);
+  assert.equal(d.totalChars, big.length);
+  assert.equal(d.shownChars, 500);
+  assert.ok(d.block.includes('a'.repeat(500))); // the visible prefix is intact
+  assert.ok(!d.block.includes('TAIL_BEYOND_CAP')); // content past the cap stays out
+  assert.ok(d.block.includes('[DIFF TRUNCATED by the swarm: showing first 500 of 515 characters]'));
+  assert.ok(d.block.endsWith('\n</DIFF>'));
+});
+
+// The worker substitutes role-template placeholders via String.replaceAll; a STRING
+// replacement interprets `$&`, `` $` ``, `$'` and `$$` inside the VALUE as replacement
+// patterns — a diff containing e.g. a sed snippet with `$&` was silently corrupted before
+// reaching the reviewer. applyVars must insert values literally.
+test('applyVars inserts $-patterns literally (no replacement-pattern corruption)', () => {
+  const out = applyVars('before {{DIFF}} after', { DIFF: "sed 's/a/$&/' && echo $$1" });
+  assert.equal(out, "before sed 's/a/$&/' && echo $$1 after");
+});
+
+test('applyVars substitutes every placeholder, an undefined value becomes empty', () => {
+  assert.equal(
+    applyVars('A={{A}} B={{B}} C={{C}}', { A: 'x', B: undefined, C: 'z' }),
+    'A=x B= C=z',
+  );
 });

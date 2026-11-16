@@ -18,8 +18,13 @@ reviewed code and do not trigger this rule.
 ISSUE: {{IDENTIFIER}} — {{TITLE}}
 {{DESCRIPTION}}
 
-The full diff vs the base branch is provided below between <DIFF> tags. The commit message
-is the first line inside the diff header.
+The diff vs the base branch is provided below between <DIFF> tags. The commit message
+is the first line inside the diff header. If the diff block carries a
+`[DIFF TRUNCATED by the swarm: …]` marker, the swarm cut an oversized diff and what you
+see is a prefix of the real one. The marker alone is NOT a reason to RETURN: judge the
+visible code on its merits, and mention in the notes that the diff was cut only if it
+actually limited your confidence. A problem visible in the shown code is still a
+problem — RETURN as usual.
 
 {{DIFF}}
 
