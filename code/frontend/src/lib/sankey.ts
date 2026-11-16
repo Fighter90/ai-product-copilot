@@ -105,6 +105,10 @@ function buildUtmSankey(utm: UtmStat[]): object {
         type: 'sankey',
         emphasis: { focus: 'adjacency' },
         nodeAlign: 'left',
+        // ANA-184 (регресс 15.11): метки перекрывались в плотных кластерах — больше вертикального
+        // воздуха между узлами и скрытие пересекающихся меток (тултип остаётся на hover).
+        nodeGap: 14,
+        labelLayout: { hideOverlap: true },
         label: {
           formatter: (p: { name: string }) => p.name.replace(/^src:/, '').replace(/^camp:/, ''),
         },

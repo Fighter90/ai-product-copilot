@@ -87,6 +87,16 @@ describe('FunnelView', () => {
       timeout: 15000,
     });
   });
+
+  it('ANA-184: the «Заявок B2C» card explains why the funnel reg_step1 stage differs', () => {
+    // Регресс 15.11: карточка «Заявок B2C» (достижения основной цели) ≠ ступень «Оставили
+    // контакты (заказ)» (отдельная live-цель reg_step1) — подписи обязаны объяснять разницу.
+    render(<FunnelView status="success" stats={stats} deals={deals} geoDevice={[]} pages={[]} />);
+    // Both the card hint and the chart caveat stay in the DOM (sr-only until opened).
+    const hints = screen.getAllByText(/reg_step1/);
+    expect(hints.length).toBeGreaterThanOrEqual(2);
+    for (const hint of hints) expect(hint.textContent).toContain('Оставили контакты');
+  });
 });
 
 describe('Funnel (wrapper)', () => {

@@ -19,6 +19,8 @@ interface SankeyOption {
   series: {
     type: string;
     label: { formatter: (p: { name: string }) => string };
+    labelLayout?: { hideOverlap?: boolean };
+    nodeGap?: number;
     data: { name: string }[];
     links: { source: string; target: string; value: number }[];
   }[];
@@ -106,6 +108,14 @@ describe('utmSankeyOption', () => {
     const links = o.series[0]?.links ?? [];
     expect(links).toHaveLength(1);
     expect(links[0]).toEqual({ source: 'src:vk', target: 'camp:spring', value: 12 });
+  });
+
+  it('ANA-184: dense clusters stay readable — wider nodeGap and hideOverlap label layout', () => {
+    const o = parse(utmSankeyOption([utmStat({})]));
+    // Overlapping labels in dense clusters (регресс 15.11): the series must ask ECharts to
+    // hide colliding labels and to space the nodes wider than the 8px default.
+    expect(o.series[0]?.labelLayout).toEqual({ hideOverlap: true });
+    expect(o.series[0]?.nodeGap).toBeGreaterThanOrEqual(12);
   });
 
   it('formats node labels by stripping the internal namespace prefix', () => {

@@ -59,11 +59,34 @@ describe('KpiStrip (ANA-146 mobile no-overflow)', () => {
       <KpiStrip kpi={kpi} pace={pace} goalIsPaid={false} showApplicationsCaveat weakSpot={weak} />,
     );
     // 1 fact day → deadline = 2025-01-01 + 2 = 2025-01-03; the «Цель» tile repeats the date.
+    // ANA-184: the year is part of the date — «без года» is ambiguous when a horizon crosses it.
     const date = new Date('2025-01-03T00:00:00').toLocaleDateString('ru-RU', {
       day: 'numeric',
       month: 'short',
+      year: 'numeric',
     });
     expect(screen.getByText(`до ${date}`)).toBeInTheDocument();
+  });
+
+  it('ANA-184: the hero forecast date always shows the year («Прогноз: 28 окт. 2025 г.»)', () => {
+    // Регресс 15.11: «Прогноз: 5 окт.» без года — при горизонте > 1 года двусмысленно.
+    // 1 reach/day pace → 300 days → the forecast date lands almost a year past the period.
+    setTestLocale('ru');
+    const kpi = summarizeChannels([ch('2025-01-01', 'podcast', 420, 1)], [], false, 300, 0);
+    const pace = goalPace({
+      points: [{ date: '2025-01-01', visits: 420, reaches: 1 }],
+      to: '2025-01-01',
+      target: kpi.target,
+      current: 0,
+      goalIsPaid: false,
+    });
+    render(
+      <KpiStrip kpi={kpi} pace={pace} goalIsPaid={false} showApplicationsCaveat weakSpot={weak} />,
+    );
+    const line = screen.getByText(/Прогноз:/);
+    expect(line.textContent).toMatch(/2025/);
+    // The deadline in the same line carries the year too — one date style in the hero.
+    expect(screen.getByText(/до 3 янв\. 2025/)).toBeInTheDocument();
   });
 
   it('ANA-167: the order-goal tile hint explains «Заказ» with the period dates', () => {

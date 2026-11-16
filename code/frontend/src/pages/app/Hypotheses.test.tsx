@@ -139,6 +139,17 @@ describe('Hypotheses page', () => {
     expect(container).toBeTruthy();
   });
 
+  it('ANA-184: at 1280px the kanban lanes keep a min width and the strip scrolls inside', async () => {
+    // Регресс 15.11: six lanes in a 1152px main squeezed to ~136px and titles wrapped
+    // one word per line. The wrapper scrolls horizontally and the lg grid gives each
+    // lane a minmax floor instead of a bare 1fr.
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    const kanban = await screen.findByTestId('hyp-kanban');
+    expect(kanban.className).toContain('overflow-x-auto');
+    const grid = kanban.querySelector('.grid');
+    expect(grid?.className).toContain('lg:grid-cols-[repeat(6,minmax(190px,1fr))]');
+  });
+
   it('sorts the ICE table descending by default and flips on header click; drafts stay out (ANA-129)', async () => {
     renderWithProviders(<Hypotheses />, '/app/hypotheses');
     const table = await screen.findByTestId('hyp-ice-table');

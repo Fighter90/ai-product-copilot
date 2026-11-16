@@ -385,6 +385,7 @@ export const ru = {
   'digest.goals7': 'Достижения цели (7 дней)',
   'digest.channels': 'Каналов в работе',
   'digest.bestChannel': 'Лучший канал',
+  'digest.noPrevWeek': 'Нет полной предыдущей недели в выбранном периоде — сравнение недоступно.',
   'filters.archivedGoals': 'Архивные цели',
   'filters.archivedGoalsHint':
     'Показать цели, заархивированные или удалённые в Метрике. Спящие и мёртвые цели — это не архив: они остаются в списке всегда, статус виден в колонке «Статус».',
@@ -893,6 +894,8 @@ export const ru = {
   'an.fn.funnel': 'Воронка',
   'an.fn.b2cApps': 'Заявки B2C',
   'an.fn.b2cAppsCount': 'Заявок B2C',
+  'an.fn.b2cAppsHint':
+    'Достижения основной цели счётчика (кэш Метрики) за выбранный период. Ступень воронки «Оставили контакты (заказ)» — отдельная live-цель reg_step1 (pc-goals): определения разные, числа не обязаны совпадать.',
   'an.fn.b2bPaid': 'Оплачено B2B',
   // ANA-21: ступени per-issue воронки (см. PC_FUNNEL в backend live/live.ts).
   'an.fn.stage.regOpen': 'Открыли регистрацию',
@@ -1001,7 +1004,7 @@ export const ru = {
   'cap.fn.funnel.correct':
     'Ступени визит→заявка строятся из channel_stats; ступени билетов/оплат — из b2b_manual.',
   'cap.fn.funnel.caveat':
-    'Если B2B-данные не введены вручную, нижние ступени воронки занижены и не отражают реальные оплаты.',
+    'Если B2B-данные не введены вручную, нижние ступени воронки занижены и не отражают реальные оплаты. Ступень «Оставили контакты (заказ)» — отдельная live-цель reg_step1 (pc-goals), карточка «Заявок B2C» выше — достижения основной цели: числа не обязаны совпадать.',
   'cap.fn.funnel.advice':
     'Заполняйте b2b_manual после каждой сделки, чтобы воронка показывала путь до оплаты, а не только до заявки.',
   'cap.fn.cr.correct':
@@ -1867,6 +1870,7 @@ export const en: Record<DictKey, string> = {
   'digest.goals7': 'Goal reaches (7 days)',
   'digest.channels': 'Active channels',
   'digest.bestChannel': 'Best channel',
+  'digest.noPrevWeek': 'No full previous week in the selected period — comparison unavailable.',
   'filters.archivedGoals': 'Archived goals',
   'filters.archivedGoalsHint':
     'Show goals archived or deleted in Metrika. Sleeping and dead goals are not the archive: they stay in the list, see the Status column.',
@@ -2375,6 +2379,8 @@ export const en: Record<DictKey, string> = {
   'an.fn.funnel': 'Funnel',
   'an.fn.b2cApps': 'B2C applications',
   'an.fn.b2cAppsCount': 'B2C applications',
+  'an.fn.b2cAppsHint':
+    'Reaches of the counter\'s primary goal (Metrika cache) for the selected period. The funnel stage "Left contacts (order)" is a separate live goal reg_step1 (pc-goals): different definitions, the numbers need not match.',
   'an.fn.b2bPaid': 'B2B paid',
   // ANA-21: per-issue funnel stages (see PC_FUNNEL in backend live/live.ts).
   'an.fn.stage.regOpen': 'Opened registration',
@@ -2483,7 +2489,7 @@ export const en: Record<DictKey, string> = {
   'cap.fn.funnel.correct':
     'The visit→application steps come from channel_stats; ticket/payment steps from b2b_manual.',
   'cap.fn.funnel.caveat':
-    'If B2B data is not entered manually, the lower funnel steps are understated and miss real payments.',
+    'If B2B data is not entered manually, the lower funnel steps are understated and miss real payments. The "Left contacts (order)" stage is a separate live goal reg_step1 (pc-goals), while the "B2C applications" card above counts the primary goal\'s reaches — the numbers need not match.',
   'cap.fn.funnel.advice':
     'Fill in b2b_manual after every deal so the funnel shows the path to payment, not just to the application.',
   'cap.fn.cr.correct':

@@ -9,13 +9,15 @@ import { InfoHint } from '../InfoHint';
 import type { GoalPace, PaceStatus } from './goal-pace';
 import { ProgressRing } from './ProgressRing';
 
-/** «12 нояб.» / «12 Nov» — the hero is narrow, the year is implied by the selected period. */
+/** «12 нояб. 2026 г.» / «12 Nov 2026» — ANA-184: the year is always shown; a bare «5 окт.» is
+ * ambiguous when the forecast horizon or the deadline crosses a year boundary. */
 function shortDate(iso: string, locale: Locale): string {
   const d = new Date(`${iso}T00:00:00`);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-GB', {
     day: 'numeric',
     month: 'short',
+    year: 'numeric',
   });
 }
 
