@@ -117,6 +117,22 @@ describe('OverviewView', () => {
     expect(caveat).not.toHaveTextContent('2 длины периода');
   });
 
+  it('ANA-184: digest deltas show «—» (no fake «0% WoW») when the period has no previous week', () => {
+    // Регресс 15.11: «Визиты (7 дней)» не меняется при 7д/14д, а WoW менялся с фейковых «0%»
+    // на реальный ± — смешанная семантика. Без предыдущей недели в периоде дельты нет.
+    const stats = Array.from({ length: 7 }, (_, i) => ({
+      ...sample,
+      date: `2025-01-${String(i + 1).padStart(2, '0')}`,
+    }));
+    render(<OverviewView status="success" stats={stats} />);
+    expect(screen.getByText('Дайджест за неделю')).toBeInTheDocument();
+    // The digest values stay (last 7 days of the period)…
+    expect(screen.getByText('700')).toBeInTheDocument();
+    // …but no WoW chip is rendered without a comparison base — the «—» placeholder marks it.
+    expect(screen.queryByText(/WoW/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
+  });
+
   it('shows the auto-detected KPI goal badge when a primary goal is provided', () => {
     render(<OverviewView status="success" stats={[sample]} primaryGoalName="Ecommerce: покупка" />);
     expect(screen.getByText(/KPI-цель определена автоматически/)).toBeInTheDocument();

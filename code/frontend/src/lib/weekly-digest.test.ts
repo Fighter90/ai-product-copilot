@@ -25,7 +25,9 @@ describe('weeklyDigest', () => {
     const d = weeklyDigest([]);
     expect(d.hasData).toBe(false);
     expect(d.visits).toBe(0);
-    expect(d.visitsDelta).toBe(0);
+    // ANA-184: no comparison base → no fake «0%», the delta is unknown.
+    expect(d.visitsDelta).toBeNull();
+    expect(d.applicationsDelta).toBeNull();
     expect(d.topChannel).toBeNull();
     expect(d.topWeakSpot).toBeNull();
   });
@@ -56,5 +58,24 @@ describe('weeklyDigest', () => {
     const d = weeklyDigest(stats);
     expect(d.topChannel).toEqual({ channel: 'ads', visits: 700 });
     expect(d.topWeakSpot).toBeNull();
+  });
+
+  it('ANA-184: a 7-day period has no previous week in data — deltas are null, values stay last-7-days', () => {
+    // The digest card is a weekly snapshot: switching the period 7д/14д keeps the «7 дней»
+    // value the same, but with no comparison base the WoW delta must not show a fake «0%».
+    const stats = days.slice(0, 7).map((date) => stat(date, 'ads'));
+    const d = weeklyDigest(stats);
+    expect(d.hasData).toBe(true);
+    expect(d.visits).toBe(700);
+    expect(d.applications).toBe(35);
+    expect(d.visitsDelta).toBeNull();
+    expect(d.applicationsDelta).toBeNull();
+  });
+
+  it('ANA-184: a partial previous week (13 days) is not a comparison base either', () => {
+    const stats = days.slice(0, 13).map((date) => stat(date, 'ads'));
+    const d = weeklyDigest(stats);
+    expect(d.visitsDelta).toBeNull();
+    expect(d.applicationsDelta).toBeNull();
   });
 });

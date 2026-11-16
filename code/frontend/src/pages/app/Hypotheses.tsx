@@ -277,94 +277,98 @@ export function Hypotheses(): JSX.Element {
       />
 
       {/* Kanban: min-w-0/overflow-hidden on lanes and cards so long titles never push a card
-          past its column edge (ANA-75 / БАГ-15). */}
-      <div className="grid gap-3 lg:grid-cols-6" data-testid="hyp-kanban">
-        {KANBAN_COLUMNS.map((col) => {
-          const cards = byStatus(col.statuses);
-          return (
-            <section
-              key={col.id}
-              aria-label={t(col.key)}
-              className="min-w-0 overflow-hidden rounded-xl border border-line bg-surface/60 p-2"
-            >
-              <h2 className="mb-2 flex items-center justify-between px-1 text-xs font-semibold uppercase tracking-wide text-muted">
-                {t(col.key)}
-                <span className="rounded-full bg-raised px-1.5 text-[11px]">{cards.length}</span>
-              </h2>
-              <div className="space-y-2">
-                {cards.map((h) => (
-                  <article
-                    key={h.id}
-                    data-testid={`hyp-card-${h.id}`}
-                    className="card min-w-0 overflow-hidden p-3 text-sm animate-fade-up"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="min-w-0 break-words font-medium leading-snug">
-                        {h.title}
-                      </span>
-                      <span className="shrink-0 rounded bg-raised px-1.5 py-0.5 text-[11px] font-bold text-accent">
-                        {fmtNum(h.iceScore, locale)}
-                      </span>
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <SourceBadge
-                        source={h.source}
-                        aiProvider={h.aiProvider}
-                        aiModel={h.aiModel}
-                      />
-                      {/* ANA-157: the autonomy badges (level + escalation) on AI cards. */}
-                      <HypothesisAutonomyBadges source={h.source} />
-                      <UnverifiedBadge numbers={h.unverifiedNumbers} />
-                    </div>
-                    {/* ANA-158: flex-wrap + min-w-0 on every flex child — with a long status label
+          past its column edge (ANA-75 / БАГ-15). ANA-184 (регресс 15.11): at 1280×712 six lanes
+          squeezed to ~136px and titles wrapped one word per line — the lg grid gives each lane
+          a minmax(190px,1fr) floor and the strip scrolls horizontally inside the wrapper. */}
+      <div className="overflow-x-auto pb-1" data-testid="hyp-kanban">
+        <div className="grid gap-3 lg:grid-cols-[repeat(6,minmax(190px,1fr))]">
+          {KANBAN_COLUMNS.map((col) => {
+            const cards = byStatus(col.statuses);
+            return (
+              <section
+                key={col.id}
+                aria-label={t(col.key)}
+                className="min-w-0 overflow-hidden rounded-xl border border-line bg-surface/60 p-2"
+              >
+                <h2 className="mb-2 flex items-center justify-between px-1 text-xs font-semibold uppercase tracking-wide text-muted">
+                  {t(col.key)}
+                  <span className="rounded-full bg-raised px-1.5 text-[11px]">{cards.length}</span>
+                </h2>
+                <div className="space-y-2">
+                  {cards.map((h) => (
+                    <article
+                      key={h.id}
+                      data-testid={`hyp-card-${h.id}`}
+                      className="card min-w-0 overflow-hidden p-3 text-sm animate-fade-up"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="min-w-0 break-words font-medium leading-snug">
+                          {h.title}
+                        </span>
+                        <span className="shrink-0 rounded bg-raised px-1.5 py-0.5 text-[11px] font-bold text-accent">
+                          {fmtNum(h.iceScore, locale)}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <SourceBadge
+                          source={h.source}
+                          aiProvider={h.aiProvider}
+                          aiModel={h.aiModel}
+                        />
+                        {/* ANA-157: the autonomy badges (level + escalation) on AI cards. */}
+                        <HypothesisAutonomyBadges source={h.source} />
+                        <UnverifiedBadge numbers={h.unverifiedNumbers} />
+                      </div>
+                      {/* ANA-158: flex-wrap + min-w-0 on every flex child — with a long status label
                         or a narrow lane the row wraps and «Посмотреть» truncates instead of being
                         pushed past the card edge (overflow-hidden would clip it). */}
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-1 text-xs text-muted">
-                      <StatusSelect
-                        status={h.status}
-                        source={h.source}
-                        onChange={(s) => onStatusChange(h, s)}
-                      />
-                      <span className="flex min-w-0 max-w-full items-center gap-1">
-                        <button
-                          type="button"
-                          data-testid="hyp-view-btn"
-                          className="inline-flex min-w-0 max-w-full items-center gap-1 rounded px-1 py-0.5 text-muted hover:text-accent"
-                          title={t('hyp.view')}
-                          onClick={() => setViewing(h)}
-                        >
-                          <Eye className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                          <span className="truncate">{t('hyp.view')}</span>
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={t('hyp.edit')}
-                          title={t('hyp.edit')}
-                          className="rounded p-1 text-muted hover:text-accent"
-                          onClick={() => setEditing({ id: h.id, draft: draftOf(h) })}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={t('hyp.delete')}
-                          title={t('hyp.delete')}
-                          className="rounded p-1 text-muted hover:text-red-600"
-                          onClick={() => onDelete(h)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </span>
-                    </div>
-                  </article>
-                ))}
-                {cards.length === 0 && (
-                  <p className="px-1 py-2 text-xs text-muted">{t('hyp.columnEmpty')}</p>
-                )}
-              </div>
-            </section>
-          );
-        })}
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-1 text-xs text-muted">
+                        <StatusSelect
+                          status={h.status}
+                          source={h.source}
+                          onChange={(s) => onStatusChange(h, s)}
+                        />
+                        <span className="flex min-w-0 max-w-full items-center gap-1">
+                          <button
+                            type="button"
+                            data-testid="hyp-view-btn"
+                            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded px-1 py-0.5 text-muted hover:text-accent"
+                            title={t('hyp.view')}
+                            onClick={() => setViewing(h)}
+                          >
+                            <Eye className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                            <span className="truncate">{t('hyp.view')}</span>
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={t('hyp.edit')}
+                            title={t('hyp.edit')}
+                            className="rounded p-1 text-muted hover:text-accent"
+                            onClick={() => setEditing({ id: h.id, draft: draftOf(h) })}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={t('hyp.delete')}
+                            title={t('hyp.delete')}
+                            className="rounded p-1 text-muted hover:text-red-600"
+                            onClick={() => onDelete(h)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      </div>
+                    </article>
+                  ))}
+                  {cards.length === 0 && (
+                    <p className="px-1 py-2 text-xs text-muted">{t('hyp.columnEmpty')}</p>
+                  )}
+                </div>
+              </section>
+            );
+          })}
+        </div>
       </div>
 
       {/* ICE table */}

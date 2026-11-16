@@ -31,6 +31,7 @@ import {
 import { byCountry, audienceBarOption } from '../lib/audience';
 import { localizeChart } from '../lib/chart-i18n';
 import { InsightBadge } from '../components/InsightBadge';
+import { InfoHint } from '../components/InfoHint';
 import { B2cPaymentsCard } from '../components/payments/B2cPaymentsCard';
 import { useT, channelName, type DictKey } from '../i18n';
 import type { Locale } from '../store/prefs';
@@ -285,7 +286,12 @@ export function FunnelView({
           <div className="text-xl font-bold">{formatInt(visits)}</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="text-xs text-slate-500">{t('an.fn.b2cAppsCount')}</div>
+          <div className="text-xs text-slate-500">
+            {t('an.fn.b2cAppsCount')}
+            {/* ANA-184 (регресс 15.11): «Заявок B2C» (13/386) ≠ ступень «Оставили контакты
+                (заказ)» (11/32) — разные цели Метрики; подсказка объясняет разницу. */}
+            <InfoHint text={t('an.fn.b2cAppsHint')} align="start" className="ml-1" />
+          </div>
           <div className="text-xl font-bold">{formatInt(reaches)}</div>
           <div className="text-xs text-slate-500">CR {formatPercent(appConversionRate)}</div>
         </div>

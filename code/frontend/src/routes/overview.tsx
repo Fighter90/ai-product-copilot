@@ -898,8 +898,20 @@ export function Overview(): JSX.Element {
   );
 }
 
-/** WoW delta chip: green when up, red when down, grey when flat/unknown. */
-function Delta({ ratio }: { ratio: number }): JSX.Element {
+/**
+ * WoW delta chip: green when up, red when down, grey when flat/unknown.
+ * ANA-184 (регресс 15.11): `null` = no comparison base (a 7-day period has no previous week) —
+ * a neutral «—» instead of a fake «→ 0% WoW»; the title explains what is missing.
+ */
+function Delta({ ratio }: { ratio: number | null }): JSX.Element {
+  const { t } = useT();
+  if (ratio === null) {
+    return (
+      <span className="text-xs text-slate-500" title={t('digest.noPrevWeek')}>
+        —
+      </span>
+    );
+  }
   const tone = ratio > 0 ? 'text-green-700' : ratio < 0 ? 'text-red-700' : 'text-slate-500';
   const arrow = ratio > 0 ? '▲' : ratio < 0 ? '▼' : '→';
   return (
