@@ -108,6 +108,36 @@ describe('HistoryView', () => {
     );
     expect(screen.getByText('Всего отчётов: 1')).toBeInTheDocument();
   });
+
+  it('ANA-180: marks the freshest snapshot with the «текущий» badge', () => {
+    // Backend lists snapshots by generated_at DESC — the first one is the freshest («current»).
+    const snapshots = [
+      {
+        id: 'snap-new',
+        generatedAt: '2025-01-15T00:00:00Z',
+        dateFrom: '2025-01-08',
+        dateTo: '2025-01-14',
+      },
+      {
+        id: 'snap-old',
+        generatedAt: '2025-01-01T00:00:00Z',
+        dateFrom: '2025-01-01',
+        dateTo: '2025-01-07',
+      },
+    ];
+    renderWithProviders(<HistoryView status="success" snapshots={snapshots} />);
+    // Exactly one badge, and it sits in the freshest (first) row.
+    const badges = screen.getAllByText('текущий');
+    expect(badges).toHaveLength(1);
+    const freshestRow = badges[0]?.closest('tr');
+    expect(within(freshestRow!).getByText('Отчёт 08.01–14.01.2025')).toBeInTheDocument();
+    // The older row carries no badge. Links only — the compare selects repeat the same names.
+    const olderRow = screen
+      .getAllByRole('link', { name: 'Отчёт 01.01–07.01.2025' })
+      .at(0)!
+      .closest('tr');
+    expect(within(olderRow!).queryByText('текущий')).not.toBeInTheDocument();
+  });
 });
 
 describe('authorMatches (ANA-39: фильтр истории по автору)', () => {

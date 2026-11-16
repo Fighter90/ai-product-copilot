@@ -400,6 +400,14 @@ export function HistoryView({
                     >
                       {formatSnapshotName(s.dateFrom, s.dateTo, locale)}
                     </Link>
+                    {/* ANA-180: the freshest snapshot (the list is generated_at DESC) is the
+                        «текущий» one — without the marker the user could not tell which report
+                        the main page/exports are built from. */}
+                    {s.id === snapshots[0]?.id && (
+                      <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 align-middle text-[10px] font-medium text-emerald-700">
+                        {t('hist.current')}
+                      </span>
+                    )}
                     <div className="font-mono text-[10px] text-slate-400" title={s.id}>
                       {shortSnapshotId(s.id)}
                     </div>
