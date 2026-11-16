@@ -12,7 +12,7 @@ import {
   type NewHypothesis,
   type ValidationMethodType,
 } from '@pca/shared';
-import { useT } from '../../i18n';
+import { useT, type DictKey } from '../../i18n';
 import { Modal } from '../ui';
 import { CATEGORY_KEY, METHOD_TYPE_KEY } from './labels';
 
@@ -133,6 +133,53 @@ const input =
   'w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm text-ink outline-none focus:border-accent';
 const label = 'mb-1 block text-xs font-semibold text-muted';
 
+/** ANA-181: one «why is Save disabled» line — a format requirement and whether it is met. */
+interface Requirement {
+  readonly ok: boolean;
+  readonly key: DictKey;
+}
+
+const nonEmpty = (...xs: readonly string[]): boolean => xs.every((s) => s.trim() !== '');
+
+/**
+ * ANA-181 (регресс прод 15.11): the save requirements for the current mode — the explanation
+ * rendered under the disabled «Сохранить». The draft mode lists the title only (ANA-129 light
+ * rules); a work status keeps the full format checklist (same wording as the take-into-work
+ * gate). Rows added but not yet filled keep their requirement unmet, mirroring the editor
+ * validation (which is stricter than the shared validator exactly on those blank rows).
+ */
+function requirementsOf(d: HypothesisDraft, isDraft: boolean): Requirement[] {
+  if (isDraft) return [{ key: 'hyp.f.title', ok: d.title.trim() !== '' }];
+  const assumptions = d.hiddenAssumptions.filter((a) => a.text.trim() !== '');
+  const methods = d.validationMethods.filter((m) => m.plan.trim() !== '');
+  return [
+    {
+      key: 'hyp.check.format',
+      ok: nonEmpty(d.subject, d.action, d.solution, d.condition, d.title),
+    },
+    {
+      key: 'hyp.check.assumptions',
+      ok:
+        assumptions.length >= 3 &&
+        new Set(assumptions.map((a) => a.category)).size === ASSUMPTION_CATEGORIES.length &&
+        d.hiddenAssumptions.every((a) => a.text.trim() !== ''),
+    },
+    {
+      key: 'hyp.check.methods',
+      ok:
+        methods.length >= 2 &&
+        new Set(methods.map((m) => m.type)).size >= 2 &&
+        d.validationMethods.every((m) => m.plan.trim() !== ''),
+    },
+    {
+      key: 'hyp.check.ice',
+      ok: nonEmpty(d.impactRationale, d.confidenceRationale, d.easeRationale),
+    },
+    { key: 'hyp.check.traffic', ok: nonEmpty(d.greenCriteria, d.yellowCriteria, d.redCriteria) },
+    { key: 'hyp.check.deadline', ok: Number.isInteger(d.deadlineDays) && d.deadlineDays >= 1 },
+  ];
+}
+
 function FieldError({ children }: { children: ReactNode }): JSX.Element | null {
   if (!children) return null;
   return (
@@ -218,6 +265,9 @@ export function HypothesisEditor({
   const valid = Object.keys(errors).length === 0 && shared.ok;
   /** Per-field errors as displayed: gated behind the first user input (БАГ-14 dirty tracking). */
   const shownErrors = dirty ? errors : {};
+  // ANA-181: the always-visible explanation under the disabled «Сохранить» — the unmet
+  // requirements (unlike the per-field errors, this list shows BEFORE the first input).
+  const blockers = useMemo(() => requirementsOf(d, isDraft).filter((r) => !r.ok), [d, isDraft]);
   const sentence = `${d.subject} ${d.action} ${d.solution}${
     d.condition ? `${t('hyp.sentenceIf')}${d.condition}` : ''
   }`.trim();
@@ -552,19 +602,49 @@ export function HypothesisEditor({
           </div>
         )}
 
-        <div className="flex justify-end gap-2">
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>
-            {t('hyp.cancel')}
-          </button>
-          <button
-            type="button"
-            data-testid="hyp-save"
-            className="btn-primary"
-            disabled={!valid || busy}
-            onClick={() => void save()}
-          >
-            {busy ? t('hyp.saving') : t('hyp.save')}
-          </button>
+        <div className="space-y-2">
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>
+              {t('hyp.cancel')}
+            </button>
+            <button
+              type="button"
+              data-testid="hyp-save"
+              className="btn-primary"
+              disabled={!valid || busy}
+              onClick={() => void save()}
+            >
+              {busy ? t('hyp.saving') : t('hyp.save')}
+            </button>
+          </div>
+          {/* ANA-181 (регресс прод 15.11): a disabled «Сохранить» must ALWAYS explain itself —
+              the unmet requirements are listed under the button, visible before any input too
+              (the per-field «Заполните поле» errors stay hidden behind the БАГ-14 dirty gate).
+              The panel is unconditional: when no checklist item explains the disabled state
+              (a shared-validator rule not mirrored in requirementsOf — e.g. an out-of-range ICE
+              factor from stored data), the generic line still shows (review round 2). */}
+          {!valid && !busy && (
+            <div
+              data-testid="hyp-save-blockers"
+              role="status"
+              className="rounded-md border border-line bg-raised px-3 py-2 text-xs"
+            >
+              {blockers.length > 0 ? (
+                <>
+                  <p className="font-semibold text-muted">{t('hyp.saveBlockers.title')}</p>
+                  <ul className="mt-1 space-y-0.5">
+                    {blockers.map((r) => (
+                      <li key={r.key} className="text-red-600">
+                        <span aria-hidden>✗</span> {t(r.key)}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="font-medium text-muted">{t('hyp.saveBlockers.generic')}</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </Modal>
