@@ -368,6 +368,44 @@ function b2bSection(s: ReportSnapshot, locale: ReportLocale): ReportSection | nu
   return { heading: T.b2bHeading, lines };
 }
 
+/**
+ * ANA-165: Marketing section — the Marketing page's weekly grid totalled over the report period.
+ * Present only when the snapshot carries a marketing summary with at least one metric; legacy
+ * snapshots (and periods without real marketing cells) render no section, as before.
+ */
+function marketingSection(s: ReportSnapshot, locale: ReportLocale): ReportSection | null {
+  const T = REPORT_TEXT[locale];
+  const marketing = s.marketing;
+  if (!marketing || marketing.byMetric.length === 0) return null;
+
+  // The builder guarantees a week per contributing cell, but the type permits an empty list —
+  // then only the week-range line is skipped, the metrics table still renders.
+  const first = marketing.weeks[0];
+  const last = marketing.weeks[marketing.weeks.length - 1];
+  const lines: string[] = [];
+  if (first && last) {
+    lines.push(T.mkWeeks(marketing.weeks.length, first.start, last.end), '');
+  }
+  lines.push(
+    ...tableHeader(...T.mkTableHeader),
+    ...marketing.byMetric.map((m) =>
+      row(
+        locale === 'ru' ? m.labelRu : m.labelEn,
+        m.section === 'content'
+          ? T.mkSectionContent
+          : m.section === 'influence'
+            ? T.mkSectionInfluence
+            : T.mkSectionOther,
+        String(m.total),
+        String(m.weeks),
+      ),
+    ),
+    '',
+    T.mkSource,
+  );
+  return { heading: T.mkHeading, lines };
+}
+
 /** Funnel analysis section. */
 function funnelSection(s: ReportSnapshot, locale: ReportLocale): ReportSection | null {
   const T = REPORT_TEXT[locale];
@@ -625,6 +663,11 @@ export function reportSections(s: ReportSnapshot, locale: ReportLocale = 'ru'): 
   // B2B section
   const b2bSec = b2bSection(s, locale);
   if (b2bSec) sections.push(b2bSec);
+
+  // ANA-165: Marketing section (weekly marketing grid totals) — right after B2B, before the
+  // channel analysis, so all manual data sources sit together.
+  const mkSec = marketingSection(s, locale);
+  if (mkSec) sections.push(mkSec);
 
   // Detailed channel analysis
   sections.push(channelAnalysisSection(s, locale));

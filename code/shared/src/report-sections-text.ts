@@ -164,6 +164,17 @@ const RU = {
   b2bDeal: (company: string, tickets: number, stage: string) =>
     `  • ${company}: ${tickets} билетов [${stage}]`,
 
+  // ANA-165: Marketing — weekly marketing grid totals over the report period
+  mkHeading: 'Маркетинг',
+  mkWeeks: (n: number, first: string, last: string) =>
+    `Недели кампании, пересекающие период отчёта: ${n} (${first} — ${last})`,
+  mkTableHeader: ['Метрика', 'Раздел', 'Итого за период', 'Недель'] as readonly string[],
+  mkSectionContent: 'Контент',
+  mkSectionInfluence: 'Инфопартнёры',
+  mkSectionOther: 'Другое',
+  mkSource:
+    'Источник: weekly marketing grid (страница «Маркетинг»); суммированы только реальные (не демо) ячейки за недели, пересекающие период отчёта.',
+
   // Funnel (conversion)
   funnelHeading: 'Воронка конверсии',
   funnelStage1: (n: number) => `Этап 1: Визиты — ${n}`,
@@ -503,6 +514,17 @@ const EN: ReportText = {
   b2bStage: (stage, tickets, deals) => `  • ${stage}: ${tickets} tickets (${deals} deals)`,
   b2bDealList: 'Deals:',
   b2bDeal: (company, tickets, stage) => `  • ${company}: ${tickets} tickets [${stage}]`,
+
+  // ANA-165: Marketing — weekly marketing grid totals over the report period
+  mkHeading: 'Marketing',
+  mkWeeks: (n, first, last) =>
+    `Campaign weeks intersecting the report period: ${n} (${first} — ${last})`,
+  mkTableHeader: ['Metric', 'Section', 'Total for the period', 'Weeks'],
+  mkSectionContent: 'Content',
+  mkSectionInfluence: 'Influence partners',
+  mkSectionOther: 'Other',
+  mkSource:
+    'Source: the weekly marketing grid (the Marketing page); only real (non-demo) cells from the weeks intersecting the report period are summed.',
 
   funnelHeading: 'Conversion funnel',
   funnelStage1: (n) => `Stage 1: Visits — ${n}`,
