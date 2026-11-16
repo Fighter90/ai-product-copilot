@@ -28,8 +28,29 @@ export interface ImportAiPayload {
 
 const json = (body: unknown): RequestInit => ({ body: JSON.stringify(body) });
 
+/**
+ * ANA-181 (регресс прод 15.11): счётчик колонки «Черновики» вырос 20 → 60 между заходами без
+ * создания гипотез. ЗАЩИТНАЯ мера на границе queryFn (первое вхождение выигрывает): дубликаты
+ * с одинаковым id не попадают в кэш react-query. Механизм прод-дублирования НЕ подтверждён —
+ * в клиенте нет пути добавления в кэш (только invalidateQueries), а серверный список —
+ * плоский SELECT по таблице с целочисленным PK и физически не может вернуть id дважды;
+ * доступных данных/логов прода, показывающих, что дубликаты имели одинаковые id, нет.
+ * Если дубликаты имели разные id, этот фильтр их не убирает — и на отчёты он не влияет
+ * ни при каком исходе: ReportSnapshot строится из SQLite, а не из этого кэша.
+ */
+export function dedupeById<T extends { readonly id: number }>(items: readonly T[]): T[] {
+  const seen = new Set<number>();
+  const out: T[] = [];
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    out.push(item);
+  }
+  return out;
+}
+
 export const hypothesesApi = {
-  list: () => http<Hypothesis[]>('/hypotheses'),
+  list: async () => dedupeById(await http<Hypothesis[]>('/hypotheses')),
   create: (h: NewHypothesis) => http<Hypothesis>('/hypotheses', { method: 'POST', ...json(h) }),
   update: (id: number, h: NewHypothesis) =>
     http<Hypothesis>(`/hypotheses/${id}`, { method: 'PUT', ...json(h) }),

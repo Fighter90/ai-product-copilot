@@ -32,7 +32,7 @@ import {
 } from '../../components/hypotheses/HypothesisEditor';
 import { HypothesisViewModal } from '../../components/hypotheses/HypothesisViewModal';
 import { KANBAN_COLUMNS, STATUS_KEY, statusTone } from '../../components/hypotheses/labels';
-import { hypothesesApi } from '../../lib/hypotheses-api';
+import { hypothesesApi, dedupeById } from '../../lib/hypotheses-api';
 import { api } from '../../lib/api';
 import { hasSeed, parseHypothesisSeed } from '../../lib/hypothesis-prefill';
 import type { GeneratedHypotheses } from '@pca/shared';
@@ -189,7 +189,12 @@ export function Hypotheses(): JSX.Element {
     },
   });
 
-  const hypotheses = list.data ?? [];
+  // ANA-181 (регресс прод 15.11): счётчик колонки вырос 20 → 60 между заходами без создания
+  // гипотез. ЗАЩИТНАЯ дедупликация по id на границе кэша: карточки с одинаковым id не
+  // удваиваются в DOM. Механизм прод-дублирования не подтверждён (путь добавления в кэш в
+  // клиенте отсутствует — только invalidateQueries; серверный SELECT по PK не может вернуть
+  // id дважды); при дубликатах с разными id этот фильтр бессилен, на отчёты (SQLite) не влияет.
+  const hypotheses = useMemo(() => dedupeById(list.data ?? []), [list.data]);
   // ANA-129: drafts are not full hypotheses yet — they stay out of ICE prioritisation.
   const work = useMemo(() => hypotheses.filter((h) => h.status !== 'draft'), [hypotheses]);
   const byStatus = (statuses: readonly HypothesisStatus[]): Hypothesis[] =>
@@ -365,13 +370,21 @@ export function Hypotheses(): JSX.Element {
       {/* ICE table */}
       <Card title={t('hyp.table.title')} hint={t('hyp.table.hint')}>
         {work.length === 0 ? (
-          <EmptyState
-            message={t('hyp.empty')}
-            action={{
-              label: t('hyp.new'),
-              onClick: () => setEditing({ id: null, draft: blankDraft() }),
-            }}
-          />
+          hypotheses.length === 0 ? (
+            <EmptyState
+              message={t('hyp.empty')}
+              action={{
+                label: t('hyp.new'),
+                onClick: () => setEditing({ id: null, draft: blankDraft() }),
+              }}
+            />
+          ) : (
+            /* ANA-181 (регресс прод 15.11): drafts live on the kanban, so «Пока нет гипотез»
+               must not show while cards exist — the panel explains the drafts-only state. */
+            <p data-testid="hyp-ice-all-drafts" className="text-sm text-muted">
+              {t('hyp.table.allDrafts')}
+            </p>
+          )
         ) : (
           <div className="overflow-x-auto">
             <table data-testid="hyp-ice-table" className="w-full text-sm">

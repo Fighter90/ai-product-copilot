@@ -1329,6 +1329,9 @@ export const ru = {
   'hyp.columnEmpty': '— пусто —',
   'hyp.table.title': 'Приоритизация по ICE',
   'hyp.table.hint': 'ICE = Impact × Confidence × Ease; клик по заголовку — сортировка',
+  // ANA-181 (регресс прод 15.11): пустое состояние не показывается, пока на канбане есть карточки.
+  'hyp.table.allDrafts':
+    'Все гипотезы сейчас в черновиках — возьмите одну в работу, чтобы она попала в приоритизацию по ICE.',
   'hyp.status.draft': 'Черновик',
   'hyp.col.drafts': 'Черновики',
   'hyp.draftHint': 'Черновик: достаточно названия — полный формат понадобится при взятии в работу.',
@@ -1341,6 +1344,10 @@ export const ru = {
   'hyp.check.traffic': 'Светофор: зелёный / жёлтый / красный критерии',
   'hyp.check.deadline': 'Дедлайн: целое число дней ≥ 1',
   'hyp.check.close': 'Понятно',
+  // ANA-181 (регресс прод 15.11): почему «Сохранить» недоступна — список незаполненного под кнопкой.
+  'hyp.saveBlockers.title': 'Кнопка «Сохранить» недоступна — заполните:',
+  'hyp.saveBlockers.generic':
+    'Кнопка «Сохранить» недоступна — проверьте поля формы: какое-то значение не прошло проверку.',
   // ANA-152: «Посмотреть» на карточке — попап с полным описанием гипотезы.
   'hyp.view': 'Посмотреть',
   'hyp.view.title': 'Гипотеза',
@@ -2803,6 +2810,9 @@ export const en: Record<DictKey, string> = {
   'hyp.columnEmpty': '— empty —',
   'hyp.table.title': 'ICE prioritisation',
   'hyp.table.hint': 'ICE = Impact × Confidence × Ease; click a header to sort',
+  // ANA-181 (prod regression 15.11): no empty state while the kanban still holds cards.
+  'hyp.table.allDrafts':
+    'All hypotheses are drafts so far — take one into work to include it in the ICE prioritisation.',
   'hyp.status.draft': 'Draft',
   'hyp.col.drafts': 'Drafts',
   'hyp.draftHint':
@@ -2816,6 +2826,10 @@ export const en: Record<DictKey, string> = {
   'hyp.check.traffic': 'Traffic light: green / yellow / red criteria',
   'hyp.check.deadline': 'Deadline: a whole number of days ≥ 1',
   'hyp.check.close': 'Got it',
+  // ANA-181 (prod regression 15.11): why «Save» is disabled — the missing items listed under the button.
+  'hyp.saveBlockers.title': 'Save is disabled — fill in:',
+  'hyp.saveBlockers.generic':
+    'Save is disabled — check the form fields: some value failed validation.',
   // ANA-152: «View» on the card — a popup with the full hypothesis description.
   'hyp.view': 'View',
   'hyp.view.title': 'Hypothesis',

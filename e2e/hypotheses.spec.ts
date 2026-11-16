@@ -283,15 +283,17 @@ test.describe('«→ гипотеза» deep link (ANA-24)', () => {
 
     // ANA-129: the saved light draft lands in the «Черновики» lane and stays out of the ICE
     // table — drafts are not prioritised until they are taken into work. With only drafts on
-    // the page the ICE table does not render at all (EmptyState instead), and a negated text
-    // assertion still waits for the element to mount — it failed with "element(s) not found"
-    // (ANA-145 root cause), so absence is asserted by count, plus the EmptyState copy.
+    // the page the ICE table does not render at all, and a negated text assertion still waits
+    // for the element to mount — it failed with "element(s) not found" (ANA-145 root cause),
+    // so absence is asserted by count. ANA-181: while cards exist the panel no longer claims
+    // «Пока нет гипотез» (stale empty-state) — it explains the drafts-only state instead.
     const drafts = page.getByRole('region', { name: 'Черновики' });
     await expect(drafts.getByTestId('hyp-card-100')).toBeVisible();
     await expect(page.getByTestId('hyp-ice-table')).toHaveCount(0);
+    await expect(page.getByTestId('hyp-ice-all-drafts')).toBeVisible();
     await expect(
       page.getByText('Пока нет гипотез — создайте первую или импортируйте AI-варианты'),
-    ).toBeVisible();
+    ).toHaveCount(0);
   });
 });
 

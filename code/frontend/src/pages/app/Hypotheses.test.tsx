@@ -9,17 +9,23 @@ const authMock = vi.hoisted(() => ({
   state: { user: { name: 'Analyst' } as { name: string } | null, isAdmin: false },
 }));
 vi.mock('../../auth/AuthContext', () => ({ useAuth: () => authMock.state }));
-vi.mock('../../lib/hypotheses-api', () => ({
-  hypothesesApi: {
-    list: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    remove: vi.fn(),
-    setStatus: vi.fn(),
-    importAi: vi.fn(),
-  },
-  decisionsApi: { list: vi.fn(), create: vi.fn() },
-}));
+vi.mock('../../lib/hypotheses-api', async (importOriginal) => {
+  // The real module stays for `dedupeById` (ANA-181): the page dedupes the query cache itself,
+  // only the HTTP calls are replaced.
+  const actual = await importOriginal<typeof import('../../lib/hypotheses-api')>();
+  return {
+    ...actual,
+    hypothesesApi: {
+      list: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn(),
+      setStatus: vi.fn(),
+      importAi: vi.fn(),
+    },
+    decisionsApi: { list: vi.fn(), create: vi.fn() },
+  };
+});
 vi.mock('../../lib/api', () => ({
   api: { listSnapshots: vi.fn(), getSnapshot: vi.fn() },
 }));
@@ -312,6 +318,78 @@ describe('Hypotheses page', () => {
     fireEvent.change(screen.getByLabelText('Целевая аудитория'), { target: { value: 'x' } });
     expect(screen.getByText('Заполните поле')).toBeInTheDocument(); // exactly one — the title
     expect(screen.queryByText('Нужно минимум 3 допущения')).not.toBeInTheDocument();
+  });
+
+  // ---- ANA-181 (регресс прод 15.11): a disabled «Сохранить» must explain itself ----------------
+
+  it('ANA-181: the empty form lists the unmet requirements under the disabled Save — before any input', async () => {
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    fireEvent.click(await screen.findByTestId('hyp-new'));
+    const save = await screen.findByTestId('hyp-save');
+    expect(save).toBeDisabled();
+    // The light draft needs only the title — exactly that requirement is listed.
+    const blockers = screen.getByTestId('hyp-save-blockers');
+    expect(blockers).toHaveTextContent('Название');
+    // БАГ-14 stays intact: the per-field «Заполните поле» errors are still hidden until input.
+    expect(screen.queryByText('Заполните поле')).not.toBeInTheDocument();
+
+    // Filling the title unblocks the save and removes the explanation.
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Быстрая идея' } });
+    await waitFor(() => expect(save).toBeEnabled());
+    expect(screen.queryByTestId('hyp-save-blockers')).not.toBeInTheDocument();
+  });
+
+  it('ANA-181: editing a work-status hypothesis with gaps lists the format requirements (met ones stay out)', async () => {
+    mockData({ list: [h({ id: 8, title: 'Частичная', status: 'in_progress', ...LIGHT_DRAFT })] });
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    const card = await screen.findByTestId('hyp-card-8');
+    fireEvent.click(within(card).getByRole('button', { name: 'Редактировать' }));
+
+    const blockers = await screen.findByTestId('hyp-save-blockers');
+    for (const line of [
+      'Формат: ЦА + действие + решение + условие',
+      '≥3 скрытых допущения',
+      '≥2 метода проверки',
+      'Обоснования ICE',
+      'Светофор',
+    ]) {
+      expect(blockers).toHaveTextContent(line);
+    }
+    // The deadline keeps its valid default (14) — it is met, so it is not listed.
+    expect(blockers).not.toHaveTextContent('Дедлайн: целое число дней');
+  });
+
+  // ---- ANA-181: the ICE panel must not show a stale «Пока нет гипотез» while cards exist -------
+
+  it('ANA-181: drafts-only board — the ICE panel explains the drafts state instead of «Пока нет гипотез»', async () => {
+    mockData({ list: [h({ id: 9, title: 'Только черновик', ...LIGHT_DRAFT })] });
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    expect(await screen.findByTestId('hyp-card-9')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Пока нет гипотез — создайте первую или импортируйте AI-варианты'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('hyp-ice-all-drafts')).toHaveTextContent('черновиках');
+  });
+
+  // ---- ANA-181: defensive same-id dedupe — one card per id, counter matches the DOM -----------
+
+  it('ANA-181: a duplicated refetch payload renders one card per id — the lane counter matches the DOM', async () => {
+    // The prod regression: between visits «Черновики» grew 20 → 60 cards without any creates.
+    // The duplication mechanism in prod is NOT verified — this test only pins the defensive
+    // UI guarantee: same-id duplicates (whatever their source) render once per id, so the
+    // lane counter and the card count agree for this payload shape. Distinct-id duplicates
+    // are out of scope here (the guard keeps them, and reports read SQLite, not this cache).
+    mockData({ list: [...SEEDED, ...SEEDED, ...SEEDED] }); // 2 unique rows served 3×
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    expect(await screen.findByTestId('hyp-kanban')).toBeInTheDocument();
+
+    expect(screen.getAllByTestId(/^hyp-card-/)).toHaveLength(2);
+    const drafts = screen.getByRole('region', { name: 'Черновики' });
+    expect(within(drafts).getAllByTestId(/^hyp-card-/)).toHaveLength(1);
+    expect(within(drafts).getByRole('heading')).toHaveTextContent('1');
+    const inProgress = screen.getByRole('region', { name: 'В проверке' });
+    expect(within(inProgress).getAllByTestId(/^hyp-card-/)).toHaveLength(1);
+    expect(within(inProgress).getByRole('heading')).toHaveTextContent('1');
   });
 
   it('БАГ-15 removal-UX: delete asks via the styled ConfirmDialog (not window.confirm)', async () => {
