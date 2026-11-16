@@ -856,7 +856,7 @@ export const ru = {
   'an.tr.utmHint':
     'UTM-покрытие = визиты с UTM-метками / все визиты за период. Чем выше, тем точнее атрибуция источников.',
   'an.beh.error': 'Не удалось загрузить поведение.',
-  'an.beh.averages': 'Средние: отказы {bounce} · CR {cr} · Страницы отсортированы по визитам',
+  'an.beh.averages': 'Средние: отказы {bounce} · CR {cr}',
   'an.beh.entryCount': 'Страниц входа',
   'an.beh.exitCount': 'Страниц выхода',
   'an.beh.avgBounce': 'Средний bounce',
@@ -2321,7 +2321,7 @@ export const en: Record<DictKey, string> = {
   'an.tr.utmHint':
     'UTM coverage = visits with UTM tags / all visits in the period. The higher it is, the more accurate the source attribution.',
   'an.beh.error': 'Failed to load behaviour data.',
-  'an.beh.averages': 'Averages: bounce {bounce} · CR {cr} · Pages sorted by visits',
+  'an.beh.averages': 'Averages: bounce {bounce} · CR {cr}',
   'an.beh.entryCount': 'Entry pages',
   'an.beh.exitCount': 'Exit pages',
   'an.beh.avgBounce': 'Average bounce',

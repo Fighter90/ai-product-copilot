@@ -1,4 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { reachRate, weightedBounce, type PageStat } from '@pca/shared';
 import { api } from '../lib/api';
 import { useFilters } from '../store/filters';
@@ -169,6 +171,19 @@ function bounceBarOption(rows: PageRow[], title: string, bounceLabel: string): o
   };
 }
 
+/** Sort keys for the behavior page tables (ANA-179). */
+type PageSortKey = 'page' | 'visits' | 'users' | 'bounceRate' | 'goalReaches' | 'conversionRate';
+type PageSort = { key: PageSortKey; dir: 1 | -1 };
+
+/** Sort rows by the chosen column; ties break alphabetically by page so the order is deterministic. */
+function sortPageRows(rows: PageRow[], sort: PageSort): PageRow[] {
+  return [...rows].sort((a, b) => {
+    const cmp = sort.key === 'page' ? a.page.localeCompare(b.page) : a[sort.key] - b[sort.key];
+    if (cmp !== 0) return cmp * sort.dir;
+    return a.page.localeCompare(b.page);
+  });
+}
+
 function PageTable({ title, rows }: { title: string; rows: PageRow[] }): JSX.Element {
   const { t } = useT();
   // БАГ-08: the «Средние» line is visit-weighted — bounce = Σ(visits×bounce)/Σvisits,
@@ -178,6 +193,44 @@ function PageTable({ title, rows }: { title: string; rows: PageRow[] }): JSX.Ele
     rows.reduce((a, r) => a + r.visits, 0),
   );
   const avgBounce = weightedBounce(rows);
+  // ANA-179: click a header to sort (asc/desc toggle). Default is visits desc — the same
+  // order pageRows produced, so the first paint is unchanged. Sorting reorders rows only;
+  // every number stays the raw aggregate (anti-hallucination).
+  const [sort, setSort] = useState<PageSort>({ key: 'visits', dir: -1 });
+  const sorted = sortPageRows(rows, sort);
+  const toggleSort = (key: PageSortKey): void =>
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === 1 ? -1 : 1 }
+        : { key, dir: key === 'page' ? 1 : -1 },
+    );
+
+  const sortTh = (key: PageSortKey, label: string): JSX.Element => {
+    const active = sort.key === key;
+    return (
+      <th
+        className="px-3 py-2"
+        aria-sort={active ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'}
+      >
+        <button
+          type="button"
+          onClick={() => toggleSort(key)}
+          className="inline-flex items-center gap-1 hover:text-slate-700"
+        >
+          {label}
+          {active ? (
+            sort.dir === 1 ? (
+              <ArrowUp className="h-3 w-3" />
+            ) : (
+              <ArrowDown className="h-3 w-3" />
+            )
+          ) : (
+            <ArrowUpDown className="h-3 w-3 opacity-30" />
+          )}
+        </button>
+      </th>
+    );
+  };
 
   return (
     <div className="space-y-3">
@@ -191,16 +244,16 @@ function PageTable({ title, rows }: { title: string; rows: PageRow[] }): JSX.Ele
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 text-left text-slate-500">
-              <th className="px-3 py-2">{t('an.col.page')}</th>
-              <th className="px-3 py-2">{t('an.col.visits')}</th>
-              <th className="px-3 py-2">{t('an.col.users')}</th>
-              <th className="px-3 py-2">{t('an.col.bounce')}</th>
-              <th className="px-3 py-2">{t('an.col.applications')}</th>
-              <th className="px-3 py-2">CR</th>
+              {sortTh('page', t('an.col.page'))}
+              {sortTh('visits', t('an.col.visits'))}
+              {sortTh('users', t('an.col.users'))}
+              {sortTh('bounceRate', t('an.col.bounce'))}
+              {sortTh('goalReaches', t('an.col.applications'))}
+              {sortTh('conversionRate', 'CR')}
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
+            {sorted.map((r) => {
               const bounceColor =
                 r.bounceRate > 0.5
                   ? 'text-red-700'

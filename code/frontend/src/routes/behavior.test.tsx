@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import type { PageStat } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
@@ -59,6 +59,71 @@ describe('BehaviorView', () => {
     });
   });
 
+  it('ANA-179: клик по заголовку сортирует таблицу (asc/desc toggle), aria-sort + кнопка в th', () => {
+    const rows = [
+      page({
+        page: '/a',
+        visits: 100,
+        users: 90,
+        bounceRate: 0.3,
+        goalReaches: 5,
+        conversionRate: 0.05,
+      }),
+      page({
+        page: '/b',
+        visits: 500,
+        users: 400,
+        bounceRate: 0.6,
+        goalReaches: 2,
+        conversionRate: 0.004,
+      }),
+      page({
+        page: '/c',
+        visits: 100,
+        users: 80,
+        bounceRate: 0.1,
+        goalReaches: 0,
+        conversionRate: 0,
+      }),
+    ];
+    render(<BehaviorView status="success" entry={rows} exit={[]} />);
+    const table = screen.getByRole('region', { name: 'Страницы входа' });
+    const pageOrder = (): string[] =>
+      within(table)
+        .getAllByRole('row')
+        .slice(1)
+        .map((r) => within(r).getAllByRole('cell')[0]?.textContent ?? '');
+    const thOf = (name: string): HTMLElement => within(table).getByRole('columnheader', { name });
+
+    // Default: by visits desc (tie /a < /c), the pageRows order.
+    expect(pageOrder()).toEqual(['/b', '/a', '/c']);
+    expect(thOf('Визиты')).toHaveAttribute('aria-sort', 'descending');
+    expect(thOf('Отказы')).toHaveAttribute('aria-sort', 'none');
+
+    // Headers are buttons — keyboard accessible natively.
+    expect(within(table).getByRole('button', { name: 'Визиты' })).toBeEnabled();
+
+    // Toggle visits desc → asc (tie /a < /c stays deterministic).
+    fireEvent.click(within(table).getByRole('button', { name: 'Визиты' }));
+    expect(pageOrder()).toEqual(['/a', '/c', '/b']);
+    expect(thOf('Визиты')).toHaveAttribute('aria-sort', 'ascending');
+
+    fireEvent.click(within(table).getByRole('button', { name: 'Визиты' }));
+    expect(pageOrder()).toEqual(['/b', '/a', '/c']);
+    expect(thOf('Визиты')).toHaveAttribute('aria-sort', 'descending');
+
+    // A new numeric column starts descending: bounce 0.6 / 0.3 / 0.1.
+    fireEvent.click(within(table).getByRole('button', { name: 'Отказы' }));
+    expect(pageOrder()).toEqual(['/b', '/a', '/c']);
+    expect(thOf('Отказы')).toHaveAttribute('aria-sort', 'descending');
+    expect(thOf('Визиты')).toHaveAttribute('aria-sort', 'none');
+
+    // The page column starts ascending (alphabetical).
+    fireEvent.click(within(table).getByRole('button', { name: 'Страница' }));
+    expect(pageOrder()).toEqual(['/a', '/b', '/c']);
+    expect(thOf('Страница')).toHaveAttribute('aria-sort', 'ascending');
+  });
+
   it('БАГ-08: «Средние» and the exit summary bounce are visit-weighted, not a plain row mean', () => {
     const rows = [
       page({ page: '/big', visits: 900, users: 800, bounceRate: 0.2, goalReaches: 30 }),
@@ -67,9 +132,7 @@ describe('BehaviorView', () => {
     render(<BehaviorView status="success" entry={rows} exit={rows} />);
     // Weighted bounce = (900×0.2 + 90×1)/990 ≈ 27.3%; the plain row mean would be 60%.
     // CR = Σreaches/Σvisits = 30/990 ≈ 3.0%; the plain row mean would be 1.7%.
-    const averages = screen.getAllByText(
-      'Средние: отказы 27.3% · CR 3.0% · Страницы отсортированы по визитам',
-    );
+    const averages = screen.getAllByText('Средние: отказы 27.3% · CR 3.0%');
     expect(averages.length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText(/60\.0%/)).not.toBeInTheDocument();
     // «средний отказ» in the exit-pages summary card is the same weighted figure.
