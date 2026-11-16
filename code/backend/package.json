@@ -22,7 +22,7 @@
     "@fastify/swagger-ui": "^6.1.2",
     "@pca/shared": "workspace:*",
     "better-sqlite3": "^11.10.0",
-    "docx": "^9.14.0",
+    "docx": "^9.15.3",
     "dotenv": "^16.6.1",
     "fastify": "^5.12.7",
     "jszip": "3.10.2",
