@@ -28,6 +28,7 @@ import {
   Table2,
   Target,
   Users,
+  UserCog,
   Briefcase,
   Megaphone,
   Workflow,
@@ -48,6 +49,7 @@ import { CabinetTour } from './onboarding/OnboardingTour';
 import { termHint } from '@pca/shared';
 import { BrandMark } from './BrandMark';
 import { ChangePasswordModal } from './ChangePasswordModal';
+import { EditProfileModal } from './EditProfileModal';
 
 type Icon = ComponentType<{ className?: string }>;
 interface NavItem {
@@ -189,12 +191,16 @@ function Bell2(): JSX.Element {
   );
 }
 
-/** Header user block → menu with «Сменить пароль» (and sign-out) + the password modal. */
+/**
+ * Header user block → menu with «Изменить профиль» (ANA-182: имя + язык, PATCH /api/auth/me —
+ * как обещает docs/user-guide.md), «Сменить пароль» and sign-out + the two dialogs.
+ */
 function UserMenu(): JSX.Element {
   const { t } = useT();
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
@@ -240,6 +246,20 @@ function UserMenu(): JSX.Element {
           {user?.email && (
             <div className="truncate px-2.5 py-1.5 text-xs text-muted">{user.email}</div>
           )}
+          {user && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                setProfileOpen(true);
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-surface hover:text-accent"
+            >
+              <UserCog className="h-4 w-4" />
+              {t('prof.editProfile')}
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -264,6 +284,9 @@ function UserMenu(): JSX.Element {
         </div>
       )}
       <ChangePasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />
+      {user && (
+        <EditProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} user={user} />
+      )}
     </div>
   );
 }
