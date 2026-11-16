@@ -166,3 +166,90 @@ describe('Landing header interactions (ANA-173)', () => {
     }
   });
 });
+
+/**
+ * ANA-190 (регресс прод 16.11, v3.4.48): ANA-173 починила КЛИК по «Как это работает»,
+ * но прямое открытие URL /#how (новая вкладка, шэрд-ссылка) оставляет scrollY=0 —
+ * SPA не обрабатывает hash на mount. Фикс: на mount читаем hash из роутера и скроллим
+ * явно; офсет фиксированного хедера (h-16) дают scroll-mt-16 на секциях-целях.
+ */
+describe('Landing hash on mount (ANA-190)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    window.localStorage.clear();
+    window.localStorage.setItem('pca.locale', 'ru');
+    window.localStorage.setItem('pca.theme', 'dark');
+    usePrefs.setState({ theme: 'dark', locale: 'ru', sidebarCollapsed: false });
+    document.documentElement.lang = 'ru';
+    document.documentElement.dataset.theme = 'dark';
+  });
+
+  it('direct load /#how scrolls to the section on mount', () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const { container } = renderWithProviders(<Landing />, '/#how');
+      // Секции-цели якорей обязаны объявлять офсет фиксированного хедера (h-16 = 64px).
+      expect(container.querySelector('#how')?.classList.contains('scroll-mt-16')).toBe(true);
+      expect(container.querySelector('#problem')?.classList.contains('scroll-mt-16')).toBe(true);
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect((scrollIntoView.mock.instances[0] as HTMLElement).id).toBe('how');
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('direct load /#how respects prefers-reduced-motion on mount', () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const originalMm = window.matchMedia;
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as unknown as typeof matchMedia;
+    try {
+      renderWithProviders(<Landing />, '/#how');
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+    } finally {
+      window.matchMedia = originalMm;
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('direct load without hash does not scroll', () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      renderWithProviders(<Landing />, '/');
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('direct load with unknown hash does not scroll', () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      renderWithProviders(<Landing />, '/#nope');
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('missing jsdom scrollIntoView support does not throw', () => {
+    // jsdom не реализует scrollIntoView (см. Assistant.test) — опциональный вызов
+    // обязан молча пропустить, а не уронить лендинг.
+    const original = Element.prototype.scrollIntoView;
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    try {
+      expect(() => renderWithProviders(<Landing />, '/#how')).not.toThrow();
+      expect(document.getElementById('how')).not.toBeNull();
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+});

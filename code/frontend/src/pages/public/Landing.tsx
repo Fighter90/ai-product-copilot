@@ -546,12 +546,33 @@ function useAnchorScroll(): (e: MouseEvent<HTMLAnchorElement>) => void {
   };
 }
 
+/**
+ * ANA-190 (регресс прод 16.11): прямое открытие /#how (новая вкладка, шэрд-ссылка)
+ * оставляет scrollY=0 — нативный браузерный скролл к якорю срабатывает до рендера
+ * SPA и секцию не находит. На mount читаем hash из роутера и скроллим явно, как
+ * оглавление /help; клики обслуживает useAnchorScroll (поэтому эффект — только
+ * mount, иначе клик продублировал бы скролл). Офсет фиксированного хедера (h-16)
+ * дают scroll-mt-16 на секциях-целях.
+ */
+function useHashScroll(): void {
+  const { hash } = useLocation();
+  useEffect(() => {
+    const id = hash.replace(/^#/, '');
+    if (!id) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    document
+      .getElementById(id)
+      ?.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  }, []);
+}
+
 export function Landing(): JSX.Element {
   const { locale, t } = useT();
   const c = CONTENT[locale];
   const root = useRef<HTMLDivElement>(null);
   const [faqOpen, setFaqOpen] = useState<number | null>(0);
   const onAnchorClick = useAnchorScroll();
+  useHashScroll();
   useParallax(root);
   useReveal(root);
 
@@ -674,7 +695,7 @@ export function Landing(): JSX.Element {
         </section>
 
         {/* PROBLEM */}
-        <section id="problem" className="border-t border-line py-24">
+        <section id="problem" className="scroll-mt-16 border-t border-line py-24">
           <div className="mx-auto max-w-7xl px-4 sm:px-6">
             <SectionTitle eyebrow={c.problemTitle} title={c.problemLead} />
             <div className="grid gap-4 md:grid-cols-3">
@@ -696,7 +717,10 @@ export function Landing(): JSX.Element {
         </section>
 
         {/* HOW (sticky parallax band) */}
-        <section id="how" className="relative overflow-hidden border-t border-line py-24">
+        <section
+          id="how"
+          className="relative scroll-mt-16 overflow-hidden border-t border-line py-24"
+        >
           <div
             aria-hidden="true"
             data-speed="-0.08"
