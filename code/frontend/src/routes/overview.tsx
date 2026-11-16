@@ -673,7 +673,7 @@ export function OverviewView({
             <Caption id="geo" />
           </Card>
           <Card title={t('ov.card.device')}>
-            <EChart option={deviceShareOption(devRows, t('an.devShare'))} />
+            <EChart option={deviceShareOption(devRows)} />
             <Caption id="device" />
           </Card>
         </div>
