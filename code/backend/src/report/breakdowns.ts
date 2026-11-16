@@ -6,6 +6,7 @@ import type {
   GeoDeviceBreakdownRow,
   PageBreakdownRow,
 } from '@pca/shared';
+import { pageKey } from '@pca/shared';
 
 /** How many rows of each breakdown the report keeps (top by visits). */
 export const TOP_N = 5;
@@ -55,12 +56,17 @@ export function topGeoDevice(rows: readonly GeoDeviceStat[]): GeoDeviceBreakdown
   return [...map.values()].sort((a, b) => b.visits - a.visits).slice(0, TOP_N);
 }
 
-/** Aggregate page day-rows by page, visit-weighting bounce rate, top {@link TOP_N} by visits. */
+/**
+ * Aggregate page day-rows by the normalized path ({@link pageKey}), visit-weighting bounce rate,
+ * top {@link TOP_N} by visits. ANA-178: keying on the raw URL left «/» ×6 (https/apex, http, www,
+ * path-only variants) and ~24 dup groups in the report's entry/exit breakdowns.
+ */
 export function topPages(rows: readonly PageStat[]): PageBreakdownRow[] {
   const map = new Map<string, { visits: number; goalReaches: number; bounceVisits: number }>();
   for (const r of rows) {
-    const cur = map.get(r.page) ?? { visits: 0, goalReaches: 0, bounceVisits: 0 };
-    map.set(r.page, {
+    const key = pageKey(r.page);
+    const cur = map.get(key) ?? { visits: 0, goalReaches: 0, bounceVisits: 0 };
+    map.set(key, {
       visits: cur.visits + r.visits,
       goalReaches: cur.goalReaches + r.goalReaches,
       bounceVisits: cur.bounceVisits + r.bounceRate * r.visits,

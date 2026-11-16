@@ -379,7 +379,7 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
     expect(screen.getByRole('img', { name: 'Прогресс к цели: 30 из 300' })).toBeInTheDocument();
   });
 
-  it('shows entry/exit pages as normalized paths with the full URL in the title (БАГ-07)', () => {
+  it('shows entry/exit pages as normalized paths (БАГ-07 / ANA-178)', () => {
     const page: PageStat = {
       date: '2025-01-01',
       page: 'https://productcamp.ru/tickets?x=1',
@@ -390,9 +390,10 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
       conversionRate: 0.1,
     };
     render(<OverviewView status="success" stats={[sample]} entryPages={[page]} />);
-    // БАГ-07: the label is the normalized key — path without query, one trailing-slash form.
+    // БАГ-07/ANA-178: the label is the normalized path key — scheme/host variants collapse into
+    // one row, so the merged row has no single full URL and the title carries the path too.
     const cell = screen.getByRole('cell', { name: '/tickets' });
-    expect(cell).toHaveAttribute('title', 'https://productcamp.ru/tickets');
+    expect(cell).toHaveAttribute('title', '/tickets');
     expect(screen.queryByText('/tickets?x=1')).not.toBeInTheDocument();
   });
 
