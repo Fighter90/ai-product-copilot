@@ -128,26 +128,36 @@ describe('distinctCount', () => {
   });
 });
 
-describe('pageKey (БАГ-07)', () => {
+describe('pageKey (БАГ-07 / ANA-178)', () => {
   it('drops query and hash: «/», «/?utm=…» and «/#top» are one page', () => {
     expect(pageKey('/')).toBe('/');
     expect(pageKey('/?utm_source=tg')).toBe('/');
     expect(pageKey('/?a=1')).toBe('/');
     expect(pageKey('/#top')).toBe('/');
-    expect(pageKey('https://productcamp.ru/?utm_source=x&id=1')).toBe('https://productcamp.ru');
+    expect(pageKey('https://productcamp.ru/?utm_source=x&id=1')).toBe('/');
   });
 
   it('unifies the trailing slash (only the bare root keeps «/»)', () => {
     expect(pageKey('/b2b/')).toBe('/b2b');
     expect(pageKey('/b2b')).toBe('/b2b');
-    expect(pageKey('https://productcamp.ru/')).toBe('https://productcamp.ru');
+    expect(pageKey('https://productcamp.ru/')).toBe('/');
     expect(pageKey('/lp////')).toBe('/lp');
     expect(pageKey('')).toBe('');
   });
 
-  it('keeps case and host (lowercasing is a UTM-only rule)', () => {
-    expect(pageKey('/B2B')).toBe('/B2B');
-    expect(pageKey('https://ProductCamp.ru/B2B')).toBe('https://ProductCamp.ru/B2B');
+  it('collapses scheme/host variants into one path key (ANA-178: «/» ×6 на проде)', () => {
+    expect(pageKey('https://productcamp.ru')).toBe('/');
+    expect(pageKey('http://productcamp.ru/')).toBe('/');
+    expect(pageKey('https://www.productcamp.ru/')).toBe('/');
+    expect(pageKey('https://productcamp.ru/about')).toBe('/about');
+    expect(pageKey('http://productcamp.ru/about/')).toBe('/about');
+    expect(pageKey('https://www.productcamp.ru/about')).toBe('/about');
+    expect(pageKey('/about')).toBe('/about');
+  });
+
+  it('keeps path case (a real distinct page like /PCxPS_special must not be renamed)', () => {
+    expect(pageKey('/PCxPS_special')).toBe('/PCxPS_special');
+    expect(pageKey('https://productcamp.ru/PCxPS_special')).toBe('/PCxPS_special');
   });
 });
 

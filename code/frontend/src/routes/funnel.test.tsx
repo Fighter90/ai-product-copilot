@@ -232,8 +232,8 @@ describe('FunnelView — problem pages (БАГ-07)', () => {
         ]}
       />,
     );
-    // …and is listed once, with summed visits (300), under the normalized key.
-    expect(screen.getAllByText('https://productcamp.ru — 60.0% при 300 визитах')).toHaveLength(1);
+    // …and is listed once, with summed visits (300), under the normalized path key (ANA-178).
+    expect(screen.getAllByText('/ — 60.0% при 300 визитах')).toHaveLength(1);
     expect(screen.queryByText(/при 100 визитах/)).not.toBeInTheDocument();
   });
 });

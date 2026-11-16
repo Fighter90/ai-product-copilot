@@ -32,6 +32,29 @@ describe('pageRows', () => {
   });
 });
 
+describe('pageRows (ANA-178 — дубли URL не агрегированы)', () => {
+  it('collapses scheme/host/query variants of one path into a single summed row', () => {
+    const rows = pageRows([
+      page({ page: 'https://productcamp.ru/', visits: 27820, bounceRate: 0.2, goalReaches: 100 }),
+      page({ page: 'https://productcamp.ru', visits: 4, bounceRate: 1, goalReaches: 0 }),
+      page({ page: 'http://productcamp.ru/', visits: 3, bounceRate: 1, goalReaches: 0 }),
+      page({ page: 'https://www.productcamp.ru/', visits: 2, bounceRate: 1, goalReaches: 0 }),
+      page({ page: '/?utm_source=tg', visits: 6, bounceRate: 1, goalReaches: 0 }),
+      page({ page: '/', visits: 1, bounceRate: 1, goalReaches: 0 }),
+      page({ page: 'https://productcamp.ru/about', visits: 5, bounceRate: 0.4, goalReaches: 1 }),
+      page({ page: 'https://www.productcamp.ru/about/', visits: 3, bounceRate: 0, goalReaches: 0 }),
+      page({ page: '/about', visits: 7, bounceRate: 0.2, goalReaches: 2 }),
+    ]);
+    // На проде «/» приезжала 6 отдельными строками (https/apex, https, http, www, query, path),
+    // ломая топы и «Итого»; каждая группа дублей схлопывается в одну строку пути.
+    expect(rows.filter((r) => r.page === '/')).toHaveLength(1);
+    expect(rows.find((r) => r.page === '/')?.visits).toBe(27836);
+    expect(rows.filter((r) => r.page === '/about')).toHaveLength(1);
+    expect(rows.find((r) => r.page === '/about')?.visits).toBe(15);
+    expect(rows.find((r) => r.page === '/about')?.goalReaches).toBe(3);
+  });
+});
+
 describe('pageBarOption', () => {
   it('shortens full URLs to their path, maps host-only URLs to "/", builds visits + reaches bars', () => {
     const rows = pageRows([

@@ -90,4 +90,19 @@ describe('topPages', () => {
     expect(rows[0]?.bounceRate).toBeCloseTo(0.2);
     expect(rows.find((r) => r.page === '/empty')?.bounceRate).toBe(0);
   });
+
+  it('aggregates scheme/host URL variants of one path into one row (ANA-178)', () => {
+    const rows = topPages([
+      page({ page: 'https://productcamp.ru/about', visits: 5, bounceRate: 0.4, goalReaches: 1 }),
+      page({ page: 'http://productcamp.ru/about', visits: 3, bounceRate: 0, goalReaches: 0 }),
+      page({ page: 'https://www.productcamp.ru/about/', visits: 2, bounceRate: 1, goalReaches: 1 }),
+      page({ page: '/other', visits: 1, bounceRate: 0, goalReaches: 0 }),
+    ]);
+    const about = rows.filter((r) => r.page === '/about');
+    expect(about).toHaveLength(1);
+    expect(about[0]?.visits).toBe(10);
+    expect(about[0]?.goalReaches).toBe(2);
+    // visit-weighted bounce: (5×0.4 + 2×1) / 10
+    expect(about[0]?.bounceRate).toBeCloseTo((5 * 0.4 + 2 * 1) / 10);
+  });
 });

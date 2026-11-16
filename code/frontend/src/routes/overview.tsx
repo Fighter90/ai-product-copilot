@@ -315,7 +315,7 @@ function Caption({ id }: { id: 'trends' | 'mix' | 'geo' | 'device' }): JSX.Eleme
   );
 }
 
-/** Entry/exit pages table: path only (scheme + host stripped), the full URL in the title. */
+/** Entry/exit pages table: rows are normalized path keys (ANA-178) — the label and the title carry the path. */
 function PagesTable({ title, rows }: { title: string; rows: PageRow[] }): JSX.Element {
   const { t } = useT();
   return (

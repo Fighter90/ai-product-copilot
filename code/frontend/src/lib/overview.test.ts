@@ -241,6 +241,18 @@ describe('topPages (БАГ-07 — дубли топа страниц)', () => {
     const out = topPages([page({ page: '/a', visits: 3 }), page({ page: '/b', visits: 4 })]);
     expect(out).toHaveLength(2);
   });
+
+  it('collapses scheme/host variants (http/www/apex/path-only) into one path row (ANA-178)', () => {
+    const out = topPages([
+      page({ page: 'https://productcamp.ru/about', visits: 3, goalReaches: 1 }),
+      page({ page: 'http://productcamp.ru/about?utm=x', visits: 4, goalReaches: 0 }),
+      page({ page: 'https://www.productcamp.ru/about/', visits: 5, goalReaches: 1 }),
+      page({ page: '/', visits: 20, goalReaches: 2 }),
+    ]);
+    const about = out.filter((p) => p.page === '/about');
+    expect(about).toHaveLength(1);
+    expect(about[0]).toMatchObject({ visits: 12, goalReaches: 2 });
+  });
 });
 
 describe('topUtmRows (БАГ-07 — дубли UTM-разбивки)', () => {

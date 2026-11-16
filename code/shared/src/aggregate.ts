@@ -115,13 +115,19 @@ export function distinctCount<T>(rows: readonly T[], keyOf: (row: T) => string):
 }
 
 /**
- * БАГ-07: canonical page key — the URL without query/hash and with one trailing-slash form (only
- * the bare root keeps its «/»). Metrika page rows arrive per day and per raw URL, so «/»,
- * «/?utm_source=x» and «/b2b/» are the same page for tops and must collapse into one row.
+ * БАГ-07/ANA-178: canonical page key — the PATH of the URL (scheme + host dropped), without
+ * query/hash and with one trailing-slash form (only the bare root keeps «/»). Metrika page rows
+ * arrive per day and per raw URL variant, so «/», «/?utm_source=x», «http://…», «https://www.…»
+ * and «/b2b/» are the same page for tops and must collapse into one row. Path case is kept: a
+ * real distinct page («/PCxPS_special») must not be renamed.
  */
 export function pageKey(url: string): string {
   const bare = url.split(/[?#]/, 1)[0] ?? url;
-  let key = bare;
+  // ANA-178: scheme + host stripped, so http/https, www/apex and path-only variants of one page
+  // collapse (on prod «/» arrived as 6 rows: https/apex, https, http, www, path-only…).
+  const path = bare.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/?]*/i, '');
+  // A scheme with no path («https://productcamp.ru») is the bare root.
+  let key = path === '' && bare !== '' ? '/' : path;
   while (key.length > 1 && key.endsWith('/')) key = key.slice(0, -1);
   return key;
 }
