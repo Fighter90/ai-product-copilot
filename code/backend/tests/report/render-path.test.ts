@@ -11,6 +11,7 @@ import { dirname, resolve } from 'node:path';
  */
 const RENDER_SOURCES = [
   '../../../backend/src/report/docx/builder.ts',
+  '../../../backend/src/report/docx/determinize.ts',
   '../../../backend/src/report/pdf/html.ts',
   '../../../shared/src/report-sections.ts',
   '../../../shared/src/report-period-label.ts',
