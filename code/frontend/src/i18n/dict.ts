@@ -1064,6 +1064,16 @@ export const ru = {
   'prof.pw.errFailed': 'Не удалось сменить пароль. Попробуйте ещё раз.',
   'prof.pw.saving': 'Сохраняем…',
   'an.tooltip': 'Подсказка: {text}',
+  'prof.editProfile': 'Изменить профиль',
+  'prof.edit.name': 'Имя',
+  'prof.edit.nameHint': 'От 1 до 80 символов.',
+  'prof.edit.errName': 'Имя должно быть от 1 до 80 символов.',
+  'prof.edit.locale': 'Язык интерфейса',
+  'prof.edit.langRu': 'Русский',
+  'prof.edit.langEn': 'English',
+  'prof.edit.saving': 'Сохраняем…',
+  'prof.edit.success': 'Профиль обновлён.',
+  'prof.edit.errFailed': 'Не удалось сохранить профиль. Попробуйте ещё раз.',
   'prof.pw.success':
     'Пароль изменён. Остальные сессии завершены, на этом устройстве вы остаётесь в системе.',
 
@@ -2548,6 +2558,16 @@ export const en: Record<DictKey, string> = {
   'prof.pw.errFailed': 'Could not change the password. Please try again.',
   'prof.pw.saving': 'Saving…',
   'an.tooltip': 'Hint: {text}',
+  'prof.editProfile': 'Edit profile',
+  'prof.edit.name': 'Name',
+  'prof.edit.nameHint': '1 to 80 characters.',
+  'prof.edit.errName': 'The name must be 1 to 80 characters.',
+  'prof.edit.locale': 'Interface language',
+  'prof.edit.langRu': 'Russian',
+  'prof.edit.langEn': 'English',
+  'prof.edit.saving': 'Saving…',
+  'prof.edit.success': 'Profile updated.',
+  'prof.edit.errFailed': 'Could not update the profile. Please try again.',
   'prof.pw.success':
     'Password changed. Other sessions have been signed out; you stay signed in on this device.',
 

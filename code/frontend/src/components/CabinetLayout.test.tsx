@@ -215,6 +215,19 @@ describe('CabinetLayout user menu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
+  it('opens «Изменить профиль» from the user menu with prefilled data (ANA-182)', () => {
+    renderCabinet();
+    fireEvent.click(screen.getByRole('button', { name: 'Меню пользователя' }));
+    const menu = screen.getByRole('menu');
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Изменить профиль' }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByLabelText(/^Имя/)).toHaveValue('Тест Аналитик');
+    expect(within(dialog).getByRole('radiogroup', { name: 'Язык интерфейса' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('signs out from the menu and closes it on an outside click', () => {
     renderCabinet();
     fireEvent.click(screen.getByRole('button', { name: 'Меню пользователя' }));
