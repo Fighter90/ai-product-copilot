@@ -201,6 +201,14 @@ function WhatIfForecast({
             <div className="rounded bg-slate-50 px-3 py-2 text-center">
               <div className="text-xs text-slate-500">{t('kpi.whatif.forecastDate')}</div>
               <div className="text-xl font-bold">{scenarioDateLabel}</div>
+              {/* ANA-171 (заявка ≠ оплата): the what-if model extrapolates goal reaches — the
+                  amber caption right at the date keeps «заявка ≠ оплата» honest (REG-03). */}
+              <div
+                data-testid="forecast-apps-not-paid"
+                className="mt-1 text-xs font-medium text-amber-700"
+              >
+                {t('kpi.whatif.appsNotPaid')}
+              </div>
             </div>
             <div className="rounded bg-slate-50 px-3 py-2 text-center">
               <div className="text-xs text-slate-500">

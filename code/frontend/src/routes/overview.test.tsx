@@ -10,9 +10,10 @@ vi.mock('../lib/api', () => ({
     channels: vi.fn(),
     primaryGoal: vi.fn(),
     geoDevice: vi.fn(),
-    utm: vi.fn(),
     pages: vi.fn(),
     exitPages: vi.fn(),
+    utm: vi.fn(),
+    b2cPayments: vi.fn(),
     paymentsSummary: vi.fn(),
   },
 }));
@@ -214,7 +215,11 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
     expect(screen.queryByTestId('data-quality')).not.toBeInTheDocument();
   });
 
-  it('answers «успеваем к 300?»: progress ring, status, forecast and the main weak spot', () => {
+  // ANA-171 (заявка ≠ оплата): the hero pace counts the same money as the ring. Fact: 14 reaches
+  // over 2 days (7/day) are NOT extrapolated any more — the pace is paid/day: B2B deal of 30
+  // tickets dated 2025-01-01 → 15/day over the 2-day window; 270 left → 18 days → 2025-01-20;
+  // deadline = to + 4 days = 2025-01-06 → behind +14.
+  it('answers «успеваем к 300?»: ring/forecast by PAID tickets, pace line «Темп оплат»', () => {
     renderWithProviders(
       <OverviewView
         status="success"
@@ -235,9 +240,12 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
     const strip = within(screen.getByTestId('kpi-strip'));
     expect(strip.getByText('Успеваем к 300?')).toBeInTheDocument();
     expect(strip.getByRole('img', { name: 'Прогресс к цели: 30 из 300' })).toBeInTheDocument();
-    // 14 reaches over 2 days → 7/day; 270 left → 39 days, deadline = to + 4 days → behind.
-    expect(strip.getByTestId('pace-status')).toHaveTextContent('Не успеваем: +35 дн.');
+    // Paid pace 15/day → forecast 2025-01-20, deviation +14 vs the heuristic deadline.
+    expect(strip.getByTestId('pace-status')).toHaveTextContent('Не успеваем: +14 дн.');
     expect(strip.getByText(/Прогноз:/)).toBeInTheDocument();
+    // The pace line is the paid pace — the applications upper-estimate line is gone.
+    expect(strip.getByText(/Темп оплат: 15/)).toBeInTheDocument();
+    expect(strip.queryByText(/Темп заявок/)).toBeNull();
     // Weak spot is the localised channel name.
     expect(strip.getByRole('link', { name: 'Прямые заходы' })).toHaveAttribute(
       'href',
@@ -248,14 +256,42 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
     expect(screen.queryByText('Direct traffic')).not.toBeInTheDocument();
   });
 
-  // ANA-170 (regress прода 15.11.2026): те же факты, что и в тесте выше — темп 7/день,
-  // прогноз = 2025-02-10 (39 дней после `to`); админская EVENT_DATE — дедлайн героя.
+  // ANA-171 (регресс прода 15.11.2026): 0 paid + reach pace 7/day used to promise «Прогноз:
+  // 5 окт. 2027» — a date for 300 APPLICATIONS, not payments. Now zero paid pace = no date.
+  it('ANA-171: 0 paid → no forecast-date fiction («Прогноз: —», честное «Не успеваем при текущем темпе»)', () => {
+    renderWithProviders(
+      <OverviewView
+        status="success"
+        to="2025-01-02"
+        stats={[
+          {
+            ...sample,
+            date: '2025-01-01',
+            channel: 'Direct traffic',
+            visits: 1000,
+            goalReaches: 5,
+          },
+          { ...sample, date: '2025-01-02', channel: 'vip', visits: 10, goalReaches: 9 },
+        ]}
+      />,
+    );
+    const strip = within(screen.getByTestId('kpi-strip'));
+    // The ring counts the same money as before: 0 paid of 300.
+    expect(strip.getByRole('img', { name: 'Прогресс к цели: 0 из 300' })).toBeInTheDocument();
+    // Reach pace 7/day must not produce a goal date any more.
+    expect(strip.getByText(/Прогноз: —/)).toBeInTheDocument();
+    expect(strip.getByTestId('pace-status')).toHaveTextContent('Не успеваем при текущем темпе');
+    expect(strip.queryByText(/Темп заявок/)).toBeNull();
+  });
+
+  // ANA-170 (регресс прода 15.11.2026): прогноз 2025-01-20 (paid pace 15/day — ANA-171);
+  // админская EVENT_DATE — дедлайн героя. 2025-01-15 → прогноз ПОЗЖЕ дедлайна → отставание +5.
   it('ANA-170: forecast AFTER the EVENT_DATE deadline is «Не успеваем», not «Успеваем: запас»', () => {
     renderWithProviders(
       <OverviewView
         status="success"
         to="2025-01-02"
-        eventDate="2025-01-20"
+        eventDate="2025-01-15"
         today="2025-01-05"
         stats={[
           {
@@ -270,10 +306,10 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
         b2bDeals={[{ id: 1, company: 'A', tickets: 30, stage: 'paid', dateAdded: '2025-01-01' }]}
       />,
     );
-    // Прогноз (2025-02-10) ПОЗЖЕ даты события → отставание +21 дн.; перевёрнутый знак давал
-    // «Успеваем: запас 21 дн.» (а эвристика без EVENT_DATE дала бы «+35 дн.»).
+    // Прогноз (2025-01-20) ПОЗЖЕ даты события → отставание +5 дн.; перевёрнутый знак давал
+    // бы «Успеваем: запас 5 дн.» (а эвристика без EVENT_DATE дала бы «+14 дн.»).
     expect(within(screen.getByTestId('kpi-strip')).getByTestId('pace-status')).toHaveTextContent(
-      'Не успеваем: +21 дн.',
+      'Не успеваем: +5 дн.',
     );
   });
 
@@ -297,10 +333,10 @@ describe('OverviewView — first screen structure (ANA-48)', () => {
         b2bDeals={[{ id: 1, company: 'A', tickets: 30, stage: 'paid', dateAdded: '2025-01-01' }]}
       />,
     );
-    // Прогноз (2025-02-10) РАНЬШЕ даты события → запас 365 дн.; перевёрнутый знак показывал
-    // «Не успеваем: +365 дн.» на заведомо успевающем темпе.
+    // Прогноз (2025-01-20) РАНЬШЕ даты события → запас 386 дн.; перевёрнутый знак показывал
+    // бы «Не успеваем: +386 дн.» на заведомо успевающем темпе.
     expect(within(screen.getByTestId('kpi-strip')).getByTestId('pace-status')).toHaveTextContent(
-      'Успеваем: запас 365 дн.',
+      'Успеваем: запас 386 дн.',
     );
   });
 
@@ -449,6 +485,7 @@ describe('Overview (data wrapper)', () => {
     vi.mocked(api.utm).mockResolvedValue([]);
     vi.mocked(api.pages).mockResolvedValue([]);
     vi.mocked(api.exitPages).mockResolvedValue([]);
+    vi.mocked(api.b2cPayments).mockResolvedValue([]);
     vi.mocked(api.paymentsSummary).mockResolvedValue({ b2cPaid: 0, b2bPaid: 0, paid: 0, days: 0 });
     vi.mocked(v3.settingsPublic).mockResolvedValue({
       KPI_TARGET: { value: '' },

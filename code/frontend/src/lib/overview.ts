@@ -1,4 +1,4 @@
-import type { ChannelStat, B2bDeal, PageStat, UtmStat } from '@pca/shared';
+import type { ChannelStat, B2bDeal, B2cPayment, PageStat, UtmStat } from '@pca/shared';
 import {
   KPI_TARGET_PAID_TICKETS,
   aggregatePeriod,
@@ -77,6 +77,27 @@ export function b2bDailyPoints(deals: B2bDeal[]): DailyPoint[] {
     visits: 0,
     reaches: byDate.get(date) as number,
   }));
+}
+
+/**
+ * ANA-171 (заявка ≠ оплата): dense daily PAID series over the Metrika fact window — the same
+ * window the reach pace used, but every point counts confirmed money: B2C payments (manual/CSV,
+ * `GET /payments/b2c`) plus paid B2B CRM deals (the same set `summarizeChannels` counts). The
+ * Overview hero's pace and forecast answer «when will we reach 300 PAID tickets», never «300
+ * applications». Paid money dated outside the fact window still counts toward the ring
+ * (`current`) but not toward the pace — the pace only extrapolates observed days. Pure.
+ */
+export function paidDailyPoints(
+  b2cDays: B2cPayment[],
+  deals: B2bDeal[],
+  window: DailyPoint[],
+): DailyPoint[] {
+  const byDate = new Map<string, number>();
+  for (const p of b2cDays) byDate.set(p.date, (byDate.get(p.date) ?? 0) + p.tickets);
+  for (const pt of b2bDailyPoints(deals)) {
+    byDate.set(pt.date, (byDate.get(pt.date) ?? 0) + pt.reaches);
+  }
+  return window.map((p) => ({ date: p.date, visits: 0, reaches: byDate.get(p.date) ?? 0 }));
 }
 
 export interface WeakSpot {

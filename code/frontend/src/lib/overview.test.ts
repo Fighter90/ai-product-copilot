@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import type { ChannelStat, B2bDeal, PageStat, UtmStat } from '@pca/shared';
+import type { ChannelStat, B2bDeal, B2cPayment, PageStat, UtmStat } from '@pca/shared';
 import {
   summarizeChannels,
   channelMixOption,
   dailyReachesOption,
   weakSpots,
   b2bDailyPoints,
+  paidDailyPoints,
   topPages,
   topUtmRows,
 } from './overview';
@@ -193,6 +194,46 @@ describe('b2bDailyPoints (БАГ-11)', () => {
       b2bDailyPoints([{ id: 1, company: 'A', tickets: 7, stage: 'paid', dateAdded: '2025-01-05' }]),
     ).toEqual([{ date: '2025-01-05', visits: 0, reaches: 7 }]);
     expect(b2bDailyPoints([])).toEqual([]);
+  });
+});
+
+describe('paidDailyPoints (ANA-171 — hero pace counts payments, not applications)', () => {
+  const window = [
+    { date: '2025-01-01', visits: 100, reaches: 5 },
+    { date: '2025-01-02', visits: 100, reaches: 5 },
+    { date: '2025-01-03', visits: 100, reaches: 5 },
+  ];
+  const b2c = (date: string, tickets: number): B2cPayment => ({
+    date,
+    tickets,
+    source: 'manual',
+    updatedAt: '2025-01-04T10:00:00Z',
+  });
+
+  it('densifies B2C payments + paid B2B deals over the Metrika fact window', () => {
+    const deals: B2bDeal[] = [
+      { id: 1, company: 'A', tickets: 30, stage: 'paid', dateAdded: '2025-01-01' },
+    ];
+    expect(paidDailyPoints([b2c('2025-01-03', 5)], deals, window)).toEqual([
+      { date: '2025-01-01', visits: 0, reaches: 30 },
+      { date: '2025-01-02', visits: 0, reaches: 0 },
+      { date: '2025-01-03', visits: 0, reaches: 5 },
+    ]);
+  });
+
+  it('unpaid window days contribute 0 — zero paid pace stays honest (no applications leak)', () => {
+    expect(paidDailyPoints([], [], window)).toEqual(
+      window.map((p) => ({ date: p.date, visits: 0, reaches: 0 })),
+    );
+  });
+
+  it('a paid deal dated outside the window adds nothing to the pace (it still counts in the ring)', () => {
+    const deals: B2bDeal[] = [
+      { id: 1, company: 'A', tickets: 30, stage: 'paid', dateAdded: '2024-12-01' },
+    ];
+    expect(paidDailyPoints([], deals, window)).toEqual(
+      window.map((p) => ({ date: p.date, visits: 0, reaches: 0 })),
+    );
   });
 });
 

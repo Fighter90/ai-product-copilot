@@ -3,7 +3,14 @@ import { channelName, fmtDate, translate, useT, type DictKey } from '../i18n';
 import type { Locale } from '../store/prefs';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import type { ChannelStat, GeoDeviceStat, UtmStat, PageStat, B2bDeal } from '@pca/shared';
+import type {
+  ChannelStat,
+  GeoDeviceStat,
+  UtmStat,
+  PageStat,
+  B2bDeal,
+  B2cPayment,
+} from '@pca/shared';
 import { paidAndGap, readEventDate, isGoalExpired, smartGoal } from '@pca/shared';
 import { api } from '../lib/api';
 import { v3 } from '../lib/api-v3';
@@ -19,6 +26,7 @@ import {
   topPages,
   topUtmRows,
   weakSpots,
+  paidDailyPoints,
 } from '../lib/overview';
 import {
   BOUNCE_HIGH,
@@ -453,6 +461,7 @@ export function OverviewView({
   afterKpi,
   kpiTarget,
   b2cPaid = 0,
+  b2cDays,
   eventDate,
   showDeadlineCaveat,
   today,
@@ -474,6 +483,12 @@ export function OverviewView({
   kpiTarget?: number;
   /** ANA-19: manually entered / CSV-imported paid B2C tickets for the period (payments summary). */
   b2cPaid?: number;
+  /**
+   * ANA-171: per-day B2C payments (`GET /payments/b2c`, same range) — together with paid B2B
+   * deals they build the hero's PAID daily series, so the forecast counts the same money as
+   * the ring. Absent (loading/failed) → [] → zero paid pace → honest «Прогноз: —».
+   */
+  b2cDays?: B2cPayment[];
   /** ANA-75 (БАГ-01): admin EVENT_DATE — the KPI deadline; empty → the heuristic + caveat. */
   eventDate?: string;
   /** ANA-75 (БАГ-01): show the deadline heuristic caveat (same text as the KPI page). */
@@ -540,10 +555,12 @@ export function OverviewView({
   const kpi = { ...base, paid, gap };
   const weak = weakSpots(stats);
   const daily = dailySeries(stats);
-  // Темп по достижениям цели — всегда верхняя оценка оплат (заказы ≠ оплаты, REG-03), даже для
-  // цели-покупки; точный денежный темп — только в сегменте B2B (series = оплаченные сделки CRM).
+  // ANA-171 (заявка ≠ оплата): hero pace counts the same money as the ring — B2C payments
+  // (manual/CSV, per day) + paid B2B deals, dense over the Metrika fact window. Zero paid
+  // pace → honest «Прогноз: —», no applications-fiction date (регресс прода 15.11.2026).
+  const paidSeries = paidDailyPoints(b2cDays ?? [], b2bDeals ?? [], daily);
   const pace = applyDeadline(
-    goalPace({ points: daily, to, target: kpi.target, current: kpi.paid, goalIsPaid: false }),
+    goalPace({ points: paidSeries, to, target: kpi.target, current: kpi.paid, goalIsPaid: true }),
     eventDate,
   );
   // ANA-166: SMART-формулировка цели + авто-состояние «дедлайн прошёл». Истекает только
@@ -829,6 +846,13 @@ export function Overview(): JSX.Element {
     queryFn: () => api.paymentsSummary({ from, to }),
     retry: false,
   });
+  // ANA-171: the same B2C payments per day — with the paid B2B deals they build the hero's
+  // PAID daily series, so the «успеваем к 300?» forecast counts payments, not applications.
+  const b2cDays = useQuery({
+    queryKey: ['b2c-payments', from, to],
+    queryFn: () => api.b2cPayments({ from, to }),
+    retry: false,
+  });
   const kpiTarget = useKpiTarget();
   // ANA-75 (БАГ-01): админская «Дата события» (EVENT_DATE) — единый дедлайн KPI на всех экранах;
   // не задана/невалидна → '' → эвристика «+2 длины периода» и оговорка. REG-12: публичный срез
@@ -867,6 +891,7 @@ export function Overview(): JSX.Element {
       afterKpi={<OnboardingCard />}
       kpiTarget={kpiTarget}
       b2cPaid={payments.data?.b2cPaid ?? 0}
+      b2cDays={b2cDays.data}
       eventDate={eventDate}
       showDeadlineCaveat={!eventDate}
     />

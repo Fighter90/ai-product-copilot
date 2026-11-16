@@ -50,4 +50,34 @@ describe('goalPace', () => {
     expect(r.status).toBe('reached');
     expect(r.progress).toBe(1);
   });
+
+  it('ANA-171: a paid daily series forecasts the PAID goal; zero paid pace → honest unreachable', () => {
+    // The Overview hero input after ANA-171: dense paid series (B2C payments + B2B paid deals)
+    // over the Metrika window — the same money the progress ring counts.
+    const paidSeries = [
+      { date: '2025-01-01', visits: 0, reaches: 15 },
+      { date: '2025-01-02', visits: 0, reaches: 15 },
+    ];
+    const pace = goalPace({
+      points: paidSeries,
+      to: '2025-01-02',
+      target: 300,
+      current: 30,
+      goalIsPaid: true,
+    });
+    expect(pace.isUpperEstimate).toBe(false);
+    expect(pace.perDay).toBeCloseTo(15);
+    // 15 paid/day → 270 left → 18 days → 2025-01-20.
+    expect(pace.forecastDate).toBe('2025-01-20');
+    // Zero paid pace must NOT leak applications into the forecast: no date, honest unreachable.
+    const none = goalPace({
+      points: paidSeries.map((p) => ({ ...p, reaches: 0 })),
+      to: '2025-01-02',
+      target: 300,
+      current: 0,
+      goalIsPaid: true,
+    });
+    expect(none.status).toBe('unreachable');
+    expect(none.forecastDate).toBeNull();
+  });
 });

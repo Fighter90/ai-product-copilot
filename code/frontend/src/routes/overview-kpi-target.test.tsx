@@ -20,6 +20,7 @@ vi.mock('../lib/api', () => ({
     exitPages: vi.fn(),
     b2b: vi.fn(),
     kpiTarget: vi.fn(),
+    b2cPayments: vi.fn(),
     paymentsSummary: vi.fn(),
   },
 }));
@@ -72,6 +73,7 @@ describe('Overview KPI target («Цель по оплатам»)', () => {
     vi.mocked(api.pages).mockResolvedValue([]);
     vi.mocked(api.exitPages).mockResolvedValue([]);
     vi.mocked(api.b2b).mockResolvedValue([]);
+    vi.mocked(api.b2cPayments).mockResolvedValue([]);
     vi.mocked(api.kpiTarget).mockResolvedValue({ target: 450 });
     renderWithProviders(<Overview />);
     await waitFor(() => expect(screen.getByTestId('kpi-strip').textContent).toContain('450'));
