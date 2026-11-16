@@ -657,6 +657,38 @@ describe('ReportFullView markdown tables', () => {
   });
 });
 
+describe('ReportFullView — ANA-165 marketing section', () => {
+  const withMarketing: ReportSnapshot = {
+    ...snapshotWithData,
+    marketing: {
+      weeks: [{ key: '2025-01-06', start: '2025-01-06', end: '2025-01-12' }],
+      byMetric: [
+        {
+          metricKey: 'posts',
+          labelRu: 'Посты',
+          labelEn: 'Posts',
+          section: 'content',
+          total: 12,
+          weeks: 2,
+        },
+      ],
+    },
+  };
+
+  it('renders the Marketing section from snapshot.marketing (heading + metric table)', () => {
+    const { container } = render(<ReportFullView snapshot={withMarketing} />);
+    // The heading appears both as the collapsible block's summary and in the оглавление link.
+    expect(screen.getAllByText('Маркетинг').length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelector('article')?.textContent).toContain('Посты');
+    expect(container.querySelector('article')?.textContent).toContain('Итого за период');
+  });
+
+  it('renders no Marketing section when the snapshot has no marketing summary', () => {
+    render(<ReportFullView snapshot={snapshotWithData} />);
+    expect(screen.queryByText('Маркетинг')).not.toBeInTheDocument();
+  });
+});
+
 describe('ReportFullView оглавление (REG-16)', () => {
   // Chunked AI narrative: the same subheading repeats across chunks — the on-screen TOC
   // used to list every one of them (60+ entries in production).

@@ -709,6 +709,104 @@ describe('reportSections — new sections', () => {
     expect(b2bSec?.lines.join('\n')).toContain('SmallCo');
   });
 
+  it('ANA-165: renders the Marketing section (weekly grid totals) when snapshot.marketing is set', () => {
+    const s: ReportSnapshot = {
+      ...baseSnapshot,
+      marketing: {
+        weeks: [
+          { key: '2025-01-06', start: '2025-01-06', end: '2025-01-12' },
+          { key: '2025-01-13', start: '2025-01-13', end: '2025-01-19' },
+        ],
+        byMetric: [
+          {
+            metricKey: 'posts',
+            labelRu: 'Посты',
+            labelEn: 'Posts',
+            section: 'content',
+            total: 12,
+            weeks: 2,
+          },
+          {
+            metricKey: 'stories',
+            labelRu: 'Сторис',
+            labelEn: 'Stories',
+            section: 'influence',
+            total: 7,
+            weeks: 1,
+          },
+        ],
+      },
+    };
+    const mkSec = reportSections(s).find((sec) => sec.heading === 'Маркетинг');
+    expect(mkSec).toBeDefined();
+    const text = mkSec?.lines.join('\n') ?? '';
+    // Metric labels and totals come straight from the snapshot — anti-hallucination.
+    expect(text).toContain('Посты');
+    expect(text).toContain('| 12 | 2 |');
+    expect(text).toContain('Сторис');
+    expect(text).toContain('| 7 | 1 |');
+    // The section sits between B2B and the detailed channel analysis.
+    const order = reportSections(s).map((sec) => sec.heading);
+    expect(order.indexOf('Маркетинг')).toBeGreaterThan(order.indexOf('B2B-пайплайн'));
+    expect(order.indexOf('Маркетинг')).toBeLessThan(order.indexOf('Каналы: трафик и конверсия'));
+  });
+
+  it('ANA-165: no Marketing section without snapshot.marketing, EN prints English labels', () => {
+    expect(reportSections(baseSnapshot).some((sec) => sec.heading === 'Маркетинг')).toBe(false);
+
+    const en: ReportSnapshot = {
+      ...baseSnapshot,
+      marketing: {
+        weeks: [{ key: '2025-01-06', start: '2025-01-06', end: '2025-01-12' }],
+        byMetric: [
+          {
+            metricKey: 'posts',
+            labelRu: 'Посты',
+            labelEn: 'Posts',
+            section: 'content',
+            total: 12,
+            weeks: 2,
+          },
+        ],
+      },
+    };
+    const sec = reportSections(en, 'en').find((x) => x.heading === 'Marketing');
+    expect(sec).toBeDefined();
+    expect(sec?.lines.join('\n')).toContain('Posts');
+    expect(sec?.lines.join('\n')).toContain('| 12 | 2 |');
+  });
+
+  it('ANA-165: a summary with metrics but no week ranges keeps the metrics table (defensive)', () => {
+    const s: ReportSnapshot = {
+      ...baseSnapshot,
+      marketing: {
+        weeks: [],
+        byMetric: [
+          {
+            metricKey: 'posts',
+            labelRu: 'Посты',
+            labelEn: 'Posts',
+            section: 'other',
+            total: 3,
+            weeks: 1,
+          },
+        ],
+      },
+    };
+    const text =
+      reportSections(s)
+        .find((sec) => sec.heading === 'Маркетинг')
+        ?.lines.join('\n') ?? '';
+    expect(text).toContain('Посты');
+    expect(text).toContain('Другое');
+    expect(text).not.toContain('Недели кампании');
+  });
+
+  it('ANA-165: a summary with an empty byMetric list renders no section', () => {
+    const s: ReportSnapshot = { ...baseSnapshot, marketing: { weeks: [], byMetric: [] } };
+    expect(reportSections(s).some((sec) => sec.heading === 'Маркетинг')).toBe(false);
+  });
+
   it('renders detailed channel analysis section', () => {
     const lines =
       reportSections(baseSnapshot)
