@@ -28,6 +28,32 @@ const snapshot: ReportSnapshot = {
   },
 };
 
+/**
+ * ANA-192: real marketing-grid summary (weeks + byMetric) — shared by the prompt-assembly
+ * tests below (present/absent/empty-array cases).
+ */
+const marketingSummary: NonNullable<ReportSnapshot['marketing']> = {
+  weeks: [{ key: '2026-08-01', start: '2026-08-01', end: '2026-08-14' }],
+  byMetric: [
+    {
+      metricKey: 'tg_clicks',
+      labelRu: 'переходы по ссылкам тг',
+      labelEn: 'Telegram link clicks',
+      section: 'content',
+      total: 120,
+      weeks: 1,
+    },
+    {
+      metricKey: 'partner_posts',
+      labelRu: 'сколько вышло партнерских постов',
+      labelEn: 'Partner posts published',
+      section: 'influence',
+      total: 6,
+      weeks: 1,
+    },
+  ],
+};
+
 describe('snapshotFacts', () => {
   it('includes the KPI numbers and the top breakdown rows', () => {
     const facts = snapshotFacts(snapshot);
@@ -45,38 +71,29 @@ describe('snapshotFacts', () => {
   });
 
   it('ANA-165: adds the marketing weekly-grid totals when the snapshot carries them', () => {
-    const withMarketing: ReportSnapshot = {
-      ...snapshot,
-      marketing: {
-        weeks: [{ key: '2026-08-01', start: '2026-08-01', end: '2026-08-14' }],
-        byMetric: [
-          {
-            metricKey: 'tg_clicks',
-            labelRu: 'переходы по ссылкам тг',
-            labelEn: 'Telegram link clicks',
-            section: 'content',
-            total: 120,
-            weeks: 1,
-          },
-          {
-            metricKey: 'partner_posts',
-            labelRu: 'сколько вышло партнерских постов',
-            labelEn: 'Partner posts published',
-            section: 'influence',
-            total: 6,
-            weeks: 1,
-          },
-        ],
-      },
-    };
-    const facts = snapshotFacts(withMarketing);
-    expect(facts).toContain('Маркетинг (недели 2026-08-01..2026-08-14)');
+    const facts = snapshotFacts({ ...snapshot, marketing: marketingSummary });
+    expect(facts).toContain(
+      'Маркетинг (источник: weekly marketing grid; недели 2026-08-01..2026-08-14)',
+    );
     expect(facts).toContain('Контент-маркетинг — переходы по ссылкам тг: 120 (1 нед.)');
     expect(facts).toContain('Инфопартнёры — сколько вышло партнерских постов: 6 (1 нед.)');
   });
 
   it('ANA-165: no «Маркетинг» line without marketing data in the snapshot', () => {
     expect(snapshotFacts(snapshot)).not.toContain('Маркетинг');
+  });
+
+  it('ANA-192: labels the marketing block with its source — the weekly marketing grid', () => {
+    const facts = snapshotFacts({ ...snapshot, marketing: marketingSummary });
+    expect(facts).toContain('источник: weekly marketing grid');
+  });
+
+  it('ANA-192: empty byMetric array — the marketing block is omitted', () => {
+    const facts = snapshotFacts({
+      ...snapshot,
+      marketing: { weeks: marketingSummary.weeks, byMetric: [] },
+    });
+    expect(facts).not.toContain('Маркетинг');
   });
 });
 
@@ -196,5 +213,67 @@ describe('generateInsights', () => {
     // Should still return output with error messages for failed chunks
     expect(out).toContain('Ошибка генерации');
     expect(out).toContain('анализ');
+  });
+});
+
+describe('generateInsights — marketing in the chunk prompts (ANA-192)', () => {
+  interface ChunkRequestBody {
+    system: string;
+    messages: { role: string; content: string }[];
+  }
+
+  const mockFetch = (): ReturnType<typeof vi.fn<AnthropicFetch>> =>
+    vi.fn<AnthropicFetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ content: [{ type: 'text', text: 'анализ' }] }),
+    });
+
+  it('feeds marketing facts into every chunk user prompt and asks the final chunk for marketing synthesis', async () => {
+    const doFetch = mockFetch();
+    await generateInsights(doFetch, {
+      apiKey: 'k',
+      model: 'm',
+      snapshot: { ...snapshot, marketing: marketingSummary },
+    });
+    const bodies = doFetch.mock.calls.map((c) => JSON.parse(c[1].body) as ChunkRequestBody);
+    expect(bodies).toHaveLength(6);
+    // Every chunk shares the facts block → every user prompt carries the marketing totals
+    // with their source (the weekly marketing grid).
+    for (const body of bodies) {
+      expect(body.messages[0]?.content).toContain('источник: weekly marketing grid');
+      expect(body.messages[0]?.content).toContain('переходы по ссылкам тг: 120');
+    }
+    // The final-output chunk synthesizes marketing activities explicitly.
+    const final = bodies.find((b) =>
+      b.system.startsWith('Ты — старший продуктовый аналитик и руководитель трека'),
+    );
+    expect(final?.system).toContain('«Маркетинг»');
+    expect(final?.system).toContain('marketing grid');
+  });
+
+  it('keeps marketing data out of the chunk user prompts without marketing in the snapshot', async () => {
+    const doFetch = mockFetch();
+    await generateInsights(doFetch, { apiKey: 'k', model: 'm', snapshot });
+    const bodies = doFetch.mock.calls.map((c) => JSON.parse(c[1].body) as ChunkRequestBody);
+    expect(bodies).toHaveLength(6);
+    for (const body of bodies) {
+      expect(body.messages[0]?.content).not.toContain('Маркетинг');
+      expect(body.messages[0]?.content).not.toContain('marketing grid');
+    }
+  });
+
+  it('keeps marketing data out of the chunk user prompts with an empty byMetric array', async () => {
+    const doFetch = mockFetch();
+    await generateInsights(doFetch, {
+      apiKey: 'k',
+      model: 'm',
+      snapshot: { ...snapshot, marketing: { weeks: marketingSummary.weeks, byMetric: [] } },
+    });
+    const bodies = doFetch.mock.calls.map((c) => JSON.parse(c[1].body) as ChunkRequestBody);
+    for (const body of bodies) {
+      expect(body.messages[0]?.content).not.toContain('Маркетинг');
+      expect(body.messages[0]?.content).not.toContain('marketing grid');
+    }
   });
 });

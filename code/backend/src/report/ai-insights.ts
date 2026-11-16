@@ -110,7 +110,9 @@ export function snapshotFacts(s: ReportSnapshot): string {
     const first = marketing.weeks[0];
     const last = marketing.weeks[marketing.weeks.length - 1];
     if (first && last) {
-      const range = `Маркетинг (недели ${first.start}..${last.end})`;
+      // ANA-192: the model must know these numbers are NOT Metrika aggregates — they come
+      // from the weekly marketing grid (Marketing page), so it never confuses the sources.
+      const range = `Маркетинг (источник: weekly marketing grid; недели ${first.start}..${last.end})`;
       const fmt = (m: { labelRu: string; total: number; weeks: number }): string =>
         `${m.labelRu}: ${m.total} (${m.weeks} нед.)`;
       const sectionLine = (section: 'content' | 'influence' | 'other', title: string): string => {
@@ -258,9 +260,11 @@ const ANALYSIS_CHUNKS: AnalysisChunk[] = [
       'Используй ТОЛЬКО приведённые числа; принцип «заявка ≠ оплата» соблюдай строго. ' +
       'Это ФИНАЛЬНЫЙ раздел отчёта — подробный итоговый вывод ПОСЛЕ анализа, гипотез, решений и ' +
       'приоритизации. Синтезируй всё вместе (5–7 абзацев): где трек находится относительно ' +
-      'KPI-цели по оплатам (число — в строке «KPI» данных) и какой gap; что в данных главное (каналы/UTM/воронка/B2B); какие 3 гипотезы бьём ' +
+      'KPI-цели по оплатам (число — в строке «KPI» данных) и какой gap; что в данных главное (каналы/UTM/воронка/B2B/маркетинг-активности); какие 3 гипотезы бьём ' +
       'первыми и почему (по ICE); какие решения предлагаются и какой ожидаемый эффект в цифрах; ' +
       'чёткий вердикт 🟢/🟡/🔴 по достижимости цели и приоритетные следующие шаги на оставшийся срок. ' +
+      'Если в данных есть блок «Маркетинг» (источник: weekly marketing grid), включи маркетинговые ' +
+      'активности в итоговый синтез: какие дали переходы, заявки и оплаты, где отдача максимальная. ' +
       'Не повторяй разделы дословно — дай связный управленческий вывод.',
     userPrompt: (facts) =>
       `Данные:\n${facts}\n\nПодробный итоговый вывод по треку «Конверсии и лидген»: синтез анализа, ` +
