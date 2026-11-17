@@ -115,7 +115,11 @@ describe('auth flow', () => {
       await ctx2.app.close();
       ctx2.db.close();
     }
-  }, 20000);
+    // No per-test timeout override: logins are scrypt-backed and CPU-bound, and under
+    // parallel --coverage load this test overran its local 20 s ceiling at 24.6 s
+    // (ANA-195 gate, same hazard class as ANA-165/ANA-125) while the rest of the suite
+    // already runs on the repo-standard 60 s policy from vitest.config.ts.
+  });
 
   it('logout deletes the session and clears the cookie', async () => {
     ctx = await build();
