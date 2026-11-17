@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import puppeteer from 'puppeteer-core';
 import type { ReportLocale, ReportSnapshot } from '@pca/shared';
+import { resolveDeterministicDate } from '../docx/determinize';
+import { determinizePdf } from './determinize';
 import { reportHtml } from './html';
 
 /** Find Chrome executable path across platforms. */
@@ -69,7 +71,10 @@ export async function buildPdf(
     const page = await browser.newPage();
     await page.setContent(reportHtml(snapshot, locale), { waitUntil: 'load' });
     const pdf = await page.pdf({ format: 'A4', printBackground: true });
-    return Buffer.from(pdf);
+    // ANA-195: Chrome stamps /CreationDate and /ModDate from the render wall-clock, which
+    // broke the byte-identity of re-exports. Pin both to the snapshot's own generatedAt
+    // (same reasoning as the DOCX determinize, ANA-188) — one snapshotId → identical bytes.
+    return determinizePdf(Buffer.from(pdf), resolveDeterministicDate(snapshot.generatedAt));
   } finally {
     await browser.close();
   }
