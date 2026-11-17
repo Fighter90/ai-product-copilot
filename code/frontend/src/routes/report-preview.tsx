@@ -28,7 +28,7 @@ import { errorMessage } from '../lib/error-message';
 import { downloadFileViaFetch, reportDownloadUrl } from '../lib/download';
 import { ErrorBox } from '../components/ui';
 import { useState, useEffect, useRef, type ReactNode } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { mdToHtml } from '../lib/md-to-html';
 import { fmtDate, useT, type DictKey } from '../i18n';
 import { InfoHint } from '../components/InfoHint';
@@ -684,12 +684,20 @@ export function ReportPreviewView({
         </div>
       ) : snapshotError ? (
         // ANA-180: a broken ?snapshot= id must not silently degrade to the empty preview.
-        <p
+        // ANA-196: the alert also carries the way out — a direct link into «История», so the
+        // error no longer dead-ends in a sidebar-only escape.
+        <div
           role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
         >
-          {t('rep.snapshotMissing')}
-        </p>
+          <p>{t('rep.snapshotMissing')}</p>
+          <Link
+            to="/app/history"
+            className="inline-block rounded border border-red-300 px-3 py-1 font-medium hover:bg-red-100"
+          >
+            {t('rep.openHistory')}
+          </Link>
+        </div>
       ) : (
         <p className="text-slate-500">{t('rep.empty')}</p>
       )}

@@ -574,6 +574,8 @@ export const ru = {
   // silent empty preview.
   'rep.snapshotMissing':
     'Отчёт по ссылке не найден — возможно, срез был удалён. Соберите новый отчёт за нужный период или выберите другой в «Истории».',
+  // ANA-196: the missing-report alert carries the way out — a direct link into «История».
+  'rep.openHistory': 'Открыть историю отчётов',
   // --- ANA-33/39 (fx.*): provider choice, attribution, human snapshot meta, report TOC ---
   'fx.snapshot.meta': 'Отчёт «{period}» · сформирован {at}',
   'fx.snapshot.uuidTitle': 'Срез данных: {id}',
@@ -2093,6 +2095,8 @@ export const en: Record<DictKey, string> = {
   // silent empty preview.
   'rep.snapshotMissing':
     'The report behind this link was not found — it may have been deleted. Build a new report for the period you need or pick another one in the History.',
+  // ANA-196: the missing-report alert carries the way out — a direct link into the History.
+  'rep.openHistory': 'Open report history',
   // --- ANA-33/39 (fx.*): provider choice, attribution, human snapshot meta, report TOC ---
   'fx.snapshot.meta': 'Report “{period}” · generated {at}',
   'fx.snapshot.uuidTitle': 'Data snapshot: {id}',

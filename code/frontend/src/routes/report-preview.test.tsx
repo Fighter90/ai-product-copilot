@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import type { ReportSnapshot } from '@pca/shared';
 import { renderWithProviders } from '../test/utils';
 import { expectNoCyrillic, setTestLocale } from '../test/i18n-utils';
@@ -92,11 +94,28 @@ describe('ReportPreviewView', () => {
   });
 
   it('ANA-180: a broken ?snapshot= link shows an explicit alert instead of the silent empty preview', () => {
-    render(<ReportPreviewView {...baseProps} snapshotError />);
+    // ANA-196: the alert now carries a react-router Link into «История», so a Router is required.
+    render(
+      <MemoryRouter>
+        <ReportPreviewView {...baseProps} snapshotError />
+      </MemoryRouter>,
+    );
     const alert = screen.getByRole('alert');
     expect(alert).toHaveTextContent(/не найден/i);
     // The generic «Нажмите «Собрать отчёт»…» hint must not silently replace the requested report.
     expect(screen.queryByText(/Нажмите «Собрать отчёт»/)).not.toBeInTheDocument();
+  });
+
+  // ANA-196: the alert explains the failure but leaves the user stranded — the way out
+  // («История») must be one click away, not a trip through the sidebar.
+  it('ANA-196: the missing-report alert carries a direct «Открыть историю отчётов» link to /app/history', () => {
+    render(
+      <MemoryRouter>
+        <ReportPreviewView {...baseProps} snapshotError />
+      </MemoryRouter>,
+    );
+    const link = screen.getByRole('link', { name: 'Открыть историю отчётов' });
+    expect(link).toHaveAttribute('href', '/app/history');
   });
 
   it('ANA-180: without a load failure the generic build hint stays and no alert renders', () => {
@@ -415,6 +434,37 @@ describe('ReportPreview (wrapper)', () => {
     expect(alert).toHaveTextContent(/не найден/i);
     // The generic build hint must not silently replace the requested report.
     expect(screen.queryByText(/Нажмите «Собрать отчёт»/)).not.toBeInTheDocument();
+  });
+
+  // ANA-196: the missing-report alert must not dead-end — clicking the «Открыть историю
+  // отчётов» link inside it lands the user on the report history page.
+  it('ANA-196: clicking the history link in the missing-report alert navigates to /app/history', async () => {
+    vi.mocked(api.getSnapshot).mockRejectedValue(new Error('404 not found'));
+    function LocationProbe(): JSX.Element {
+      const loc = useLocation();
+      return <span data-testid="path">{loc.pathname}</span>;
+    }
+    const qc = new QueryClient({
+      // Mirrors renderWithProviders: marks failed queries as handled (the 404 is the point).
+      queryCache: new QueryCache({ onError: () => {} }),
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/app/report?snapshot=broken-id']}>
+          <LocationProbe />
+          <Routes>
+            <Route path="/app/report" element={<ReportPreview />} />
+            <Route path="/app/history" element={<div>История отчётов</div>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/не найден/i);
+    fireEvent.click(screen.getByRole('link', { name: 'Открыть историю отчётов' }));
+    expect(await screen.findByText('История отчётов')).toBeInTheDocument();
+    expect(screen.getByTestId('path')).toHaveTextContent('/app/history');
   });
 
   it('generates an AI narrative for the snapshot', async () => {
