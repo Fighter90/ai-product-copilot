@@ -120,7 +120,7 @@ describe('Decisions page (Decision Log)', () => {
       target: { value: 'масштабируем подкаст' },
     });
     fireEvent.change(screen.getByLabelText('Разрез'), { target: { value: 'канал: подкаст' } });
-    fireEvent.change(screen.getAllByLabelText('Вывод')[0]!, { target: { value: 'CR вырос' } });
+    // ANA-189-feedback: выводы необязательны — решение сохраняется без них.
     fireEvent.change(screen.getByLabelText('Цитата / цифра'), { target: { value: 'CR 5.4%' } });
     fireEvent.change(screen.getByLabelText('Источник'), { target: { value: 'Метрика' } });
     fireEvent.change(screen.getByLabelText('Обоснование исхода'), {
@@ -132,6 +132,8 @@ describe('Decisions page (Decision Log)', () => {
 
     await waitFor(() => expect(screen.getByTestId('dec-save')).toBeEnabled());
     fireEvent.click(screen.getByTestId('dec-save'));
+    // eslint-disable-next-line no-console
+    console.log('AFTER-SAVE:', JSON.stringify(vi.mocked(decisionsApi.create).mock.calls));
 
     await waitFor(() =>
       expect(decisionsApi.create).toHaveBeenCalledWith(
@@ -141,11 +143,55 @@ describe('Decisions page (Decision Log)', () => {
           outcome: 'green',
           decidedBy: 'Analyst',
           evidence: [{ quote: 'CR 5.4%', source: 'Метрика' }],
+          findings: [],
         }),
       ),
     );
     expect(editor).not.toBeInTheDocument();
   });
+
+      it('ANA-189-feedback: findings are optional — a filled row is included, an empty one is dropped', async () => {
+    vi.mocked(decisionsApi.list).mockResolvedValue([]);
+    vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
+    vi.mocked(decisionsApi.create).mockResolvedValue(DECISION);
+    renderWithProviders(<Decisions />, '/app/decisions');
+
+    fireEvent.click(await screen.findByTestId('dec-new'));
+    await screen.findByTestId('decision-editor');
+
+    fireEvent.change(screen.getByLabelText('Гипотеза'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('Решение (что делаем)'), {
+      target: { value: 'масштабируем подкаст' },
+    });
+    fireEvent.change(screen.getByLabelText('Разрез'), { target: { value: 'канал: подкаст' } });
+    fireEvent.change(screen.getByLabelText('Цитата / цифра'), { target: { value: 'CR 5.4%' } });
+    fireEvent.change(screen.getByLabelText('Источник'), { target: { value: 'Метрика' } });
+    fireEvent.change(screen.getByLabelText('Обоснование исхода'), {
+      target: { value: 'критерий достигнут' },
+    });
+    fireEvent.change(screen.getByLabelText('Следующий шаг'), { target: { value: 'масштабируем' } });
+
+    // Пустая строка выводов не блокирует Save и не уходит в API (findings необязательны).
+    await waitFor(() => expect(screen.getByTestId('dec-save')).toBeEnabled());
+
+    // Добавляем строку и заполняем только текст (селект уверенности остаётся дефолтным).
+    const findingsLabel = screen.getByText('Выводы');
+    const findingsSection = findingsLabel.parentElement ?? document.body;
+    fireEvent.click(within(findingsSection).getByRole('button', { name: /Добавить/ }));
+    const findingInput = screen.getAllByLabelText('Вывод')[0]!;
+    fireEvent.change(findingInput, { target: { value: 'CR вырос' } });
+    await waitFor(() => expect(findingInput).toHaveValue('CR вырос'));
+
+    fireEvent.click(screen.getByTestId('dec-save'));
+    await waitFor(() => expect(decisionsApi.create).toHaveBeenCalledTimes(1));
+    expect(decisionsApi.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        findings: [{ text: 'CR вырос', confidence: 'medium' }],
+      }),
+    );
+  });
+
+
 
   it('marks an AI auto-populated draft with the AI badge and plain rows without it (ANA-128)', async () => {
     const aiDraft: Decision = { ...DECISION, id: 2, number: 'DL-002', source: 'ai' };

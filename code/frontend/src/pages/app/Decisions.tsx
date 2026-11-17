@@ -156,7 +156,7 @@ function DecisionEditor({
   const [method, setMethod] = useState<DecisionMethod>('quantitative');
   const [scope, setScope] = useState('');
   const [periodDays, setPeriodDays] = useState(14);
-  const [findings, setFindings] = useState<FindingRow[]>([{ text: '', confidence: 'high' }]);
+  const [findings, setFindings] = useState<FindingRow[]>([]);
   const [evidence, setEvidence] = useState<EvidenceRow[]>([{ quote: '', source: '' }]);
   const [outcome, setOutcome] = useState<DecisionOutcome>('green');
   const [outcomeRationale, setOutcomeRationale] = useState('');
@@ -180,7 +180,7 @@ function DecisionEditor({
     ] as const) {
       if (v.trim() === '') e[f] = t('hyp.err.required');
     }
-    if (findings.some((f) => f.text.trim() === '')) e.findings = t('dec.err.findingsText');
+    // ANA-189-feedback: findings — необязательные; пустые строки отфильтровываются при сабмите.
     if (
       evidence.length === 0 ||
       evidence.some((ev) => ev.quote.trim() === '' || ev.source.trim() === '')
@@ -206,7 +206,9 @@ function DecisionEditor({
         method,
         scope: scope.trim(),
         periodDays,
-        findings: findings.map((f) => ({ ...f, text: f.text.trim() })),
+        findings: findings
+          .filter((f) => f.text.trim() !== '')
+          .map((f) => ({ ...f, text: f.text.trim(), confidence: f.confidence })),
         evidence: evidence.map((ev) => ({ quote: ev.quote.trim(), source: ev.source.trim() })),
         outcome,
         outcomeRationale: outcomeRationale.trim(),
@@ -324,7 +326,7 @@ function DecisionEditor({
               <div key={i} className="flex gap-2">
                 <select
                   aria-label={t('dec.f.findingConfidence')}
-                  className={`${input} w-36 shrink-0`}
+                  className="w-36 shrink-0 rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm text-ink outline-none focus:border-accent"
                   value={f.confidence}
                   onChange={(e) =>
                     setFindings(
@@ -342,9 +344,7 @@ function DecisionEditor({
                 </select>
                 <input
                   aria-label={t('dec.finding')}
-                  className={`${input} min-w-0 flex-1 ${
-                    dirty && shownErrors.findings && !f.text.trim() ? 'border-red-400' : ''
-                  }`}
+                  className={`${input} min-w-0 flex-1`}
                   value={f.text}
                   onChange={(e) =>
                     setFindings(
@@ -370,7 +370,9 @@ function DecisionEditor({
           >
             <Plus className="h-4 w-4" /> {t('hyp.add')}
           </button>
-          <FieldError>{shownErrors.findings}</FieldError>
+          {findings.length === 0 && (
+            <p className="text-xs text-muted">Выводы необязательны — добавьте строку, если есть что зафиксировать.</p>
+          )}
         </div>
 
         <div>

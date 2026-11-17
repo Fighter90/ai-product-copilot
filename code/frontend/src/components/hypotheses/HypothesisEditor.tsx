@@ -375,7 +375,7 @@ export function HypothesisEditor({
               <div key={i} className="flex gap-2">
                 <select
                   aria-label={t('hyp.f.assumptionCategory')}
-                  className={`${input} w-36 shrink-0`}
+                  className="w-36 shrink-0 rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm text-ink outline-none focus:border-accent"
                   value={a.category}
                   onChange={(e) =>
                     set(
@@ -441,7 +441,7 @@ export function HypothesisEditor({
               <div key={i} className="flex gap-2">
                 <select
                   aria-label={t('hyp.f.methodType')}
-                  className={`${input} w-40 shrink-0`}
+                  className="w-40 shrink-0 rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm text-ink outline-none focus:border-accent"
                   value={m.type}
                   onChange={(e) =>
                     set(
