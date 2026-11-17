@@ -180,7 +180,7 @@ function DecisionEditor({
     ] as const) {
       if (v.trim() === '') e[f] = t('hyp.err.required');
     }
-    if (findings.some((f) => f.text.trim() === '')) e.findings = t('hyp.err.required');
+    if (findings.some((f) => f.text.trim() === '')) e.findings = t('dec.err.findingsText');
     if (
       evidence.length === 0 ||
       evidence.some((ev) => ev.quote.trim() === '' || ev.source.trim() === '')
@@ -342,7 +342,9 @@ function DecisionEditor({
                 </select>
                 <input
                   aria-label={t('dec.finding')}
-                  className={`${input} min-w-0 flex-1`}
+                  className={`${input} min-w-0 flex-1 ${
+                    dirty && shownErrors.findings && !f.text.trim() ? 'border-red-400' : ''
+                  }`}
                   value={f.text}
                   onChange={(e) =>
                     setFindings(

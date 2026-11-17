@@ -1488,6 +1488,7 @@ export const ru = {
   'dec.conf.medium': 'Средняя',
   'dec.conf.low': 'Низкая',
   'dec.err.evidence': 'Нужно минимум одно доказательство (цитата + источник)',
+  'dec.err.findingsText': 'Заполните текст каждого вывода (селект уверенности не засчитывается)',
   // ANA-169: decision kanban — formulation field, workflow lanes and the view switcher.
   'dec.f.decision': 'Решение (что делаем)',
   'dec.status.accepted': 'Принято',
@@ -3009,6 +3010,7 @@ export const en: Record<DictKey, string> = {
   'dec.conf.medium': 'Medium',
   'dec.conf.low': 'Low',
   'dec.err.evidence': 'Need at least one evidence item (quote + source)',
+  'dec.err.findingsText': 'Fill in the text of each finding (the confidence select alone does not count)',
   // ANA-169: decision kanban — formulation field, workflow lanes and the view switcher.
   'dec.f.decision': 'Decision (what we do)',
   'dec.status.accepted': 'Accepted',
