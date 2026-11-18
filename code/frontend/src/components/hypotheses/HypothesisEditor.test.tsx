@@ -128,4 +128,16 @@ describe('HypothesisEditor save blockers (ANA-181)', () => {
     // The generic line replaces the checklist — no dangling «заполните:» with an empty list.
     expect(within(panel).queryByRole('list')).not.toBeInTheDocument();
   });
+
+  it('ANA-187: the live format sentence does not double the «если» joiner', () => {
+    renderEditor({ ...validDraft(), condition: 'если конверсия ниже 50%' });
+    const editor = screen.getByTestId('hypothesis-editor');
+    // The stored condition already opens with «если» — the sentence adds only the comma,
+    // never a second joiner («…, если если …» / «…, if если …»).
+    expect(editor.textContent).toContain(
+      'Подкаст сократим форму один шаг, если конверсия ниже 50%',
+    );
+    expect(editor.textContent).not.toContain(', если если');
+    expect(editor.textContent).not.toContain(', if если');
+  });
 });

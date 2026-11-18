@@ -46,7 +46,11 @@ function DealCard({ deal }: { deal: B2bDeal }): JSX.Element {
       className="cursor-grab rounded-md border border-slate-200 bg-white p-2 text-sm shadow-sm animate-fade-up active:cursor-grabbing"
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="min-w-0 break-words font-medium leading-snug">{deal.company}</span>
+        {/* ANA-187: hyphens-auto переносит длинные RU-слова по слогам, break-words —
+            последняя страховка от переполнения (регресс 16.11, тёмная тема). */}
+        <span className="min-w-0 hyphens-auto break-words font-medium leading-snug">
+          {deal.company}
+        </span>
         <span className="shrink-0 rounded bg-raised px-1.5 py-0.5 text-[11px] font-bold text-accent">
           {t('b2b.ticketsN', { n: formatInt(deal.tickets) })}
         </span>

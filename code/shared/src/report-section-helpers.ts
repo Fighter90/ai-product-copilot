@@ -110,10 +110,28 @@ export function reportLabels(locale: ReportLocale = 'ru'): ReportLabels {
   };
 }
 
+/**
+ * ANA-187: true when the stored condition text already opens with its own joiner («если»/«if»).
+ * Composing the statement with a template joiner on top produced «…, if если конверсия…» —
+ * the EN joiner duplicating the Russian word inside the data (and vice versa in the RU report).
+ * Case-insensitive, first word only.
+ */
+export function conditionStartsWithJoiner(condition: string): boolean {
+  // NB: \b is Latin-only in JS regex (Cyrillic letters are not \w), so the boundary after the
+  // joiner word is a Unicode-aware negative lookahead instead — otherwise «если» never matches.
+  return /^\s*(?:если|if)(?![\p{L}\p{N}_])/iu.test(condition);
+}
+
 /** Full hypothesis statement: «{subject} {action} {solution}, если {condition}». */
 export function hypothesisStatement(h: Hypothesis, locale: ReportLocale = 'ru'): string {
-  if (locale === 'en') return `“${h.subject} ${h.action} ${h.solution}, if ${h.condition}”`;
-  return `«${h.subject} ${h.action} ${h.solution}, если ${h.condition}»`;
+  if (locale === 'en') {
+    // The joiner follows the template language — but never stacks onto a condition that
+    // already opens with one (ANA-187): «…, if если …» → «…, если …».
+    const joiner = conditionStartsWithJoiner(h.condition) ? ', ' : ', if ';
+    return `“${h.subject} ${h.action} ${h.solution}${joiner}${h.condition}”`;
+  }
+  const joiner = conditionStartsWithJoiner(h.condition) ? ', ' : ', если ';
+  return `«${h.subject} ${h.action} ${h.solution}${joiner}${h.condition}»`;
 }
 
 export function utmLine(u: UtmBreakdownRow): string {

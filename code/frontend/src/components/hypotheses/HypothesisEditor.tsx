@@ -11,6 +11,7 @@ import {
   type HypothesisStatus,
   type NewHypothesis,
   type ValidationMethodType,
+  conditionStartsWithJoiner,
 } from '@pca/shared';
 import { useT, type DictKey } from '../../i18n';
 import { Modal } from '../ui';
@@ -268,8 +269,12 @@ export function HypothesisEditor({
   // ANA-181: the always-visible explanation under the disabled «Сохранить» — the unmet
   // requirements (unlike the per-field errors, this list shows BEFORE the first input).
   const blockers = useMemo(() => requirementsOf(d, isDraft).filter((r) => !r.ok), [d, isDraft]);
+  // ANA-187: the locale joiner never stacks onto a condition that already opens with its own
+  // («если»/«if») — the live sentence read «…, if если конверсия…» in that case.
   const sentence = `${d.subject} ${d.action} ${d.solution}${
-    d.condition ? `${t('hyp.sentenceIf')}${d.condition}` : ''
+    d.condition
+      ? `${conditionStartsWithJoiner(d.condition) ? ', ' : t('hyp.sentenceIf')}${d.condition}`
+      : ''
   }`.trim();
 
   const save = async (): Promise<void> => {

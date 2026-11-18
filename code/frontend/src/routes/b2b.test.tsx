@@ -78,6 +78,15 @@ describe('B2bView', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
+  it('ANA-187: kanban card company names hyphenate long words instead of breaking mid-word', () => {
+    // Регресс 16.11 (тёмная тема): длинные RU-слова рвались посреди слова без переноса.
+    render(<B2bView deals={deals} {...handlers()} />);
+    const card = screen.getByTestId('b2b-card-1');
+    const company = card.querySelector('span.break-words');
+    expect(company).not.toBeNull();
+    expect(company?.className).toContain('hyphens-auto');
+  });
+
   it('ANA-164: deal cards show company, contact, amount, date and next step', () => {
     render(<B2bView deals={deals} {...handlers()} />);
     const card = screen.getByTestId('b2b-card-1');

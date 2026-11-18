@@ -26,3 +26,5 @@ export * from './types/generated-decisions';
 export * from './types/payments';
 export * from './types/marketing';
 export * from './terms';
+// ANA-187: named re-export — the joiner guard is shared by the frontend hypothesis sentence too.
+export { conditionStartsWithJoiner } from './report-section-helpers';

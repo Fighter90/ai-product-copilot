@@ -344,11 +344,23 @@ describe('SnapshotCompare (БАГ-12: сравнение снапшотов)', (
 
   it('renders «—» for channels without UTM data instead of «(none)»', async () => {
     vi.mocked(api.getSnapshot).mockImplementation(async (id) =>
+      cmpSnap(id, id === 'snap-new' ? 30 : 10, [ch(null, null, 5), ch('ya', 'cpc', 15)]),
+    );
+    renderWithProviders(<HistoryView status="success" snapshots={snapshots} />);
+    // Канал без UTM среди размеченных — подпись «— / —», не «(none) / (none)».
+    expect(await screen.findByText('— / —')).toBeInTheDocument();
+    expect(screen.queryByText('(none) / (none)')).not.toBeInTheDocument();
+  });
+
+  it('ANA-187: with no UTM breakdown at all the single row is the totals row — «Всего»', async () => {
+    // Реальные данные (все каналы без UTM) сворачиваются в одну строку «— / —», которая на
+    // самом деле — итог всей таблицы; подписываем её «Всего», а не бессмысленным тире-тире.
+    vi.mocked(api.getSnapshot).mockImplementation(async (id) =>
       cmpSnap(id, id === 'snap-new' ? 30 : 10, [ch(null, null, 5)]),
     );
     renderWithProviders(<HistoryView status="success" snapshots={snapshots} />);
-    // Канал есть в обоих снапшотах, но без UTM — подпись «— / —», не «(none) / (none)».
-    expect(await screen.findByText('— / —')).toBeInTheDocument();
+    expect(await screen.findByText('Всего')).toBeInTheDocument();
+    expect(screen.queryByText('— / —')).not.toBeInTheDocument();
     expect(screen.queryByText('(none) / (none)')).not.toBeInTheDocument();
   });
 });

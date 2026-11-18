@@ -115,6 +115,36 @@ describe('HypothesisViewModal (ANA-152)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('ANA-187: the joiner never duplicates «если» already present in the stored condition', () => {
+    renderWithProviders(
+      <HypothesisViewModal
+        hypothesis={h({ condition: 'если конверсия из заявки в оплату ниже 50%' })}
+        onClose={vi.fn()}
+        onEdit={vi.fn()}
+      />,
+    );
+    const modal = screen.getByTestId('hyp-view-modal');
+    expect(modal).toHaveTextContent(
+      'Подкаст сократим форму один шаг, если конверсия из заявки в оплату ниже 50%',
+    );
+    expect(modal.textContent).not.toContain(', если если');
+    expect(modal.textContent).not.toContain(', if если');
+  });
+
+  it('ANA-187: an EN UI never renders «if» before a Russian «если» condition', () => {
+    setTestLocale('en');
+    renderWithProviders(
+      <HypothesisViewModal
+        hypothesis={h({ condition: 'если CR вырастет' })}
+        onClose={vi.fn()}
+        onEdit={vi.fn()}
+      />,
+    );
+    const modal = screen.getByTestId('hyp-view-modal');
+    expect(modal.textContent).toContain(', если CR вырастет');
+    expect(modal.textContent).not.toContain('if если');
+  });
+
   it('a minimal hypothesis renders dashes instead of empty fields and omits empty sections', () => {
     const onClose = vi.fn();
     const onEdit = vi.fn();
