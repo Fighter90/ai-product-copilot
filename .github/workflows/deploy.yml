@@ -4,7 +4,7 @@
 #
 # Требуемые секреты репозитория (Settings → Secrets and variables → Actions):
 #   DEPLOY_SSH_KEY — приватный SSH-ключ деплой-пользователя сервера (one line per \n).
-#   DEPLOY_HOST    — user@host сервера, напр. root@5.129.219.145.
+#   DEPLOY_HOST    — user@host сервера, напр. root@YOUR_SERVER_IP.
 name: Deploy (production)
 
 on:

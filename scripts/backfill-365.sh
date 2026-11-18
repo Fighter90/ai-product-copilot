@@ -8,7 +8,7 @@ set -Eeuo pipefail
 FROM="${1:-$(date -v-364d +%Y-%m-%d)}"
 TO="${2:-$(date +%Y-%m-%d)}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/pca_deploy}"
-SSH_HOST="${SSH_HOST:-root@5.129.219.145}"
+SSH_HOST="${SSH_HOST:-root@YOUR_SERVER_IP}"
 
 echo "[backfill] $FROM … $TO (delay 250 ms/request)"
 ssh -i "$SSH_KEY" -o BatchMode=yes "$SSH_HOST" bash -s -- "$FROM" "$TO" <<'REMOTE'

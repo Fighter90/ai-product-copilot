@@ -9,10 +9,10 @@ import { execSync } from 'node:child_process';
 const BASE = 'https://dashboardcamp.ru';
 const ADMIN = {
   email: process.env.PCA_ADMIN_EMAIL ?? 'admin@dashboardcamp.ru',
-  password: process.env.PCA_ADMIN_PASSWORD ?? 'DemoAdmin-c8ea7234!',
+  password: process.env.PCA_ADMIN_PASSWORD ?? '',
 };
 const SSH_KEY = process.env.HOME + '/.ssh/pca_deploy';
-const SSH_HOST = 'root@5.129.219.145';
+const SSH_HOST = process.env.PCA_SSH_HOST ?? 'root@YOUR_SERVER_IP';
 const YC = process.env.HOME + '/yandex-cloud/bin/yc';
 
 const token = execSync(`${YC} iam create-token`, { encoding: 'utf8' }).trim();

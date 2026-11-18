@@ -17,7 +17,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ---------------------------------------------------------------------------------------------
 // Prod SQLite over SSH (sqlite3 -readonly, SQL via stdin → no shell quoting issues).
 export function makeDb({
-  host = 'root@5.129.219.145',
+  host = process.env.PCA_SSH_HOST ?? 'root@YOUR_SERVER_IP',
   key = `${homedir()}/.ssh/pca_deploy`,
   path = '/opt/pca/data/productcamp.sqlite',
 } = {}) {

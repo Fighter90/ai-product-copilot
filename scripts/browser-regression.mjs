@@ -11,11 +11,11 @@ import { join } from 'node:path';
 const BASE = process.env.PROD_URL ?? 'https://dashboardcamp.ru';
 const ADMIN = {
   email: process.env.PCA_ADMIN_EMAIL ?? 'admin@dashboardcamp.ru',
-  password: process.env.PCA_ADMIN_PASSWORD ?? 'DemoAdmin-c8ea7234!',
+  password: process.env.PCA_ADMIN_PASSWORD ?? '',
 };
 const ANALYST = {
   email: process.env.PCA_ANALYST_EMAIL ?? 'analyst@dashboardcamp.ru',
-  password: process.env.PCA_ANALYST_PASSWORD ?? 'DemoAnalyst-bf449de4!',
+  password: process.env.PCA_ANALYST_PASSWORD ?? '',
 };
 
 const args = process.argv.slice(2);

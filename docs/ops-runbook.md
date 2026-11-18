@@ -13,7 +13,7 @@
   в env существующих пользователей **не обновляет**.
 
 ```bash
-ssh root@5.129.219.145
+ssh root@YOUR_SERVER_IP
 cd /opt/pca/app
 # tsx-скрипт ANA-115 (смена пароля учётки): пароль ≥ 10 символов.
 # Скрипт делает: UPDATE users (новый scrypt-хэш) + DELETE sessions (все сессии разлогинены).

@@ -368,7 +368,7 @@ if (TABLES_ONLY) {
     // Rare fallback (no goal query in raw_responses): one prod API GET — no extra Metrika pull.
     const apiT = await makeApi({
       email: process.env.PCA_ADMIN_EMAIL || 'admin@dashboardcamp.ru',
-      password: process.env.PCA_ADMIN_PASSWORD || 'DemoAdmin-c8ea7234!',
+      password: process.env.PCA_ADMIN_PASSWORD || '',
     });
     GOALT = (await apiT.json('/metrics/primary-goal').catch(() => null))?.id;
   }
@@ -655,7 +655,7 @@ const mk = makeMetrika(token);
 const api = await makeApi({
   // Prod login: the demo admin account (local .env ADMIN_EMAIL is a dev-only account and 401s).
   email: process.env.PCA_ADMIN_EMAIL || 'admin@dashboardcamp.ru',
-  password: process.env.PCA_ADMIN_PASSWORD || 'DemoAdmin-c8ea7234!',
+  password: process.env.PCA_ADMIN_PASSWORD || '',
 });
 const primary = await api.json('/metrics/primary-goal').catch(() => null);
 const GOAL = goalFromRaw ?? primary?.id;

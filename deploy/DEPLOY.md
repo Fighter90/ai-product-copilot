@@ -1,6 +1,6 @@
 # ДЕПЛОЙ PCA на dashboardcamp.ru
 
-Прод-сервер: **Ubuntu, 1 CPU, 889 MB RAM**, IP `5.129.219.145`, домен `dashboardcamp.ru` (+ `www`).
+Прод-сервер: **Ubuntu, 1 CPU, 889 MB RAM**, IP `YOUR_SERVER_IP`, домен `dashboardcamp.ru` (+ `www`).
 
 Архитектура:
 
@@ -26,7 +26,7 @@ SQLite: /opt/pca/data/productcamp.sqlite
 
 ## 0. Предварительные требования
 
-- DNS: `A dashboardcamp.ru → 5.129.219.145` и `A www.dashboardcamp.ru → 5.129.219.145`
+- DNS: `A dashboardcamp.ru → YOUR_SERVER_IP` и `A www.dashboardcamp.ru → YOUR_SERVER_IP`
   (проверка: `dig +short dashboardcamp.ru`).
 - SSH-доступ root'ом по ключу (или пароль + установленный `sshpass`).
 - Локально: Node 22.12+, `pnpm` (`corepack enable`), `rsync`.
@@ -37,8 +37,8 @@ SQLite: /opt/pca/data/productcamp.sqlite
 
 ```bash
 # с локальной машины: скопировать артефакты деплоя и запустить
-rsync -av deploy/ root@5.129.219.145:/tmp/pca-setup/
-ssh root@5.129.219.145 'bash /tmp/pca-setup/setup-server.sh'
+rsync -av deploy/ root@YOUR_SERVER_IP:/tmp/pca-setup/
+ssh root@YOUR_SERVER_IP 'bash /tmp/pca-setup/setup-server.sh'
 ```
 
 Скрипт идемпотентный: поставит nginx/certbot/Node 22/pnpm/tsx, создаст пользователя `pca`,
@@ -47,7 +47,7 @@ ssh root@5.129.219.145 'bash /tmp/pca-setup/setup-server.sh'
 ### 1.2 Создать /opt/pca/.env (вручную, секреты не хардкодим)
 
 ```bash
-ssh root@5.129.219.145
+ssh root@YOUR_SERVER_IP
 install -m 600 -o pca -g pca /dev/null /opt/pca/.env
 openssl rand -hex 32   # → значение APP_SECRET ниже
 nano /opt/pca/.env
@@ -88,7 +88,7 @@ PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
 ### 1.4 Включить SSL (после первого деплоя)
 
 ```bash
-ssh root@5.129.219.145
+ssh root@YOUR_SERVER_IP
 certbot --nginx -d dashboardcamp.ru -d www.dashboardcamp.ru
 # На вопрос о редиректе HTTP→HTTPS ответьте: 2 (redirect).
 ```
@@ -219,13 +219,13 @@ free -m && df -h /
 **включить таймеры** и разложить скрипты на постоянное место нужно один раз вручную:
 
 ```bash
-ssh root@5.129.219.145
+ssh root@YOUR_SERVER_IP
 
 # sqlite3 нужен и бэкапу, и восстановлению (в базовой Ubuntu его нет):
 apt-get install -y sqlite3
 
 # Скрипты — на постоянное место (deploy.sh кладёт свежие копии в /tmp/pca-deploy;
-# если деплой ещё не делался: rsync -av deploy/ root@5.129.219.145:/tmp/pca-deploy/):
+# если деплой ещё не делался: rsync -av deploy/ root@YOUR_SERVER_IP:/tmp/pca-deploy/):
 install -d -m 755 /opt/pca/deploy /opt/pca/backups /opt/pca/logs
 install -m 755 -o root -g root /tmp/pca-deploy/backup.sh         /opt/pca/deploy/backup.sh
 install -m 755 -o root -g root /tmp/pca-deploy/health-monitor.sh /opt/pca/deploy/health-monitor.sh
@@ -244,7 +244,7 @@ systemctl enable --now pca-backup.timer pca-monitor.timer
 ### 5.2 Восстановление из бэкапа
 
 ```bash
-ssh root@5.129.219.145
+ssh root@YOUR_SERVER_IP
 
 # 1) Выбираем копию (свежие сверху):
 ls -lt /opt/pca/backups/
@@ -269,8 +269,8 @@ curl -s http://127.0.0.1:4000/api/health | jq
 
 ```bash
 # с локальной машины — свежий бэкап + .env (секреты в бэкапах не хранятся!):
-scp root@5.129.219.145:/opt/pca/backups/pca-$(date +%F)*.db.gz .
-scp root@5.129.219.145:/opt/pca/.env .
+scp root@YOUR_SERVER_IP:/opt/pca/backups/pca-$(date +%F)*.db.gz .
+scp root@YOUR_SERVER_IP:/opt/pca/.env .
 ```
 
 ### 5.3 Как проверить, что работает
@@ -314,7 +314,7 @@ cat /opt/pca/logs/monitor.log                              # «неудача #3
 
 ## 6. Офсайт-копирование бэкапов (Mac владельца)
 
-Сервер и его бэкапы живут в одном дата-центре (Timeweb, `5.129.219.145`):
+Сервер и его бэкапы живут в одном дата-центре (Timeweb, `YOUR_SERVER_IP`):
 если VDS выйдет из строя, будет заблокирована или ДЦ накроется — вместе с ней
 пропадут и база, и все 14 локальных копий из `/opt/pca/backups/`. Поэтому
 свежий бэкап нужно регулярно забирать на машину за пределами дата-центра.
@@ -329,7 +329,7 @@ cat /opt/pca/logs/monitor.log                              # «неудача #3
 - хранит локально не более **30** копий (более старые удаляет);
 - идемпотентен: повторный запуск в тот же день не качает повторно.
 
-Хост/ключ настраиваются через env: `PCA_HOST` (по умолчанию `root@5.129.219.145`),
+Хост/ключ настраиваются через env: `PCA_HOST` (по умолчанию `root@YOUR_SERVER_IP`),
 `PCA_KEY` (по умолчанию `~/.ssh/pca_deploy`).
 
 ### 6.1 Разовый запуск
@@ -390,7 +390,7 @@ crontab -e
 ```
 
 Что должно быть на Mac: SSH-ключ `~/.ssh/pca_deploy` с доступом root@прод
-(проверка: `ssh -i ~/.ssh/pca_deploy root@5.129.219.145 'echo ok'`), и чтобы
+(проверка: `ssh -i ~/.ssh/pca_deploy root@YOUR_SERVER_IP 'echo ok'`), и чтобы
 в 06:00 машина была включена (или launchd догонит при пробуждении).
 Работает ли расписание — видно по `tail ~/Backups/pca/pull.log`: запись
 «загружаю … / готово …» должна появляться ежедневно около 06:00.
@@ -401,7 +401,7 @@ crontab -e
 
 ```bash
 scp -i ~/.ssh/pca_deploy ~/Backups/pca/pca-YYYYMMDD-HHMMSS.db.gz \
-  root@5.129.219.145:/opt/pca/backups/
+  root@YOUR_SERVER_IP:/opt/pca/backups/
 ```
 
 Дальше — раздел 5.2 (остановить `pca-api`, распаковать в
@@ -504,20 +504,20 @@ sshd_config.d` стоит в начале `sshd_config` — файл «00-» п�
 
 ```bash
 # 0) ДО: убедиться, что вход по ключу работает — в НОВОМ окне терминала:
-ssh -i ~/.ssh/pca_deploy -o ControlPath=none root@5.129.219.145 'echo ok'
+ssh -i ~/.ssh/pca_deploy -o ControlPath=none root@YOUR_SERVER_IP 'echo ok'
 
 # 1) Скопировать и запустить на сервере:
-scp -i ~/.ssh/pca_deploy deploy/harden-ssh.sh root@5.129.219.145:/tmp/
-ssh root@5.129.219.145 'bash /tmp/harden-ssh.sh'
+scp -i ~/.ssh/pca_deploy deploy/harden-ssh.sh root@YOUR_SERVER_IP:/tmp/
+ssh root@YOUR_SERVER_IP 'bash /tmp/harden-ssh.sh'
 
 # 2) СРАЗУ после — тест НОВОГО подключения, не закрывая текущую сессию:
-ssh -i ~/.ssh/pca_deploy -o ControlPath=none root@5.129.219.145 'echo ok'
+ssh -i ~/.ssh/pca_deploy -o ControlPath=none root@YOUR_SERVER_IP 'echo ok'
 # 3) Критерий приёмки ANA-51 — пароль отклоняется:
-ssh -v -o PreferredAuthentications=none root@5.129.219.145 2>&1 | grep 'can continue'
+ssh -v -o PreferredAuthentications=none root@YOUR_SERVER_IP 2>&1 | grep 'can continue'
 #   → Authentications that can continue: publickey   (пароля в списке нет)
 ```
 
-Состояние после применения (проверено на 5.129.219.145, октябрь 2026):
+Состояние после применения (проверено на YOUR_SERVER_IP, октябрь 2026):
 
 | Проверка                      | Значение                                                                                                                        |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -610,7 +610,7 @@ docker build \
 - применяется `systemctl reload ssh` (Ubuntu-юнит называется `ssh`) — открытые сессии не рвутся;
 - после запуска обязательно проверьте вход ключом **в новой сессии**, не закрывая текущую:
   ```bash
-  ssh -i ~/.ssh/pca_deploy -o ControlPath=none root@5.129.219.145 true
+  ssh -i ~/.ssh/pca_deploy -o ControlPath=none root@YOUR_SERVER_IP true
   ```
 
 Откат sshd (из ещё открытой сессии):
@@ -623,8 +623,8 @@ rm -f /etc/ssh/sshd_config.d/00-pca-hardening.conf && sshd -t && systemctl reloa
 
 ```bash
 # с локальной машины — залить скрипт и запустить:
-scp -i ~/.ssh/pca_deploy deploy/harden-ssh.sh root@5.129.219.145:/tmp/
-ssh -i ~/.ssh/pca_deploy root@5.129.219.145 'bash /tmp/harden-ssh.sh'
+scp -i ~/.ssh/pca_deploy deploy/harden-ssh.sh root@YOUR_SERVER_IP:/tmp/
+ssh -i ~/.ssh/pca_deploy root@YOUR_SERVER_IP 'bash /tmp/harden-ssh.sh'
 # → затем проверка входа в НОВОЙ сессии (7.2). На проде уже применён — повторный запуск просто ничего не меняет.
 ```
 

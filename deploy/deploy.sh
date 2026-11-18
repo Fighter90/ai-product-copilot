@@ -10,7 +10,7 @@
 #   4) перезапускает systemd-юниты и ждёт зелёный /api/health (с ретраями).
 #
 # Переменные окружения (можно переопределить):
-#   SSH_HOST   — user@ip           (по умолчанию root@5.129.219.145)
+#   SSH_HOST   — user@ip           (по умолчанию root@YOUR_SERVER_IP)
 #   SSH_PORT   — порт ssh          (по умолчанию 22)
 #   SSH_KEY    — путь к ключу      (опционально, -i)
 #   SSH_PASS   — пароль            (если задан, используется sshpass; лучше ключи!)
@@ -19,7 +19,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SSH_HOST="${SSH_HOST:-root@5.129.219.145}"
+SSH_HOST="${SSH_HOST:-root@YOUR_SERVER_IP}"
 SSH_PORT="${SSH_PORT:-22}"
 SSH_KEY="${SSH_KEY:-}"
 SSH_PASS="${SSH_PASS:-}"

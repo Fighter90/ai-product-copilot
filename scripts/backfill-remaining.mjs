@@ -3,7 +3,15 @@
 // логин админом → POST /api/sync окнами по 10 дней, пауза 45 с, ретраи на 429/504,
 // стоп по per-user квоте (quota_requests_by_uid). Прогресс в stdout.
 const BASE = 'https://dashboardcamp.ru';
-const ADMIN = { email: 'admin@dashboardcamp.ru', password: 'DemoAdmin-c8ea7234!' };
+const ADMIN = {
+  email: process.env.PCA_ADMIN_EMAIL ?? 'admin@dashboardcamp.ru',
+  // Секреты только из окружения — в репозитории паролей быть не должно.
+  password: process.env.PCA_ADMIN_PASSWORD ?? '',
+};
+if (!ADMIN.password) {
+  console.error('Set PCA_ADMIN_PASSWORD (demo admin login password).');
+  process.exit(1);
+}
 const PAUSE_MS = 45_000;
 const CHUNK = 10;
 
