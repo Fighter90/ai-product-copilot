@@ -276,7 +276,7 @@ frontend, shared). Конкурентность: устаревший запус
 | Секрет           | Значение                                              |
 | ---------------- | ----------------------------------------------------- |
 | `DEPLOY_SSH_KEY` | приватный SSH-ключ деплой-пользователя (файл целиком) |
-| `DEPLOY_HOST`    | `user@ip`, напр. `root@YOUR_SERVER_IP`                 |
+| `DEPLOY_HOST`    | `user@ip`, напр. `root@YOUR_SERVER_IP`                |
 
 Выкатить вручную из ветки: `gh workflow run deploy.yml --ref <branch>`.
 

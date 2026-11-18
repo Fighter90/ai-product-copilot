@@ -1,220 +1,231 @@
-# Administrator guide
+# Admin Guide
 
-> 🇬🇧 English · [🇷🇺 Русский](../admin-guide.md). Product version v3.4.0 · live site
-> <https://dashboardcamp.ru>. A page-by-page walkthrough with buttons and screenshots lives in the
-> cabinet's built-in help (`/help`, "Admin" section); this document is a self-contained
-> administrator handbook.
+> Document version: v3.4.64 (2026-11-18). For the **Administrator** role (`/app/admin/*`).
+> Language: 🇬🇧 English (mirror: [docs/admin-guide.md](../admin-guide.md)).
+> Related docs: [User Guide](user-guide.md) · [Ops Runbook](runbook.md) · [Deploy](../deploy.md) · [Troubleshooting](troubleshooting.md) · [Security (wiki)](https://github.com/Fighter90/ai-product-copilot/wiki/Security-en).
 
-An administrator sees everything an analyst sees ([user-guide.md](user-guide.md)) plus the
-"Administration" section of the sidebar. Permissions are enforced on the server: `/api/admin/**`,
-`/api/users`, changes to settings and AI providers, and data deletion are available only to the
-Administrator role; everyone else gets HTTP 403 `ADMIN_ONLY`.
+---
 
-## 1. Initial setup (checklist)
+## Contents
 
-1. **Server.** `.env` contains `APP_SECRET` (master key encrypting DB secrets), `COOKIE_SECURE=1`
-   behind HTTPS and `DEMO_USERS=0` — see [deploy.md](../deploy.md) (RU).
-2. **First sign-in.** The bootstrap administrator is created on start from `ADMIN_EMAIL` /
-   `ADMIN_PASSWORD` while the `users` table is empty. After signing in, create a second
-   administrator and remove the password from `.env`.
-3. **Metrika & data** — counter, OAuth token, "Save" → "Refresh data from Metrika".
-4. **AI providers** — at least one provider with a key: "Save" → "Test connection" → "Enabled".
-5. **Users** — create analysts and hand over temporary passwords via a secure channel.
-6. **Integrations** — DataLens if needed: API connection, webhook URL, dashboard links.
-7. **Audit** — make sure every step was recorded.
+1. [The admin role and responsibilities](#1-the-admin-role-and-responsibilities)
+2. [First-time setup (checklist)](#2-first-time-setup-checklist)
+3. [Users and roles](#3-users-and-roles)
+4. [AI providers](#4-ai-providers)
+5. [Yandex.Metrika and data](#5-yandexmetrika-and-data)
+6. [Integrations: DataLens](#6-integrations-datalens)
+7. [KPI and goal settings](#7-kpi-and-goal-settings)
+8. [Audit log](#8-audit-log)
+9. [Operations: deploy, backups, health](#9-operations-deploy-backups-health)
+10. [Security and secrets](#10-security-and-secrets)
 
-## 2. Users and roles (`/app/admin/users`)
+---
 
-| Role          | Can                                                                                             |
-| ------------- | ----------------------------------------------------------------------------------------------- |
-| Analyst       | Overview, Live, Goals, Funnels, Traffic, Behavior, KPI, Explore, Report, History, B2B, DataLens |
-| Administrator | all of the above + Users, AI providers, Metrika & data, Integrations, Audit                     |
+## 1. The admin role and responsibilities
 
-- **Create a user:** "Add user" → name, email, role → "Save". The temporary password is shown
-  **once** — copy it and pass it on via a secure channel.
-- **Reset a password:** "Reset password" issues a new temporary password and terminates all of the
-  user's sessions. There is no self-service "forgot password" — an administrator resets it.
-- **Change a role:** the "Role" dropdown in the user's row; applied immediately.
-- **Disable:** "Disable" blocks sign-in and immediately ends all sessions; the record and its audit
-  history are kept (users are never deleted).
-- **Last-admin protection:** demoting or disabling the only active admin is rejected (HTTP 409).
-  Keep at least two administrators.
-- **Sign-in security:** scrypt password hashes; session cookie `pca_session` (HttpOnly), only the
-  sha256 token hash is stored; lifetime `SESSION_DAYS` (7 days); 5 failed sign-ins within 15 minutes
-  per IP+email → HTTP 429.
+The administrator owns the working environment. Areas:
 
-## 3. AI providers and keys (`/app/admin/ai`)
+| Area         | Responsibilities                                                                |
+| ------------ | ------------------------------------------------------------------------------- |
+| People       | create/deactivate users, assign roles, reset passwords                          |
+| AI           | maintain the provider chain (keys, order, checks), watch usage                  |
+| Data         | Metrika token, goals, the SMART goal and deadline, regular sync, backup account |
+| Integrations | DataLens (public API, token)                                                    |
+| Operations   | health, backups, versions; deploying new releases                               |
+| Security     | secrets only in `.env`; password rotation; audit log control                    |
 
-AI powers the report's AI analysis, AI hypotheses with the Decision Log, and the help RAG
-assistant. Everything else (dashboards, funnels, DOCX/PDF) works without AI.
+Sign in at the same `/login`; the sidebar gains the **ADMINISTRATION** group.
 
-| Provider   | What you need                                | Where to get it                                                                                                    | Default model                 |
-| ---------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------- |
-| OpenRouter | API key (`sk-or-…`)                          | openrouter.ai/keys → Create Key; requires Credits                                                                  | `anthropic/claude-sonnet-4.5` |
-| Anthropic  | API key (`sk-ant-…`)                         | console.anthropic.com → Settings → API Keys; requires a balance                                                    | `claude-sonnet-4-6`           |
-| YandexGPT  | service-account API key + folder ID (`b1g…`) | Yandex Cloud / AI Studio: service account with `ai.languageModels.user` → API key (`yc.ai.languageModels.execute`) | `yandexgpt/latest`            |
-| GigaChat   | Authorization Key + scope                    | developers.sber.ru → GigaChat API project; scope `GIGACHAT_API_PERS` / `_B2B` / `_CORP`                            | `GigaChat-2-Pro`              |
+## 2. First-time setup (checklist)
 
-**Order:** paste the key → extra fields (folder ID / scope) → "Save" → "Test connection" → tick
-"Enabled".
+```text
+□ 1. Set /opt/pca/.env on the server: METRIKA_OAUTH_TOKEN, COUNTER_ID, APP_SECRET,
+     DEMO_*_PASSWORD (or DEMO_USERS=0), AI keys (or configure later in the admin panel)
+□ 2. Deploy: SSH_KEY=~/.ssh/pca_deploy ./deploy/deploy.sh → health = the build version
+□ 3. Sign in as admin (the first user is created from ADMIN_EMAIL/ADMIN_PASSWORD when
+     the users table is empty)
+□ 4. Users → create analysts (the temporary password is shown once!)
+□ 5. AI providers → add providers, run the connection check, enable
+□ 6. Metrika → verify the token, pick the KPI goal, set the deadline (SMART)
+□ 7. Run sync (or wait for the nightly) → check Overview
+□ 8. Build the first report → Export DOCX/PDF (check determinism: ×2)
+□ 9. DataLens → connect (optional)
+□ 10. Backups → verify the timer and a fresh copy in /opt/pca/backups
+```
 
-- **Priority chain:** only enabled providers with a saved key participate; a lower priority runs
-  first (defaults 10 / 20 / 30 / 40). Transient errors (429, 5xx, network) get up to 2 retries, then
-  the request falls over to the next provider.
-- **Storage:** keys are encrypted with AES-256-GCM using the `APP_SECRET` master key; the UI and API
-  show only a mask `••••abcd`. An empty key field on save means "keep the current key".
-- **Rotating `APP_SECRET`** makes stored keys undecryptable — re-enter them.
-- **GigaChat and TLS:** Sber servers are signed by the Russian Trusted Root CA. The server needs
-  `NODE_EXTRA_CA_CERTS` pointing to a PEM with the root and sub CA — `deploy/deploy.sh` installs
-  them and sets the variable automatically. Symptom when missing: "gigachat: fetch failed" /
-  `SELF_SIGNED_CERT_IN_CHAIN`.
-- **`.env` keys** (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `YANDEX_AI_API_KEY` +
-  `YANDEX_AI_FOLDER_ID`, `GIGACHAT_AUTH_KEY` + `GIGACHAT_SCOPE`) are applied once to an empty
-  providers table; afterwards this page is the source of truth.
-- **Statistics:** the "Usage over 30 days" block shows calls and errors per provider (`ai_usage`;
-  request contents are not stored).
+## 3. Users and roles (`/app/admin/users`)
 
-Provider-by-provider details and errors: the "LLM provider keys" help article (`/help`).
+### 3.1 Creating
 
-## 4. Yandex Metrika and data (`/app/admin/metrika`)
+The **«New user»** button: Email · Name · Role (Administrator/Analyst). The system generates a **temporary password and shows it once** — copy it and hand it over via a secure channel (not an open chat!). At the next sign-in the password is used as is (there is no separate «change password» screen — see 3.4).
 
-### Connection
+### 3.2 Roles
 
-Each field shows its value source: `db` (set in the admin UI), `env` (from `.env`), `unset`.
-"Save" applies **without a restart** — the Metrika client is rebuilt.
+- **Administrator** — everything, including the admin panel and settings.
+- **Analyst** — monitoring/analytics/work, no admin panel (direct URLs give «No access»).
 
-| Field              | Key                                         | What to enter                                                            |
-| ------------------ | ------------------------------------------- | ------------------------------------------------------------------------ |
-| Metrika counter    | `COUNTER_ID`                                | counter number                                                           |
-| OAuth token        | `YANDEX_OAUTH_TOKEN`                        | `metrika:read` (+ `metrika:write` for goal management); stored encrypted |
-| Client ID / secret | `YANDEX_CLIENT_ID` / `YANDEX_CLIENT_SECRET` | OAuth app for `pnpm auth`; the secret is stored encrypted                |
-| "Order" goal       | `ORDER_GOAL_ID`                             | order goal id for live pages                                             |
-| Report KPI goal    | `GOAL_ID`                                   | `0` = auto-detect the purchase goal during sync                          |
-| Payment target     | `KPI_TARGET`                                | target number of payments (300)                                          |
+Role change: the `Change role` button on the row (aria-label `Change role`); **each user has exactly one role badge** — if you see two, it's a bug (ANA-175).
 
-Secret fields show a mask; leave it untouched to keep the value, or clear it and paste a new one.
+### 3.3 Deactivation
 
-### OAuth token
+Deactivation instantly revokes the user's sessions (sign-in impossible, data kept). Do not delete users who own hypotheses/decisions/deals — deactivate them.
 
-1. Create an app at oauth.yandex.ru with `metrika:read` and `metrika:write`.
-2. Issue a token for an account with access to the counter — manually or with `pnpm auth` (writes
-   `YANDEX_OAUTH_TOKEN` to `.env`; see [README.en.md](../../README.en.md)).
-3. Paste the token into "OAuth token" → "Save" → check the Live page.
+### 3.4 Password reset
 
-### Synchronization
+**«Reset password»** issues a new temporary password (shown once) and **terminates all sessions** of the user. There is no separate «forgot password» flow — the admin performs resets.
 
-- "Refresh data from Metrika" loads aggregates for the global filter period (14 days by default, up
-  to 365): channels, UTM, geo/devices, entry and exit pages, goals.
-- On the server the sync runs automatically every 3 hours (`pca-sync.timer`). A manual sync is
-  needed after changing the counter/token, after creating goals, and to backfill long history.
-- Robots and test sessions (`file:`) are excluded; `INCLUDE_TEST_TRAFFIC=1` disables the filter.
-- **Danger zone:** "Clear Metrika data" (confirm by typing `УДАЛИТЬ`) deletes `raw_responses` and
-  the derived tables; report snapshots, hypotheses, B2B, users and settings are kept. Run a sync
-  right after. Audit: `data.clear_metrika`.
+### 3.5 Demo accounts
 
-### Metrika goals
+`admin@dashboardcamp.ru` and `analyst@dashboardcamp.ru` are created at first start with an empty users table if `DEMO_USERS=1` and `DEMO_*_PASSWORD` are set. Changing `.env` does **not** change an existing demo account's password — rotation follows the runbook (see [Security](#10-security-and-secrets)).
 
-Goals are managed via the Management API and require a token with `metrika:write`. The operations
-are available to administrators as API endpoints within the cabinet session:
+## 4. AI providers (`/app/admin/ai`)
 
-| Operation | Request                                      |
-| --------- | -------------------------------------------- |
-| Create    | `POST /api/admin/metrika/goals`              |
-| Archive   | `POST /api/admin/metrika/goals/<ID>/archive` |
-| Restore   | `POST /api/admin/metrika/goals/<ID>/restore` |
+### 4.1 How the chain works
 
-Condition types: `exact`, `contains`, `starts`, `regex` (Metrika rejects `js`: a JS event is an
-`action` goal with a condition on the event identifier). A new goal appears after the next sync.
-Errors: 409 — Metrika not configured; 401 — token expired; 403 — no access to the counter or no
-`metrika:write`; 429 — API rate limit. Audit: `metrika.goal_created / goal_archived /
-goal_restored`.
+An AI analysis request walks the chain in priority order: the first active, non-excluded provider answers; on failure it is excluded and the next one takes over. The attribution (who actually answered) is visible in the report UI («generated by …») and in `ai_usage`.
 
-## 5. Integrations: Yandex DataLens (`/app/admin/integrations`)
+### 4.2 Provider card
 
-### DataLens Public API connection
+| Field          | Meaning                                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------------- |
+| Name           | display name (OpenRouter, Anthropic, YandexGPT, GigaChat…)                                      |
+| Base URL       | provider API endpoint                                                                           |
+| Model          | model id (`anthropic/claude-…`, `openai/gpt-…`, `yandexgpt/…`)                                  |
+| API key        | entered once, **masked forever** (`••••073e`, `sk-a****`); stored encrypted with the app secret |
+| Enabled        | participates in the chain                                                                       |
+| Exclusion flag | «last check failed — excluded from the chain» / «key not configured»                            |
 
-| Field       | Key                    | Where to get it                                                                                        |
-| ----------- | ---------------------- | ------------------------------------------------------------------------------------------------------ |
-| Org ID      | `DATALENS_ORG_ID`      | datalens.ru → organization settings → organization ID                                                  |
-| Workbook ID | `DATALENS_WORKBOOK_ID` | from the URL `datalens.ru/workbooks/<ID>`                                                              |
-| IAM token   | `DATALENS_IAM_TOKEN`   | `yc iam create-token` (lives ≤ 12 h) or a service-account token with a DataLens role; stored encrypted |
+### 4.3 Check and usage
 
-These settings live in the DB (`app_settings`), not in `.env`, and apply immediately. "Check
-connection" calls the DataLens API and writes `datalens.check` to the audit log. Errors: "Not
-filled: …"; 401 — IAM token expired; 403 — wrong Org ID or missing role; 404 — no such workbook;
-15 s timeout — network.
+- The **connection check** button sends a test request; success → «check OK <date>», failure → the reason (e.g. HTTP 400 credit balance) and exclusion from the chain.
+- The **«Usage in 30 days»** block (`ai_usage`): calls/errors per provider (example: OPENROUTER 372 calls · 56 errors; YANDEXGPT 45·2; ANTHROPIC 28·14; GIGACHAT 9·2) — it shows who is actually alive.
+- Changing provider settings is a **deliberate action**: verify the key before saving; a test run is cheaper than a broken report.
 
-CSV datasets (channels, UTM, pages, geo+devices, B2B deals) are connected in DataLens manually via
-a Files connection; sources are served by `GET /api/integrations/datalens/export/:id`. The workbook
-and the Metrika connection can be created by `scripts/push-datalens.mjs` (`DATALENS_IAM_TOKEN`,
-`DATALENS_ORG_ID` in the process environment).
+### 4.4 Recommendations
 
-### Webhook and receiver token
+- Keep ≥2 providers active (a fallback for exhausted balances).
+- Direct Anthropic — only with a funded balance; otherwise keep it excluded (the chain goes via OpenRouter).
+- Do not forward keys in chats — enter them directly in the admin panel.
 
-- The URL looks like `https://<domain>/api/integrations/datalens/webhook/<token>`; the token in the
-  URL (`DATALENS_WEBHOOK_TOKEN`, stored encrypted) is the receiver's only protection.
-- "Issue a new URL" generates a new token and **the old URL stops working immediately**; audit —
-  `datalens.token_rotated`.
-- In DataLens: Settings → Notifications → Webhooks → "Add webhook" → URL → "Get code" → the code
-  appears in the "Last confirmation code" card and in the bell.
-- Events are stored in `datalens_events` (last 500).
+## 5. Yandex.Metrika and data (`/app/admin/metrika`)
 
-### Dashboard links and analyst requests
+### 5.1 Connection and token
 
-- "DataLens dashboard links" (`DATALENS_LINKS`, one per line, `http(s)://`) are shown to everyone on
-  the DataLens page.
-- An analyst can "Ask the administrator to connect" — an admin notification and a
-  `datalens.request` audit entry (at most 3 per hour per user).
+- `METRIKA_OAUTH_TOKEN` in `/opt/pca/.env` — an OAuth token of an account with access to the counter. The token check button validates it with a live request.
+- **Backup account**: `METRIKA_BACKUP_*` (an OAuth token or ClientID/Secret + Verification Code). The client automatically retries under the backup token when the primary fails — invisible to users.
+- `COUNTER_ID` — the counter number; `GOAL_ID=0` — auto-pick the payment goal (`goal-classifier`), or an explicit id.
 
-## 6. Audit log (`/app/admin/audit`)
+### 5.2 Sync
 
-Answers "who changed what, and when". The latest 1000 entries, search, sorting, CSV export.
-Secrets are never written to the log.
+- Sync pulls the full Reporting API aggregate set day by day (daily chunks — correct attribution), storing **raw responses** in `raw_responses`.
+- A repeated sync is safe: it appends history by keys (dates) without overwriting.
+- Today's data arrives with a lag — the working mode is «yesterday and earlier».
+- Do not run manual syncs more often than necessary: Reporting API quotas are finite.
 
-| Group    | Actions                                                                           |
-| -------- | --------------------------------------------------------------------------------- |
-| Sign-in  | `auth.login`, `auth.login_failed`, `auth.logout`, `auth.password_changed`         |
-| Users    | `users.create`, `users.update`, `users.reset_password`                            |
-| Settings | `settings.update` (list of keys), `data.clear_metrika`                            |
-| AI       | `ai.provider_update`, `ai.provider_test`                                          |
-| Metrika  | `metrika.goal_created`, `metrika.goal_archived`, `metrika.goal_restored`          |
-| DataLens | `datalens.export`, `datalens.request`, `datalens.check`, `datalens.token_rotated` |
+### 5.3 Goals
 
-Typical investigations: data disappeared — `data.clear_metrika`; who changed the token —
-`settings.update` with `YANDEX_OAUTH_TOKEN`; password guessing — a series of `auth.login_failed`
-for one email.
+- The goals table with funnel roles: `reg_open` (registration) → `cart_open` (cart) → `reg_step1` (application) → payment (e-commerce).
+- **Archived goals** (`ARCHIVED_GOAL_ID_THRESHOLD`) are separated from live ones; the UI shows them via the «Archived goals» checkbox.
 
-## 7. Backups, monitoring, operations
+### 5.4 Goal and SMART
 
-| What                      | How                                                                                                         | Details                                                |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| Nightly backup            | `pca-backup.timer` (04:30) → `deploy/backup.sh`: `sqlite3 .backup` → gzip → `/opt/pca/backups/`, 14 copies  | [deploy/DEPLOY.md](../../deploy/DEPLOY.md) (RU), § 5   |
-| Off-site copy             | `scripts/pull-backup.sh` pulls the latest backup to the owner's machine (30 copies)                         | script header                                          |
-| Restore                   | stop `pca-api` → swap the DB, delete `-wal`/`-shm` → start → `/api/health`                                  | [deploy/DEPLOY.md](../../deploy/DEPLOY.md) (RU), § 5.2 |
-| Monitoring                | `pca-monitor.timer` (every 5 min): 3 consecutive `/api/health` failures → API restart; disk > 85% → warning | [deploy/DEPLOY.md](../../deploy/DEPLOY.md) (RU), § 5   |
-| Deploy & update           | `deploy/deploy.sh`; manually — `git pull` → build → migrations → `systemctl restart`                        | [deploy.md](../deploy.md) (RU)                         |
-| Running & troubleshooting | local run, PDF, common errors                                                                               | [runbook.md](runbook.md)                               |
+The **«Goal (paid tickets)»** field + **deadline** form the SMART line: «Reach ≥300 paid tickets by 2026-11-21». The **«Reset goal»** button returns the goal to the default (300). These values feed the report (KPI section) and snapshots (pinned `kpi_target`/`kpi_paid`).
 
-Secrets (`.env`) are not part of DB backups — keep a separate, protected copy of `.env`. Without the
-same `APP_SECRET`, tokens and keys encrypted in the DB cannot be decrypted after a restore.
+⚠️ Changing the goal retroactively does not recalculate old snapshots — they freeze the context at build time.
 
-## 8. Routine and common problems
+## 6. Integrations: DataLens (`/app/admin/integrations`)
 
-- **Daily:** the bell (analyst requests, DataLens events); Live — data is flowing.
-- **Weekly:** AI "Usage over 30 days"; `auth.login_failed` in the audit log; the user list is
-  current; backups are fresh.
-- **On events:** Metrika token or DataLens IAM token expired — issue a new one; an employee left —
-  "Disable".
+- Connection to the **DataLens Public API**: the token is entered in the admin panel and saved to `/opt/pca/.env` (`DATALENS_IAM_TOKEN`).
+- Token refresh: `scripts/refresh-datalens-token.mjs` — creates a token via `yc iam create-token` and atomically updates `.env` (secrets from the environment only; the admin password — `PCA_ADMIN_PASSWORD`, not from the repository).
+- After connecting, users get CSV datasets and dashboards on the DataLens page.
 
-| Symptom                                      | Fix                                                         |
-| -------------------------------------------- | ----------------------------------------------------------- |
-| Live: "Metrika is not connected"             | set the counter and token in Metrika & data                 |
-| Analytics empty while Live works             | no sync for the period — "Refresh data from Metrika"        |
-| Sync fails with 401/403                      | token expired or cannot see the counter — issue a new one   |
-| Tokens/keys gone after changing `APP_SECRET` | secrets cannot be decrypted — re-enter them                 |
-| GigaChat: "fetch failed"                     | missing Russian Trusted Root CA / `NODE_EXTRA_CA_CERTS`     |
-| DataLens sends no code                       | URL outdated after "Issue a new URL" — copy the current one |
-| Analyst sees "No access"                     | admin-only section; change the role if needed               |
+## 7. KPI and goal settings
 
-See also: [architecture.md](architecture.md) · [data-model.md](data-model.md) ·
-[user-guide.md](user-guide.md).
+| Setting             | Where                      | Effect                                   |
+| ------------------- | -------------------------- | ---------------------------------------- |
+| Goal (paid tickets) | admin → Metrika            | SMART line, tiles, plan→fact, report     |
+| Deadline            | admin → Metrika            | SMART, «+N days», hero                   |
+| Plan window         | fixed when the goal is set | «Apr 29, 2025 → Nov 21, 2026»            |
+| Pinned plan/fact    | `report_snapshots`         | History shows plan→fact at snapshot time |
+
+## 8. Audit log (`/app/admin/audit`)
+
+- What is logged: sign-ins/failed sign-ins (`auth.login`, `auth.login_failed`), user changes, settings, goal, providers, B2B operations.
+- Loading is asynchronous (~2–4 s); fresh entries on top.
+- Use it for incident analysis: «who changed the goal», «when did the deactivated user last sign in».
+
+## 9. Operations: deploy, backups, health
+
+### 9.1 Health gate
+
+```bash
+curl -s https://dashboardcamp.ru/api/health
+# {"status":"ok","service":"productcamp-analytics-backend","version":"3.4.64","build":"76d7090…","timestamp":"…"}
+```
+
+Version+build must match the release — that's the deploy success criterion.
+
+### 9.2 Deploy
+
+```bash
+SSH_KEY=~/.ssh/pca_deploy ./deploy/deploy.sh
+# build → rsync → restart pca-api → health gate
+```
+
+Variables: `SSH_HOST` (default `root@YOUR_SERVER_IP`), `SSH_PORT`, `SSH_KEY`. GitHub Actions may be unavailable (billing) — in that case deploy manually via `deploy.sh`; the release job is finished by the completer script.
+
+### 9.3 Version bump / release
+
+SemVer + conventional commits. A release = patch bump → `pnpm sync-versions` → a `CHANGELOG.md` entry → tag `vX.Y.Z` → GitHub Release. One release = one swarm task (see wiki/Swarm).
+
+### 9.4 Backups
+
+- On the server: `deploy/backup.sh` (systemd timer) — SQLite copies in `/opt/pca/backups`, keeps the **14** latest; log in `backups/backup.log`, a lock file prevents duplicates.
+- Local copy: `scripts/pull-backup.sh` (ssh/scp read-only, `PCA_HOST`/`PCA_KEY` from env).
+- Restore: stop `pca-api` → replace `productcamp.sqlite` (+ `-wal`/`-shm`) → start → health.
+
+### 9.5 Status and logs
+
+```bash
+systemctl status pca-api
+journalctl -u pca-api -f
+```
+
+## 10. Security and secrets
+
+**The main rule: secrets live only in `.env` (server) and the local environment. They must never be in the repository or its history.**
+
+| Secret                                 | Where                                                         |
+| -------------------------------------- | ------------------------------------------------------------- |
+| Metrika token (+ backup), `COUNTER_ID` | `/opt/pca/.env`                                               |
+| AI keys                                | `ai_providers` DB (encrypted with `APP_SECRET`), masked in UI |
+| `DATALENS_IAM_TOKEN`                   | `/opt/pca/.env`                                               |
+| Demo passwords                         | `/opt/pca/.env` + scrypt hashes in `users`                    |
+| `APP_SECRET`                           | `/opt/pca/.env`                                               |
+| Deploy SSH key                         | local `~/.ssh/pca_deploy`                                     |
+
+### 10.1 Demo password rotation (after an incident or planned)
+
+Password scheme: `scrypt$16384$saltB64$hashB64`. Seeding creates a demo user only when absent — **editing `.env` does not change an existing account's password**. Order:
+
+1. Generate the hash: `node -e "const {scryptSync,randomBytes}=require('crypto');const s=randomBytes(16);console.log('scrypt$16384$'+s.toString('base64')+'$'+scryptSync('NewPassword',s,64,{N:16384}).toString('base64'))"`.
+2. Update `users.password_hash` via an SQL file (not through shell `$` interpolation!) for both demo accounts; `DELETE FROM sessions WHERE user_id IN (…)` — revoke sessions.
+3. Sync `/opt/pca/.env` (`DEMO_*_PASSWORD`).
+4. Verify: old password → 401; new → 200 (`POST /api/auth/login`).
+
+Incident 2026-11-18: demo passwords found in repo history → rotated; HEAD scrubbed (env instead of hardcode). Lesson: a password that ever reached a commit is compromised forever — only rotation fixes it.
+
+### 10.2 Pre-publication repo audit
+
+1. `git grep` over the tree and history: key patterns (`sk-or-v1`, `sk-ant-api`, `y0_`, `AKIA`, `xox`, `BEGIN … PRIVATE KEY`), `password\s*[:=]\s*'…'`, server IPs.
+2. Verify `.env`/`*.sqlite`/`*.key` were never committed (`git log --all --diff-filter=A --name-only`).
+3. Workflows — only `secrets.*` names, no values.
+4. QA artifacts with credentials — out of git.
+
+### 10.3 Hardening
+
+nginx 80/443 + HSTS; the API not exposed directly; systemd non-root + `Restart=always`; scrypt passwords; HttpOnly sessions with revocation; audit log; 5-attempt sign-in limit.
+
+---
+
+_Admin documentation changes are synchronized with releases. Current ADRs — `docs/decisions/`._
