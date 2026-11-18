@@ -43,10 +43,12 @@ describe('applyLabelStyle × funnelOption (ANA-177 outside labels)', () => {
     const option = funnelOption(spread) as Option;
     applyLabelStyle(option, false);
     const series = option.series[0]!;
-    // Inside labels stay white on the colored trapezoids…
+    // Inside labels stay white on the colored trapezoids — including the value-only label
+    // of the mid stage (ANA-177 round 3: 47px trapezoid hosts just the integer)…
     expect(series.label.color).toBe('#ffffff');
+    expect(series.data[1]?.label?.color).toBe('#ffffff');
     // …while every outside label is overridden with the light-theme text color.
-    for (const i of [1, 2, 3, 4]) {
+    for (const i of [2, 3, 4]) {
       expect(series.data[i]?.label?.color).toBe('#3d3d37');
       expect(series.data[i]?.label?.color).not.toBe(series.label.color);
     }
@@ -56,7 +58,7 @@ describe('applyLabelStyle × funnelOption (ANA-177 outside labels)', () => {
     const option = funnelOption(spread) as Option;
     applyLabelStyle(option, true);
     const series = option.series[0]!;
-    for (const i of [1, 2, 3, 4]) expect(series.data[i]?.label?.color).toBe('#ffffff');
+    for (const i of [2, 3, 4]) expect(series.data[i]?.label?.color).toBe('#ffffff');
   });
 
   it('leaves wide-stage items without a per-item label untouched', () => {

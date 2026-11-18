@@ -482,15 +482,16 @@ describe('FunnelView — chart option guards (ANA-124)', () => {
 // coverage in the component path. The capturing stub (test/resize-observer.ts) lets tests
 // fire it with a real width and watch the funnel option rebuild.
 describe('FunnelView — measured canvas width drives the label decision (ANA-177 round 3)', () => {
-  // Stages 100 → 20 → 33 → 15: every stage ≥ 128px at a 900px canvas (min share 15% × 900
-  // = 135px), but the 15% stage is only 54.9px at the unmeasured 366px default — so the
+  // Stages 100 → 20 → 18 → 8: every stage keeps at least the value-only label at both widths,
+  // but the 8% stage (39.4px at the 366px default → below INSIDE_VALUE_MIN) takes an OUTSIDE
+  // label at the default, while at a measured 900px it is 96.8px — value fits inside — so the
   // measured vs default width must flip this stage's label placement.
   const wideStats: ChannelStat[] = [
     { ...stats[0]!, visits: 100, goalReaches: 20, conversionRate: 0.2 },
   ];
   const wideDeals: B2bDeal[] = [
     { id: 1, company: 'Acme', tickets: 18, stage: 'lead', dateAdded: '2025-01-01' },
-    { id: 2, company: 'Beta', tickets: 15, stage: 'paid', dateAdded: '2025-01-01' },
+    { id: 2, company: 'Beta', tickets: 8, stage: 'paid', dateAdded: '2025-01-01' },
   ];
 
   type FunnelSeries = {
@@ -514,14 +515,14 @@ describe('FunnelView — measured canvas width drives the label decision (ANA-17
     );
     await waitFor(() => expect(chartOptions.length).toBeGreaterThanOrEqual(3));
     // jsdom reports nothing yet → the builder falls back to its documented 366px default:
-    // the 15%-share stage is under 128px → outside label + reserved left gutter.
+    // the 8%-share stage is under INSIDE_VALUE_MIN → outside label + reserved left gutter.
     expect(lastFunnelSeries().left).toBe(OUTSIDE_LABEL_GUTTER);
     // The ResizeObserver delivers the real container width (900px desktop card)…
     act(() => fireObservedResize(900));
     // …and the funnel re-renders with a rebuilt option driven by that measurement.
     await waitFor(() => expect(chartOptions.length).toBeGreaterThanOrEqual(4));
     const measured = lastFunnelSeries();
-    // Every stage ≥ 128px at 900px → all labels fit inside, no gutter is reserved…
+    // Every stage ≥ INSIDE_VALUE_MIN at 900px → all labels fit inside, no gutter is reserved…
     expect(measured.left).toBeUndefined();
     expect(measured.right).toBeUndefined();
     // …and no per-item outside label survives the rebuild.

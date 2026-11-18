@@ -566,6 +566,9 @@ export const ru = {
   'rep.building': 'Собираю…',
   'rep.exportDocx': 'Export DOCX',
   'rep.exportPdf': 'Export PDF',
+  // ANA-199: the PDF render takes 12–20 s server-side — both export buttons are disabled and
+  // the active one shows this while the fetch is in flight (no blind re-clicks).
+  'rep.exporting': 'Готовим…',
   'rep.empty':
     'Нажмите «Собрать отчёт», чтобы собрать неизменяемый отчёт за выбранный период. Гипотезы генерируются автоматически, если настроен AI-провайдер.',
   'rep.fullReport': 'Полный отчёт',
@@ -2088,6 +2091,9 @@ export const en: Record<DictKey, string> = {
   'rep.building': 'Building…',
   'rep.exportDocx': 'Export DOCX',
   'rep.exportPdf': 'Export PDF',
+  // ANA-199: the PDF render takes 12–20 s server-side — both export buttons are disabled and
+  // the active one shows this while the fetch is in flight (no blind re-clicks).
+  'rep.exporting': 'Preparing…',
   'rep.empty':
     'Click “Build report” to assemble an immutable report for the selected period. Hypotheses are generated automatically when an AI provider is configured.',
   'rep.fullReport': 'Full report',
@@ -3010,7 +3016,8 @@ export const en: Record<DictKey, string> = {
   'dec.conf.medium': 'Medium',
   'dec.conf.low': 'Low',
   'dec.err.evidence': 'Need at least one evidence item (quote + source)',
-  'dec.err.findingsText': 'Fill in the text of each finding (the confidence select alone does not count)',
+  'dec.err.findingsText':
+    'Fill in the text of each finding (the confidence select alone does not count)',
   // ANA-169: decision kanban — formulation field, workflow lanes and the view switcher.
   'dec.f.decision': 'Decision (what we do)',
   'dec.status.accepted': 'Accepted',

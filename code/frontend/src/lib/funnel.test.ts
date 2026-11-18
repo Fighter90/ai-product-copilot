@@ -6,10 +6,11 @@ import {
   hasFunnelData,
   valuesFromStages,
   DEFAULT_CHART_WIDTH,
-  LABEL_WIDTH,
+  INSIDE_VALUE_MIN,
   OUTSIDE_LABEL_GUTTER,
   type FunnelStage,
 } from './funnel';
+import { formatInt } from './format';
 
 describe('buildFunnel (ANA-21: per-issue stages)', () => {
   it('builds Визиты → reg_open → cart_open → reg_step1 → Оплата with % of previous', () => {
@@ -187,17 +188,16 @@ describe('funnelOption', () => {
   });
 
   // ANA-177 (регресс ANA-124): the fixed 128px inside block cannot fit the bottom stages of a
-  // 100×-spread funnel (minSize floor 3%) — it spills over the white card (white-on-white,
-  // «обрезано») and collides with the neighbouring stage labels («наложено»). Stages too
-  // narrow for the block must take their label outside the trapezoid with a leader line.
-  // Round 2: the inside/outside decision is PIXEL-based (stage px width vs the 128px block),
-  // and the series reserves a left gutter so the outside block cannot clip at the canvas edge.
+  // 100×-spread funnel — it spills over the white card (white-on-white, «обрезано») and
+  // collides with the neighbouring stage labels («наложено»).
+  // Round 3: narrow stages carry a VALUE-only label (a formatted integer — one short token,
+  // impossible to wrap mid-word). The pixel-based trapezoid estimate picks the tier:
+  // ≥ LABEL_WIDTH → full block inside; ≥ INSIDE_VALUE_MIN → value inside (white);
+  // below → value outside left with a leader line (theme paints the color).
   type FunnelData = {
     label?: {
       position?: string;
-      align?: string;
-      overflow?: string;
-      width?: number;
+      formatter?: () => string;
       color?: string;
     };
     labelLine?: { show?: boolean; length?: number; length2?: number };
@@ -211,7 +211,7 @@ describe('funnelOption', () => {
       }
     ).series[0]?.data ?? [];
 
-  describe('narrow stages take outside labels (ANA-177)', () => {
+  describe('label tiers of a 100×-spread funnel (ANA-177 round 3)', () => {
     // Real shape from the issue: visits 2246 → payment 20 (~0.9% of the widest stage).
     const spread = buildFunnel({
       visits: 2246,
@@ -221,24 +221,33 @@ describe('funnelOption', () => {
       payment: 20,
     });
 
-    it('moves labels of stages too narrow for the fixed inside block outside, with a leader line', () => {
+    it('the widest stage keeps the full label block inside; mid stages go value-only inside', () => {
       const data = dataOf(spread);
-      // The widest stage (visits, 100%) still hosts its label inside the trapezoid.
+      // visits (298px ≥ 128) — full block, no per-item override…
       expect(data[0]?.label).toBeUndefined();
-      // The rest of the funnel (13% → 0.9%) cannot fit the 128px block — outside labels,
-      // text right-aligned so it hugs the funnel axis, guided by a leader line.
-      for (const i of [1, 2, 3, 4]) {
+      // …reg_open (47.6px): too narrow for the 128px block, wide enough for the value —
+      // value-only inside, explicitly white (the trapezoid behind is colored).
+      expect(data[1]?.label?.position).toBeUndefined();
+      expect(data[1]?.label?.formatter?.()).toBe('300');
+      expect(data[1]?.label?.color).toBe('#ffffff');
+    });
+
+    it('stages too narrow for even the value take it outside left, with a leader line', () => {
+      const data = dataOf(spread);
+      for (const i of [2, 3, 4]) {
         expect(data[i]?.label?.position).toBe('left');
-        expect(data[i]?.label?.align).toBe('right');
+        expect(data[i]?.label?.formatter?.()).toBe(String([80, 27, 20][i - 2]));
         expect(data[i]?.labelLine?.show).toBe(true);
       }
     });
 
-    it('keeps the ANA-124 wrapping on outside labels instead of clipping them', () => {
+    it('outside labels are value-only single lines — nothing to wrap, no width/overflow', () => {
       const data = dataOf(spread);
       const outside = data[4]?.label;
-      expect(outside?.overflow).toBe('break');
-      expect(outside?.width).toBeGreaterThan(0);
+      // The formatter emits just the formatted integer — a single short token, so the label
+      // config carries no wrapping machinery at all (no width, no overflow, no align).
+      expect(outside?.formatter?.()).toBe('20');
+      expect(Object.keys(outside ?? {}).sort()).toEqual(['formatter', 'position']);
     });
 
     it('outside labels carry no explicit color — the EChart theme layer paints them readable', () => {
@@ -251,26 +260,25 @@ describe('funnelOption', () => {
 
     it('sets the leader-line segments explicitly so the reserved gutter is deterministic', () => {
       // ECharts leaves funnel labelLine lengths undocumented — fixed values are what the
-      // OUTSIDE_LABEL_GUTTER math (block + both segments + gap) is built on.
+      // OUTSIDE_LABEL_GUTTER math (value + both segments + gap) is built on.
       const data = dataOf(spread);
       expect(data[2]?.labelLine?.length).toBeGreaterThan(0);
       expect(data[2]?.labelLine?.length2).toBeGreaterThan(0);
     });
 
-    it('reserves the left gutter for outside labels so the 128px block cannot clip at the edge', () => {
+    it('reserves the left gutter for outside value labels so they cannot clip at the edge', () => {
       const option = funnelOption(spread) as {
         series: Array<{ left?: number; right?: number }>;
       };
       const series = option.series[0];
       expect(series?.left).toBe(OUTSIDE_LABEL_GUTTER);
-      // The gutter must fit the whole block plus the leader line — otherwise the same
-      // «обрезано» symptom moves from the trapezoid to the canvas edge.
-      expect(series?.left).toBeGreaterThan(LABEL_WIDTH);
+      // The gutter must fit the whole outside label (a ≤5-glyph value + both leader segments).
+      expect(series?.left).toBeGreaterThanOrEqual(INSIDE_VALUE_MIN);
       expect(series?.right).toBeDefined();
     });
 
-    it('keeps the default funnel layout untouched when every label fits inside', () => {
-      // Fully populated and wide at the default canvas (min stage 40% × 366 = 146px ≥ 128):
+    it('keeps the default funnel layout untouched when every stage keeps the full block', () => {
+      // Fully populated and wide at the default canvas (min stage 40%: 153px ≥ 128):
       // no outside labels → no reserved gutter, series layout stays ECharts' default.
       const option = funnelOption(
         buildFunnel({ visits: 100, regOpen: 80, cartOpen: 60, regStep1: 50, payment: 40 }),
@@ -282,28 +290,26 @@ describe('funnelOption', () => {
     });
 
     it('stays deterministic on a degenerate sub-gutter canvas: the body estimate floors at LABEL_WIDTH', () => {
-      // Real canvases are never below the gutter+margin (160px), but the builder must stay
+      // Real canvases are never below the gutter+margin (68px), but the builder must stay
       // sane: its own body math floors at LABEL_WIDTH instead of going negative. NB this
       // floors the ESTIMATE only — the series still receives left: OUTSIDE_LABEL_GUTTER, and
-      // rendering a sub-160px canvas is ECharts' job, outside this builder's scope.
+      // rendering a sub-68px canvas is ECharts' job, outside this builder's scope.
       const option = funnelOption(spread, 'от пред.', { chartWidthPx: 100 }) as {
         series: Array<{ data: FunnelData[] }>;
       };
-      // The floor lands the widest stage exactly ON LABEL_WIDTH (128 < 128 is false → inside);
-      // everything below it takes an outside label. Placement stays fully deterministic.
+      // The floor lands the widest stage exactly ON LABEL_WIDTH (128 < 128 is false → full
+      // block); everything below it goes value-only inside or outside. Deterministic.
       expect(option.series[0]?.data[0]?.label).toBeUndefined();
       expect(option.series[0]?.data[4]?.label?.position).toBe('left');
     });
   });
 
-  // ANA-177 round 2: pixel-based threshold — a stage hosts the LABEL_WIDTH block only when its
-  // trapezoid is at least 128px wide (share of max × canvas width). The boundary values below
-  // calibrate the builder's ESTIMATE — a conservative LOWER bound of the real trapezoid (the
-  // minSize '3%' floor renders real trapezoids slightly wider) — at the default canvas:
-  // 1749/5000 × 366 = 128.03px (estimate ≥ 128 → inside), 1748/5000 × 366 = 127.95px (1px
-  // short of the estimate → outside). Note 1749/5000 = 0.3498 < the old fixed 0.35 fraction:
-  // the old fraction-based check mislabeled this stage as narrow on ANY canvas.
-  describe('pixel threshold boundary (ANA-177 round 2)', () => {
+  // ANA-177 round 3: the label-tier threshold is pixel-based — a stage keeps the FULL block
+  // only when its trapezoid is at least 128px wide ((3% + share × 97%) of the body). The
+  // boundary values below calibrate the builder's ESTIMATE at the default canvas:
+  // 1649/5000 → (0.03 + 0.3298 × 0.97) × 366 = 128.07px (≥ 128 → full block),
+  // 1648/5000 → (0.03 + 0.3296 × 0.97) × 366 = 127.99px (1px short → value-only inside).
+  describe('pixel threshold boundary (ANA-177 round 3)', () => {
     const boundaryFunnel = (regOpen: number) =>
       buildFunnel({
         visits: 5000,
@@ -314,27 +320,31 @@ describe('funnelOption', () => {
         payment: 3500,
       });
 
-    it('a stage 1px too short for the block takes the outside label', () => {
-      // 1748/5000 × 366px = 127.95px < LABEL_WIDTH (128px) → outside.
-      const data = dataOfAt(boundaryFunnel(1748), DEFAULT_CHART_WIDTH);
-      expect(data[1]?.label?.position).toBe('left');
+    it('a stage 1px too short for the full block switches to the value-only inside label', () => {
+      // (0.03 + 1648/5000 × 0.97) × 366px = 127.99px < LABEL_WIDTH (128px) → value-only
+      // inside (the trapezoid still fits a short integer comfortably).
+      const data = dataOfAt(boundaryFunnel(1648), DEFAULT_CHART_WIDTH);
+      expect(data[1]?.label?.position).toBeUndefined();
+      // formatInt groups thousands (NBSP separator) — compare through the same formatter.
+      expect(data[1]?.label?.formatter?.()).toBe(formatInt(1648));
       expect(data[2]?.label).toBeUndefined();
       expect(data[3]?.label).toBeUndefined();
       expect(data[4]?.label).toBeUndefined();
     });
 
-    it('a stage just wide enough for the block keeps the inside label', () => {
-      // 1749/5000 × 366px = 128.03px ≥ LABEL_WIDTH (128px) → inside, no outside labels.
-      const data = dataOfAt(boundaryFunnel(1749), DEFAULT_CHART_WIDTH);
+    it('a stage just wide enough for the block keeps the full inside label', () => {
+      // (0.03 + 1649/5000 × 0.97) × 366px = 128.07px ≥ LABEL_WIDTH (128px) → full block,
+      // no per-item overrides anywhere.
+      const data = dataOfAt(boundaryFunnel(1649), DEFAULT_CHART_WIDTH);
       for (const d of data) expect(d.label).toBeUndefined();
     });
 
     it('the same widths fit inside on a wide canvas — pixel threshold, not a fixed fraction', () => {
-      // On a 900px desktop canvas the boundary stage is ~315px wide — comfortably inside,
-      // and no gutter is reserved. (The old 0.35 fraction put it outside regardless.)
-      const data = dataOfAt(boundaryFunnel(1748), 900);
+      // On a 900px desktop canvas the boundary stage is ~315px wide — comfortably the full
+      // block, and no gutter is reserved.
+      const data = dataOfAt(boundaryFunnel(1648), 900);
       for (const d of data) expect(d.label).toBeUndefined();
-      const option = funnelOption(boundaryFunnel(1748), 'от пред.', { chartWidthPx: 900 }) as {
+      const option = funnelOption(boundaryFunnel(1648), 'от пред.', { chartWidthPx: 900 }) as {
         series: Array<{ left?: number; right?: number }>;
       };
       expect(option.series[0]?.left).toBeUndefined();

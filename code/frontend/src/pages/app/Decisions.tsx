@@ -371,7 +371,9 @@ function DecisionEditor({
             <Plus className="h-4 w-4" /> {t('hyp.add')}
           </button>
           {findings.length === 0 && (
-            <p className="text-xs text-muted">Выводы необязательны — добавьте строку, если есть что зафиксировать.</p>
+            <p className="text-xs text-muted">
+              Выводы необязательны — добавьте строку, если есть что зафиксировать.
+            </p>
           )}
         </div>
 

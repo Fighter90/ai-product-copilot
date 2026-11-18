@@ -195,6 +195,8 @@ export interface ReportPreviewProps {
   isPending: boolean;
   onBuild: () => void;
   onExport: (snapshotId: string, format: 'docx' | 'pdf') => void;
+  /** ANA-199: the format currently downloading (buttons disable; the active one shows «Готовим…»). */
+  exporting: 'docx' | 'pdf' | null;
   insightsPending: boolean;
   narrative: string | undefined;
   insightsError: string | undefined;
@@ -329,6 +331,7 @@ export function ReportPreviewView({
   isPending,
   onBuild,
   onExport,
+  exporting,
   insightsPending,
   narrative,
   insightsError,
@@ -584,16 +587,18 @@ export function ReportPreviewView({
             <button
               type="button"
               onClick={() => onExport(snapshot.id, 'docx')}
-              className="rounded border border-indigo-600 px-3 py-1.5 text-sm text-indigo-700"
+              disabled={exporting !== null}
+              className="rounded border border-indigo-600 px-3 py-1.5 text-sm text-indigo-700 disabled:opacity-40"
             >
-              {t('rep.exportDocx')}
+              {exporting === 'docx' ? t('rep.exporting') : t('rep.exportDocx')}
             </button>
             <button
               type="button"
               onClick={() => onExport(snapshot.id, 'pdf')}
-              className="rounded border border-rose-600 px-3 py-1.5 text-sm text-rose-700"
+              disabled={exporting !== null}
+              className="rounded border border-rose-600 px-3 py-1.5 text-sm text-rose-700 disabled:opacity-40"
             >
-              {t('rep.exportPdf')}
+              {exporting === 'pdf' ? t('rep.exporting') : t('rep.exportPdf')}
             </button>
           </div>
 
@@ -817,12 +822,19 @@ export function ReportPreview(): JSX.Element {
     refreshed.data && refreshed.data.id === snapshot?.id ? refreshed.data : snapshot;
   // БАГ-04: ошибка скачивания отчёта видна в UI (fetch→blob вместо navigation-запроса).
   const [exportError, setExportError] = useState<string | null>(null);
+  // ANA-199: the PDF render takes 12–20 s server-side. Both export buttons disable while a
+  // download is in flight and the active one shows «Готовим…» — blind re-clicks used to pile
+  // up concurrent puppeteer renders on the server (each click = a new Chrome on the VPS).
+  const [exporting, setExporting] = useState<'docx' | 'pdf' | null>(null);
   const doExport = (snapshotId: string, format: 'docx' | 'pdf'): void => {
     setExportError(null);
+    setExporting(format);
     downloadFileViaFetch(
       reportDownloadUrl(snapshotId, format),
       `productcamp-report-${snapshotId}.${format}`,
-    ).catch((e: unknown) => setExportError(e instanceof Error ? e.message : String(e)));
+    )
+      .catch((e: unknown) => setExportError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setExporting(null));
   };
 
   // When viewing from History, use the saved AI narrative if present
@@ -855,6 +867,7 @@ export function ReportPreview(): JSX.Element {
         isPending={buildMut.isPending}
         onBuild={() => buildMut.mutate({ from, to })}
         onExport={doExport}
+        exporting={exporting}
         insightsPending={insightsPending}
         narrative={narrative}
         insightsError={errorMessage(insightsMut.error)}

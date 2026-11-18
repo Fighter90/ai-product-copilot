@@ -132,8 +132,6 @@ describe('Decisions page (Decision Log)', () => {
 
     await waitFor(() => expect(screen.getByTestId('dec-save')).toBeEnabled());
     fireEvent.click(screen.getByTestId('dec-save'));
-    // eslint-disable-next-line no-console
-    console.log('AFTER-SAVE:', JSON.stringify(vi.mocked(decisionsApi.create).mock.calls));
 
     await waitFor(() =>
       expect(decisionsApi.create).toHaveBeenCalledWith(
@@ -150,7 +148,7 @@ describe('Decisions page (Decision Log)', () => {
     expect(editor).not.toBeInTheDocument();
   });
 
-      it('ANA-189-feedback: findings are optional — a filled row is included, an empty one is dropped', async () => {
+  it('ANA-189-feedback: findings are optional — a filled row is included, an empty one is dropped', async () => {
     vi.mocked(decisionsApi.list).mockResolvedValue([]);
     vi.mocked(hypothesesApi.list).mockResolvedValue([HYPOTHESIS]);
     vi.mocked(decisionsApi.create).mockResolvedValue(DECISION);
@@ -190,8 +188,6 @@ describe('Decisions page (Decision Log)', () => {
       }),
     );
   });
-
-
 
   it('marks an AI auto-populated draft with the AI badge and plain rows without it (ANA-128)', async () => {
     const aiDraft: Decision = { ...DECISION, id: 2, number: 'DL-002', source: 'ai' };

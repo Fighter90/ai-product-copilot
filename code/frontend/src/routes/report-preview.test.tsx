@@ -71,6 +71,7 @@ const baseProps = {
   isPending: false,
   onBuild: vi.fn(),
   onExport: vi.fn(),
+  exporting: null as 'docx' | 'pdf' | null,
   insightsPending: false,
   narrative: undefined,
   insightsError: undefined,
@@ -91,6 +92,29 @@ describe('ReportPreviewView', () => {
 
     rerender(<ReportPreviewView {...baseProps} isPending />);
     expect(screen.getByRole('button', { name: 'Собираю…' })).toBeDisabled();
+  });
+
+  // ANA-199: the PDF render takes 12–20 s server-side. While a download is in flight both
+  // export buttons disable (blind re-clicks used to pile up concurrent Chrome renders on the
+  // server) and the active one shows «Готовим…».
+  it('ANA-199: export buttons disable while a download is in flight, the active one shows «Готовим…»', () => {
+    const onExport = vi.fn();
+    const { rerender } = render(
+      <ReportPreviewView {...baseProps} snapshot={snapshot} onExport={onExport} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Export PDF' }));
+    expect(onExport).toHaveBeenCalledWith('snap-1', 'pdf');
+
+    rerender(
+      <ReportPreviewView {...baseProps} snapshot={snapshot} onExport={onExport} exporting="pdf" />,
+    );
+    expect(screen.getByRole('button', { name: 'Готовим…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Export DOCX' })).toBeDisabled();
+
+    // The flight ends — the buttons return to their labels and re-enable.
+    rerender(<ReportPreviewView {...baseProps} snapshot={snapshot} onExport={onExport} />);
+    expect(screen.getByRole('button', { name: 'Export PDF' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Export DOCX' })).toBeEnabled();
   });
 
   it('ANA-180: a broken ?snapshot= link shows an explicit alert instead of the silent empty preview', () => {
