@@ -10,15 +10,18 @@ import { LiveBar, NotConfigured, isNotConfigured, useLiveParams } from './live-c
 export function Live(): JSX.Element {
   const { t, locale } = useT();
   const p = useLiveParams();
+  // Регресс №5: the page promises «обновление каждые 60 секунд» — polling must continue in a
+  // background tab (the RQ default pauses it, and users switch tabs constantly). ANA-197 п.7.
+  const livePolling = { refetchInterval: p.refetchInterval, refetchIntervalInBackground: true };
   const summary = useQuery({
     queryKey: ['live', 'summary', p.from, p.to, p.test],
     queryFn: () => v3.liveSummary(p),
-    refetchInterval: p.refetchInterval,
+    ...livePolling,
   });
   const funnel = useQuery({
     queryKey: ['live', 'funnel', p.from, p.to, p.test],
     queryFn: () => v3.liveFunnel(p),
-    refetchInterval: p.refetchInterval,
+    ...livePolling,
   });
 
   if (summary.error && isNotConfigured(summary.error)) return <NotConfigured />;
