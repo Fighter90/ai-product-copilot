@@ -258,7 +258,7 @@ describe('report routes', () => {
     });
     expect(pinned.statusCode).toBe(202);
     await settle();
-    expect(runner.insights).toHaveBeenCalledWith('ok', 'yandexgpt', undefined);
+    expect(runner.insights).toHaveBeenCalledWith('ok', 'yandexgpt', undefined, 'ru');
     const auto = await app.inject({
       method: 'POST',
       url: '/api/report/insights',
@@ -266,7 +266,7 @@ describe('report routes', () => {
     });
     expect(auto.statusCode).toBe(202);
     await settle();
-    expect(runner.insights).toHaveBeenCalledWith('ok', 'auto', undefined);
+    expect(runner.insights).toHaveBeenCalledWith('ok', 'auto', undefined, 'ru');
     const noProvider = await app.inject({
       method: 'POST',
       url: '/api/report/insights',
@@ -274,7 +274,7 @@ describe('report routes', () => {
     });
     expect(noProvider.statusCode).toBe(202);
     await settle();
-    expect(runner.insights).toHaveBeenLastCalledWith('ok', undefined, undefined);
+    expect(runner.insights).toHaveBeenLastCalledWith('ok', undefined, undefined, 'ru');
     // Unknown provider → validation error, not a silent fallback.
     const badProvider = await app.inject({
       method: 'POST',
@@ -516,7 +516,7 @@ describe('report routes', () => {
       result: { narrative: 'анализ' },
     });
     // The holder succeeded normally → the Auto chain is NOT narrowed (no excludeProvider).
-    expect(runner.insights).toHaveBeenLastCalledWith('ok', undefined, undefined);
+    expect(runner.insights).toHaveBeenLastCalledWith('ok', undefined, undefined, 'ru');
     await app.close();
   });
 
@@ -584,7 +584,7 @@ describe('report routes', () => {
     // The takeover context told the runner to skip the provider that just hung.
     expect(insights).toHaveBeenLastCalledWith('ok', undefined, {
       excludeProvider: 'openrouter',
-    });
+    }, 'ru');
     release({ ok: true as const, narrative: 'поздно' });
     await app.close();
   });
@@ -652,7 +652,7 @@ describe('report routes', () => {
       result: { narrative: 'фолбэк-анализ' },
     });
     // No excludeProvider: an «auto» holder tells the runner nothing skippable.
-    expect(insights).toHaveBeenLastCalledWith('ok', undefined, undefined);
+    expect(insights).toHaveBeenLastCalledWith('ok', undefined, undefined, 'ru');
     release({ ok: true as const, narrative: 'поздно' });
     await app.close();
   });

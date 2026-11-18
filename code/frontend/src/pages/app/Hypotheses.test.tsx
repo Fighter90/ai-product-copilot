@@ -434,6 +434,23 @@ describe('Hypotheses page', () => {
     confirmSpy.mockRestore();
   });
 
+  it('ANA-197 follow-up: a 409 (referenced by decisions) shows a human-readable inline alert — never window.alert with raw JSON', async () => {
+    const alertSpy = vi.spyOn(window, 'alert');
+    vi.mocked(hypothesesApi.remove).mockRejectedValue(
+      new Error('{"error":"hypothesis is referenced by decisions","decisions":1}'),
+    );
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Удалить' }))[0]!);
+    fireEvent.click(await screen.findByTestId('confirm-accept'));
+    const alertEl = await screen.findByRole('alert');
+    // The localized message names the reason and the way out — no raw JSON anywhere.
+    expect(alertEl).toHaveTextContent('Нельзя удалить: гипотеза связана с решениями (1).');
+    expect(alertEl).toHaveTextContent('Decision Log');
+    expect(alertEl).not.toHaveTextContent('"error"');
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
   it('ANA-145: the deep-link draft save lands the card in the «Черновики» kanban lane (e2e mirror)', async () => {
     // Mirror of e2e/hypotheses.spec.ts:178 (ANA-24 → kanban). The e2e fixtures answer POST
     // /hypotheses with a stateful record shaped like the real repo: id 100, status 'draft',

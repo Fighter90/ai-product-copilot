@@ -1371,6 +1371,10 @@ export const ru = {
   'hyp.edit': 'Редактировать',
   'hyp.delete': 'Удалить',
   'hyp.delete.confirm': 'Удалить гипотезу «{title}»?',
+  // ANA-197 follow-up: human-readable deletion errors instead of the raw API JSON.
+  'hyp.delete.blocked':
+    'Нельзя удалить: гипотеза связана с решениями ({n}). Сначала удалите связанное решение в Decision Log.',
+  'hyp.delete.failed': 'Не удалось удалить гипотезу: {reason}',
   'hyp.empty': 'Пока нет гипотез — создайте первую или импортируйте AI-варианты',
   'hyp.columnEmpty': '— пусто —',
   'hyp.table.title': 'Приоритизация по ICE',
@@ -2898,6 +2902,10 @@ export const en: Record<DictKey, string> = {
   'hyp.edit': 'Edit',
   'hyp.delete': 'Delete',
   'hyp.delete.confirm': 'Delete hypothesis “{title}”?',
+  // ANA-197 follow-up: human-readable deletion errors instead of the raw API JSON.
+  'hyp.delete.blocked':
+    'Cannot delete: this hypothesis is linked to {n} decision(s). Delete the linked decision(s) in the Decision Log first.',
+  'hyp.delete.failed': 'Failed to delete the hypothesis: {reason}',
   'hyp.empty': 'No hypotheses yet — create the first one or import AI suggestions',
   'hyp.columnEmpty': '— empty —',
   'hyp.table.title': 'ICE prioritisation',

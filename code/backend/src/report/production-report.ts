@@ -263,7 +263,7 @@ export function makeReportRunner(
         contentType,
       };
     },
-    insights: async (snapshotId, providerId, opts) => {
+    insights: async (snapshotId, providerId, opts, locale = 'ru') => {
       const record = snapshots.getById(snapshotId);
       if (!record) return { ok: false, reason: 'not_found', message: 'snapshot not found' };
       if (!ai.available()) {
@@ -284,6 +284,8 @@ export function makeReportRunner(
           apiKey: config.ANTHROPIC_API_KEY,
           model: config.ANTHROPIC_MODEL,
           snapshot,
+          // Регресс №4: EN-интерфейс → EN-нарратив.
+          locale,
         },
       );
       // REG (v3.3.1): сбой провайдера приходит как «успешный» ответ, чей текст —

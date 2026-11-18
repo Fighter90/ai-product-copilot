@@ -117,6 +117,9 @@ export function Hypotheses(): JSX.Element {
   const [editing, setEditing] = useState<Editing | null>(null);
   // БАГ-15 removal-UX: deletion is confirmed by the styled ConfirmDialog, not window.confirm().
   const [pendingDelete, setPendingDelete] = useState<Hypothesis | null>(null);
+  // ANA-197 follow-up: the human-readable deletion failure (inline, role=alert) instead of
+  // a native window.alert() with the raw API JSON.
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   // ANA-152: the card's «Посмотреть» opens this hypothesis in a read-only popup.
   const [viewing, setViewing] = useState<Hypothesis | null>(null);
   // ANA-129: the take-into-work checklist — a draft without the full format cannot move.
@@ -160,7 +163,24 @@ export function Hypotheses(): JSX.Element {
     const h = pendingDelete;
     setPendingDelete(null);
     deleteMut.mutate(h.id, {
-      onError: (err) => window.alert(err instanceof Error ? err.message : String(err)),
+      // ANA-197 follow-up: human-readable deletion errors. The raw API JSON
+      // ({"error":"hypothesis is referenced by decisions","decisions":1}) is mapped to a
+      // localized inline alert — the ANA-164 convention, never a native window.alert().
+      onError: (err) => {
+        const raw = err instanceof Error ? err.message : String(err);
+        let payload: { error?: string; decisions?: number } | null = null;
+        try {
+          payload = JSON.parse(raw) as { error?: string; decisions?: number };
+        } catch {
+          payload = null;
+        }
+        if (payload?.error?.includes('referenced by decisions')) {
+          setDeleteError(t('hyp.delete.blocked', { n: payload.decisions ?? 1 }));
+          return;
+        }
+        const reason = (payload?.error ?? raw).replace(/[{}"]/g, '').trim();
+        setDeleteError(t('hyp.delete.failed', { reason: reason || raw }));
+      },
     });
   };
 
@@ -551,6 +571,14 @@ export function Hypotheses(): JSX.Element {
           </div>
         )}
       </Modal>
+
+      {/* ANA-197 follow-up: the human-readable deletion failure (inline alert, never a
+          native window.alert with raw API JSON). */}
+      {deleteError && (
+        <p role="alert" data-testid="hyp-delete-error" className="mb-3 text-sm text-red-600">
+          {deleteError}
+        </p>
+      )}
 
       {/* БАГ-15 removal-UX: styled confirmation instead of the native window.confirm(). */}
       <ConfirmDialog

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ReportSnapshot } from '@pca/shared';
+import type { ReportLocale, ReportSnapshot } from '@pca/shared';
 
 /** Anthropic Messages API endpoint + version. */
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -174,6 +174,8 @@ export function snapshotFacts(s: ReportSnapshot): string {
  */
 interface AnalysisChunk {
   readonly section: string;
+  /** ANA follow-up (регресс №4): EN heading for the en-locale narrative. */
+  readonly sectionEn?: string;
   readonly systemPrompt: string;
   readonly userPrompt: (facts: string) => string;
 }
@@ -204,9 +206,17 @@ export const AI_FORMAT_RULES =
   '5. Жирный — **двойными звёздочками**. Никаких HTML-тегов (<p>, <br> и т.п.).\n' +
   '6. ОБЪЁМ: каждый раздел ≤ 7 абзацев, каждый абзац ≤ 4-5 предложений.';
 
+/** ANA follow-up (регресс №4): when the UI locale is EN the narrative must be English —
+ * the RU chunk prompts say «Пиши по-русски», so the EN run appends this override. */
+const LANG_OVERRIDE_EN =
+  '\n\nLANGUAGE OVERRIDE: The product interface is English. Write the ENTIRE narrative — every ' +
+  'paragraph, list and recommendation — in fluent English. Ignore any earlier instruction to ' +
+  'write in Russian. Keep numbers exactly as given.';
+
 const ANALYSIS_CHUNKS: AnalysisChunk[] = [
   {
     section: 'Итог',
+    sectionEn: 'Summary',
     systemPrompt:
       'Ты — старший продуктовый аналитик. Пиши по-русски, развёрнуто. Используй ТОЛЬКО приведённые числа. ' +
       'Принцип «заявка ≠ оплата» соблюдай строго. Напиши подробный executive summary (3–5 абзацев): ' +
@@ -216,6 +226,7 @@ const ANALYSIS_CHUNKS: AnalysisChunk[] = [
   },
   {
     section: 'Каналы, UTM и Аудитория',
+    sectionEn: 'Channels, UTM and Audience',
     systemPrompt:
       'Ты — аналитик трафика и аудитории. Пиши по-русски, детально. Используй ТОЛЬКО приведённые числа. ' +
       'Проанализируй каждый канал: объём, CR, качество трафика. Проанализируй UTM-кампании, ' +
@@ -227,6 +238,7 @@ const ANALYSIS_CHUNKS: AnalysisChunk[] = [
   },
   {
     section: 'Страницы и Воронка',
+    sectionEn: 'Pages and Funnel',
     systemPrompt:
       'Ты — аналитик поведения и воронки. Пиши по-русски, детально. Используй ТОЛЬКО приведённые числа. ' +
       'Проанализируй страницы входа и выхода: где высокий bounce, где отвалы. ' +
@@ -236,6 +248,7 @@ const ANALYSIS_CHUNKS: AnalysisChunk[] = [
   },
   {
     section: 'Риски и Рекомендации',
+    sectionEn: 'Risks and Recommendations',
     systemPrompt:
       'Ты — старший продуктовый аналитик. Пиши по-русски, конкретно. Используй ТОЛЬКО приведённые числа. ' +
       'Выяви 5–7 ключевых рисков и дай 5–7 конкретных рекомендаций с ожидаемым эффектом. ' +
@@ -245,6 +258,7 @@ const ANALYSIS_CHUNKS: AnalysisChunk[] = [
   },
   {
     section: 'Гипотезы и Дорожная карта',
+    sectionEn: 'Hypotheses and Roadmap',
     systemPrompt:
       'Ты — продуктовый стратег и руководитель проекта. Пиши по-русски, детально. ' +
       'Используй ТОЛЬКО приведённые числа. ' +
@@ -255,6 +269,7 @@ const ANALYSIS_CHUNKS: AnalysisChunk[] = [
   },
   {
     section: 'Итоговый вывод',
+    sectionEn: 'Conclusion',
     systemPrompt:
       'Ты — старший продуктовый аналитик и руководитель трека. Пиши по-русски, развёрнуто. ' +
       'Используй ТОЛЬКО приведённые числа; принцип «заявка ≠ оплата» соблюдай строго. ' +
@@ -282,11 +297,12 @@ async function generateChunk(
   model: string,
   chunk: AnalysisChunk,
   facts: string,
+  locale: ReportLocale = 'ru',
 ): Promise<string> {
   const req: AnthropicRequest = {
     model,
     max_tokens: 6000,
-    system: `${chunk.systemPrompt}\n\n${AI_FORMAT_RULES}\n\n${ICE_RULE}`,
+    system: `${chunk.systemPrompt}\n\n${AI_FORMAT_RULES}\n\n${ICE_RULE}${locale === 'en' ? LANG_OVERRIDE_EN : ''}`,
     messages: [{ role: 'user', content: chunk.userPrompt(facts) }],
   };
 
@@ -374,8 +390,9 @@ export function parseInsights(raw: string): string {
  */
 export async function generateInsightsChunked(
   doFetch: AnthropicFetch,
-  input: { apiKey: string; model: string; snapshot: ReportSnapshot },
+  input: { apiKey: string; model: string; snapshot: ReportSnapshot; locale?: ReportLocale },
 ): Promise<string> {
+  const locale = input.locale ?? 'ru';
   const facts = snapshotFacts(input.snapshot);
   const sections: string[] = new Array<string>(ANALYSIS_CHUNKS.length);
 
@@ -387,8 +404,16 @@ export async function generateInsightsChunked(
       const i = next++;
       const chunk = ANALYSIS_CHUNKS[i]!;
       try {
-        const result = await generateChunk(doFetch, input.apiKey, input.model, chunk, facts);
-        sections[i] = `## ${chunk.section}\n\n${result}`;
+        const result = await generateChunk(
+          doFetch,
+          input.apiKey,
+          input.model,
+          chunk,
+          facts,
+          locale,
+        );
+        sections[i] =
+          `## ${locale === 'en' && chunk.sectionEn ? chunk.sectionEn : chunk.section}\n\n${result}`;
       } catch (err) {
         // If one chunk fails or times out, skip it and continue with the rest
         sections[i] =
@@ -409,7 +434,7 @@ export async function generateInsightsChunked(
  */
 export async function generateInsights(
   doFetch: AnthropicFetch,
-  input: { apiKey: string; model: string; snapshot: ReportSnapshot },
+  input: { apiKey: string; model: string; snapshot: ReportSnapshot; locale?: ReportLocale },
 ): Promise<string> {
   return generateInsightsChunked(doFetch, input);
 }

@@ -165,6 +165,46 @@ describe('generateInsights', () => {
     }
   });
 
+  it('Регресс №4: locale en → LANGUAGE OVERRIDE in every system prompt and EN section headings', async () => {
+    const doFetch = vi.fn<AnthropicFetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ content: [{ type: 'text', text: 'analysis' }] }),
+    });
+    const out = await generateInsights(doFetch, {
+      apiKey: 'sk-test',
+      model: 'claude-sonnet-4-6',
+      snapshot,
+      locale: 'en',
+    });
+    // Every chunk's system prompt carries the EN language override…
+    expect(doFetch).toHaveBeenCalledTimes(6);
+    for (const call of doFetch.mock.calls) {
+      const sys = JSON.parse(call[1]?.body as string).system as string;
+      expect(sys).toContain('LANGUAGE OVERRIDE');
+      expect(sys).toContain('in fluent English');
+    }
+    // …and the joined section headings are the EN ones (Итог → Summary).
+    expect(out).toContain('## Summary');
+    expect(out).not.toContain('## Итог');
+  });
+
+  it('Регресс №4: locale ru (default) — no LANGUAGE OVERRIDE, RU headings preserved', async () => {
+    const doFetch = vi.fn<AnthropicFetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ content: [{ type: 'text', text: 'анализ' }] }),
+    });
+    const out = await generateInsights(doFetch, {
+      apiKey: 'sk-test',
+      model: 'claude-sonnet-4-6',
+      snapshot,
+    });
+    expect(out).toContain('## Итог');
+    const sys = JSON.parse(doFetch.mock.calls[0]![1].body as string).system as string;
+    expect(sys).not.toContain('LANGUAGE OVERRIDE');
+  });
+
   it('runs chunks concurrently (bounded) and keeps the section order', async () => {
     let inFlight = 0;
     let maxInFlight = 0;

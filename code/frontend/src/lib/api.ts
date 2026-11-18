@@ -273,12 +273,14 @@ export const api = {
    * answers 202 {jobId} right away; the narrative/hypotheses arrive via `getAiJob` polling
    * (see lib/ai-jobs.ts). A busy slot surfaces as a 429 ApiError.
    */
-  generateInsights: (snapshotId: string, providerId?: string) =>
+  generateInsights: (snapshotId: string, providerId?: string, locale: 'ru' | 'en' = 'ru') =>
     http<{ jobId: string }>('/report/insights', {
       method: 'POST',
       body: JSON.stringify({
         snapshotId,
         ...(providerId && providerId !== 'auto' ? { providerId } : {}),
+        // Регресс №4: the narrative language follows the UI locale.
+        lang: locale,
       }),
     }),
   /** ANA-133: only starts the background job (202 {jobId}) — the snapshot poll renders it. */

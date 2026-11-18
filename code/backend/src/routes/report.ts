@@ -25,7 +25,12 @@ export const AI_PROVIDER_CHOICES = [
 export type AiProviderChoice = (typeof AI_PROVIDER_CHOICES)[number];
 const AiProvider = z.enum(AI_PROVIDER_CHOICES);
 
-const InsightsBody = z.object({ snapshotId: z.string(), providerId: AiProvider.optional() });
+const InsightsBody = z.object({
+  snapshotId: z.string(),
+  providerId: AiProvider.optional(),
+  // Регресс №4: the narrative language follows the UI locale (?lang= / body.lang).
+  lang: z.enum(['ru', 'en']).default('ru'),
+});
 const HypothesesBody = z.object({ snapshotId: z.string(), providerId: AiProvider.optional() });
 
 export type ReportFormat = z.infer<typeof GenerateBody>['format'];
@@ -76,6 +81,8 @@ export interface ReportRunner {
     snapshotId: string,
     providerId?: AiProviderChoice,
     opts?: { excludeProvider?: string },
+    /** Регресс №4: narrative language (ru/en) — follows the UI locale. */
+    locale?: 'ru' | 'en',
   ) => Promise<InsightsResult>;
   /** Generate + persist the AI hypotheses for a snapshot (returns existing if already generated).
    *  ANA-155: `excludeProvider` — see insights. */
@@ -238,6 +245,7 @@ export async function reportRoutes(app: FastifyInstance, opts: ReportRouteOption
           parsed.data.snapshotId,
           parsed.data.providerId,
           skip,
+          parsed.data.lang,
         );
         // A runner failure («no key», provider error) fails the job with its message instead
         // of the old synchronous 503 — the poll reports it as {status:'failed', error}.

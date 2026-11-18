@@ -194,7 +194,7 @@ export interface ReportPreviewProps {
   snapshotError?: boolean;
   isPending: boolean;
   onBuild: () => void;
-  onExport: (snapshotId: string, format: 'docx' | 'pdf') => void;
+  onExport: (snapshotId: string, format: 'docx' | 'pdf', locale: 'ru' | 'en') => void;
   /** ANA-199: the format currently downloading (buttons disable; the active one shows «Готовим…»). */
   exporting: 'docx' | 'pdf' | null;
   insightsPending: boolean;
@@ -586,7 +586,7 @@ export function ReportPreviewView({
             </button>
             <button
               type="button"
-              onClick={() => onExport(snapshot.id, 'docx')}
+              onClick={() => onExport(snapshot.id, 'docx', locale)}
               disabled={exporting !== null}
               className="rounded border border-indigo-600 px-3 py-1.5 text-sm text-indigo-700 disabled:opacity-40"
             >
@@ -594,7 +594,7 @@ export function ReportPreviewView({
             </button>
             <button
               type="button"
-              onClick={() => onExport(snapshot.id, 'pdf')}
+              onClick={() => onExport(snapshot.id, 'pdf', locale)}
               disabled={exporting !== null}
               className="rounded border border-rose-600 px-3 py-1.5 text-sm text-rose-700 disabled:opacity-40"
             >
@@ -715,7 +715,8 @@ export function ReportPreview(): JSX.Element {
   const { from, to } = useFilters();
   const location = useLocation();
   const navigate = useNavigate();
-  const { t } = useT();
+  // Регресс №4: the narrative language follows the UI locale.
+  const { t, locale } = useT();
   const buildMut = useMutation({ mutationFn: api.buildSnapshot });
 
   // ANA-33: usable AI providers (enabled + key set) — analysts read them from /ai/available.
@@ -760,7 +761,7 @@ export function ReportPreview(): JSX.Element {
       setBusyInfo(null);
       let result: { narrative: string; generatedBy?: AiGenerationInfo };
       try {
-        const { jobId } = await api.generateInsights(input.snapshotId, input.providerId);
+        const { jobId } = await api.generateInsights(input.snapshotId, input.providerId, locale);
         result = await trackAiJob<{ narrative: string; generatedBy?: AiGenerationInfo }>(
           jobId,
           api.getAiJob,
@@ -826,12 +827,15 @@ export function ReportPreview(): JSX.Element {
   // download is in flight and the active one shows «Готовим…» — blind re-clicks used to pile
   // up concurrent puppeteer renders on the server (each click = a new Chrome on the VPS).
   const [exporting, setExporting] = useState<'docx' | 'pdf' | null>(null);
-  const doExport = (snapshotId: string, format: 'docx' | 'pdf'): void => {
+  // ANA-42 follow-up (регресс №4): the export must honour the UI locale — the download URL
+  // carries ?lang= (the route renders EN sections) and the EN filename gets the -en suffix,
+  // so RU/EN downloads never overwrite each other.
+  const doExport = (snapshotId: string, format: 'docx' | 'pdf', locale: 'ru' | 'en'): void => {
     setExportError(null);
     setExporting(format);
     downloadFileViaFetch(
-      reportDownloadUrl(snapshotId, format),
-      `productcamp-report-${snapshotId}.${format}`,
+      `${reportDownloadUrl(snapshotId, format)}?lang=${locale}`,
+      `productcamp-report-${snapshotId}${locale === 'en' ? '-en' : ''}.${format}`,
     )
       .catch((e: unknown) => setExportError(e instanceof Error ? e.message : String(e)))
       .finally(() => setExporting(null));

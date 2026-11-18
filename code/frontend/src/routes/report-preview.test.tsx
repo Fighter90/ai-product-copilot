@@ -103,7 +103,7 @@ describe('ReportPreviewView', () => {
       <ReportPreviewView {...baseProps} snapshot={snapshot} onExport={onExport} />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Export PDF' }));
-    expect(onExport).toHaveBeenCalledWith('snap-1', 'pdf');
+    expect(onExport).toHaveBeenCalledWith('snap-1', 'pdf', 'ru');
 
     rerender(
       <ReportPreviewView {...baseProps} snapshot={snapshot} onExport={onExport} exporting="pdf" />,
@@ -172,9 +172,9 @@ describe('ReportPreviewView', () => {
     expect(screen.getByText('Заявок B2C')).toBeInTheDocument();
     expect(screen.getByText(/не сгенерированы/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Export DOCX' }));
-    expect(onExport).toHaveBeenCalledWith('snap-1', 'docx');
+    expect(onExport).toHaveBeenCalledWith('snap-1', 'docx', 'ru');
     fireEvent.click(screen.getByRole('button', { name: 'Export PDF' }));
-    expect(onExport).toHaveBeenCalledWith('snap-1', 'pdf');
+    expect(onExport).toHaveBeenCalledWith('snap-1', 'pdf', 'ru');
   });
 
   it('reports the ANA-128 auto-population result next to the data summary', () => {
@@ -445,10 +445,34 @@ describe('ReportPreview (wrapper)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Export DOCX' }));
     // БАГ-04: скачивание через fetch→blob (downloadFileViaFetch), а не navigation.
+    // Регресс №4: the UI locale rides along — ?lang= drives the rendered document language.
     expect(vi.mocked(downloadFileViaFetch)).toHaveBeenCalledWith(
-      '/api/report/download/snap-1/docx',
+      '/api/report/download/snap-1/docx?lang=ru',
       'productcamp-report-snap-1.docx',
     );
+  });
+
+  it('ANA-42 follow-up (регресс №4): an EN UI exports the EN document — ?lang=en + the -en suffix', async () => {
+    const { usePrefs } = await import('../store/prefs');
+    usePrefs.setState({ locale: 'en' });
+    try {
+      renderWithProviders(<ReportPreview />);
+      fireEvent.click(screen.getByRole('button', { name: 'Build report' }));
+      const docxBtn = await screen.findByRole('button', { name: 'Export DOCX' }, { timeout: 3000 });
+      fireEvent.click(docxBtn);
+      await waitFor(() =>
+        expect(vi.mocked(downloadFileViaFetch)).toHaveBeenLastCalledWith(
+          '/api/report/download/snap-1/docx?lang=en',
+          'productcamp-report-snap-1-en.docx',
+        ),
+      );
+      // The RU/EN filenames must never overwrite each other.
+      const lastCall = vi.mocked(downloadFileViaFetch).mock.calls.at(-1);
+      expect(lastCall?.[1]).toBe('productcamp-report-snap-1-en.docx');
+    } finally {
+      // The zustand prefs store is module-global — reset so later tests render RU.
+      usePrefs.setState({ locale: 'ru' });
+    }
   });
 
   it('ANA-180: a broken ?snapshot= id fails loudly instead of the silent empty preview', async () => {
@@ -703,7 +727,7 @@ describe('ReportPreview (wrapper)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Повторить' }));
     await screen.findByText(/AI: рост заявок/);
     expect(vi.mocked(api.generateInsights)).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(api.generateInsights)).toHaveBeenLastCalledWith('snap-1', 'auto');
+    expect(vi.mocked(api.generateInsights)).toHaveBeenLastCalledWith('snap-1', 'auto', 'ru');
     // The holder details are gone once a retry is in flight.
     expect(screen.queryByText(/Слот занят/)).not.toBeInTheDocument();
   });
