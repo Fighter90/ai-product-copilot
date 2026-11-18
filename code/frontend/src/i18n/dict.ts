@@ -686,6 +686,9 @@ export const ru = {
   'hist.compare.delta': 'Изменение',
   'hist.compare.channel': 'Канал',
   'hist.compare.channels': 'Каналы',
+  // ANA-187: when the snapshots carry no UTM breakdown, the single channel row IS the grand
+  // total of the table — label it «Всего» instead of a meaningless «— / —».
+  'hist.compare.total': 'Всего',
   'hist.diff.visits': 'Визиты',
   'hist.diff.apps': 'Заявки (B2C)',
   'hist.diff.paid': 'Оплачено (B2B)',
@@ -2212,6 +2215,8 @@ export const en: Record<DictKey, string> = {
   'hist.compare.delta': 'Change',
   'hist.compare.channel': 'Channel',
   'hist.compare.channels': 'Channels',
+  // ANA-187: the single untagged channel row with no UTM breakdown is the totals row.
+  'hist.compare.total': 'Total',
   'hist.diff.visits': 'Visits',
   'hist.diff.apps': 'Applications (B2C)',
   'hist.diff.paid': 'Paid (B2B)',

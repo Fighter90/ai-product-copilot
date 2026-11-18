@@ -302,7 +302,10 @@ export function Hypotheses(): JSX.Element {
                       className="card min-w-0 overflow-hidden p-3 text-sm animate-fade-up"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className="min-w-0 break-words font-medium leading-snug">
+                        {/* ANA-187: hyphens-auto переносит длинные RU-слова по слогам (регресс
+                            16.11: в узких карточках слова рвались посреди слова без переноса);
+                            break-words остаётся последней страховкой от переполнения. */}
+                        <span className="min-w-0 hyphens-auto break-words font-medium leading-snug">
                           {h.title}
                         </span>
                         <span className="shrink-0 rounded bg-raised px-1.5 py-0.5 text-[11px] font-bold text-accent">

@@ -235,19 +235,32 @@ function SnapshotCompare({ snapshots }: { snapshots: SnapshotRow[] }): JSX.Eleme
                   </tr>
                 </thead>
                 <tbody>
-                  {q.data.channels.map((c) => (
-                    <tr key={c.key} className="border-t border-slate-100">
-                      <td className="py-1">
-                        {channelPart(c.source)} / {channelPart(c.medium)}
-                      </td>
-                      <td>
-                        <DiffNum v={c.visits} />
-                      </td>
-                      <td>
-                        <DiffNum v={c.reaches} />
-                      </td>
-                    </tr>
-                  ))}
+                  {q.data.channels.map((c) => {
+                    // ANA-187: when the snapshots carry no UTM breakdown at all, the single
+                    // «(none)|(none)» row IS the grand total of the table — label it «Всего»
+                    // instead of the meaningless «— / —» (регресс 16.11). With UTM rows present
+                    // the untagged subset keeps its honest «— / —» label.
+                    const isTotalRow = q.data.channels.length === 1 && c.key === '(none)|(none)';
+                    return (
+                      <tr key={c.key} className="border-t border-slate-100">
+                        <td className="py-1">
+                          {isTotalRow ? (
+                            t('hist.compare.total')
+                          ) : (
+                            <>
+                              {channelPart(c.source)} / {channelPart(c.medium)}
+                            </>
+                          )}
+                        </td>
+                        <td>
+                          <DiffNum v={c.visits} />
+                        </td>
+                        <td>
+                          <DiffNum v={c.reaches} />
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

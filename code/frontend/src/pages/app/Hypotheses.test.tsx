@@ -150,6 +150,16 @@ describe('Hypotheses page', () => {
     expect(grid?.className).toContain('lg:grid-cols-[repeat(6,minmax(190px,1fr))]');
   });
 
+  it('ANA-187: card titles hyphenate long words instead of breaking them mid-word', async () => {
+    // Регресс 16.11 (тёмная тема): длинные RU-слова рвались посреди слова без переноса.
+    // hyphens-auto переносит по слогам; break-words остаётся страховкой от переполнения.
+    renderWithProviders(<Hypotheses />, '/app/hypotheses');
+    const card = await screen.findByTestId('hyp-card-2');
+    const title = card.querySelector('span.break-words');
+    expect(title).not.toBeNull();
+    expect(title?.className).toContain('hyphens-auto');
+  });
+
   it('sorts the ICE table descending by default and flips on header click; drafts stay out (ANA-129)', async () => {
     renderWithProviders(<Hypotheses />, '/app/hypotheses');
     const table = await screen.findByTestId('hyp-ice-table');

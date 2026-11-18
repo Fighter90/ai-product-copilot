@@ -5,9 +5,12 @@ import { CabinetTour, OnboardingTour } from './OnboardingTour';
 import { RestartTourButton } from './RestartTourButton';
 import {
   TOUR_OFF_KEY,
+  TOUR_SESSION_KEY,
+  isTourDismissedInSession,
   isTourDone,
   isTourSuppressed,
   markTourDone,
+  markTourSessionDismissed,
   restartTour,
   tourSteps,
 } from './tour';
@@ -39,6 +42,7 @@ beforeEach(() => {
   window.localStorage.removeItem('pca.tour.v1.admin');
   window.localStorage.removeItem('pca.tour.v1.analyst');
   window.localStorage.removeItem(TOUR_OFF_KEY);
+  window.sessionStorage.removeItem(TOUR_SESSION_KEY);
   session.role = 'analyst';
 });
 afterEach(() => setTestLocale('ru'));
@@ -75,6 +79,14 @@ describe('tour steps', () => {
     expect(isTourDone('analyst')).toBe(false);
     restartTour();
     expect(isTourDone('admin')).toBe(false);
+  });
+
+  it('ANA-187: the session dismissal flag round-trips and restart clears it', () => {
+    expect(isTourDismissedInSession()).toBe(false);
+    markTourSessionDismissed();
+    expect(isTourDismissedInSession()).toBe(true);
+    restartTour();
+    expect(isTourDismissedInSession()).toBe(false);
   });
 });
 
@@ -133,10 +145,35 @@ describe('OnboardingTour', () => {
     unmount();
 
     window.localStorage.removeItem('pca.tour.v1.analyst');
+    window.sessionStorage.removeItem(TOUR_SESSION_KEY);
     renderTour('analyst');
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(isTourDone('analyst')).toBe(true);
+  });
+
+  it('ANA-187: skipping marks the session — a reload within it never reopens the tour', () => {
+    const { unmount } = renderTour('analyst');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Пропустить тур' })[0]!);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    unmount();
+
+    // Regression ANA-187: with the persistent flag lost (blocked storage, cleaned profile) the
+    // tour used to reopen on every page load within the session — the session mark keeps it shut.
+    window.localStorage.removeItem('pca.tour.v1.analyst');
+    renderTour('analyst');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(isTourDismissedInSession()).toBe(true);
+  });
+
+  it('ANA-187: «Пройти тур заново» also clears the session dismissal', () => {
+    markTourDone('analyst');
+    markTourSessionDismissed();
+    renderTour('analyst');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    act(() => restartTour());
+    expect(isTourDismissedInSession()).toBe(false);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   it('restarts in place on the restart event', () => {

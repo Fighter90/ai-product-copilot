@@ -1,6 +1,11 @@
 import type { ReactNode } from 'react';
 import { Pencil } from 'lucide-react';
-import { iceScore, type Hypothesis, type HypothesisStatus } from '@pca/shared';
+import {
+  conditionStartsWithJoiner,
+  iceScore,
+  type Hypothesis,
+  type HypothesisStatus,
+} from '@pca/shared';
 import { useT, fmtDate, fmtNum, type DictKey } from '../../i18n';
 import { Modal, Pill } from '../ui';
 import { SourceBadge, UnverifiedBadge } from './SourceBadge';
@@ -45,9 +50,11 @@ export function HypothesisViewModal({
 }): JSX.Element {
   const { t, locale } = useT();
   const h = hypothesis;
+  // ANA-187: the locale joiner never stacks onto a condition that already opens with its own
+  // («если»/«if») — that produced «…, if если конверсия…» in the popup sentence.
+  const joiner = conditionStartsWithJoiner(h.condition) ? ', ' : t('hyp.sentenceIf');
   const sentence =
-    `${h.subject} ${h.action} ${h.solution}` +
-    (h.condition ? `${t('hyp.sentenceIf')}${h.condition}` : '');
+    `${h.subject} ${h.action} ${h.solution}` + (h.condition ? `${joiner}${h.condition}` : '');
   const rationales = [
     { value: h.impact, key: 'hyp.f.impact' as DictKey, text: h.impactRationale },
     { value: h.confidence, key: 'hyp.f.confidence' as DictKey, text: h.confidenceRationale },

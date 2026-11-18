@@ -5,16 +5,21 @@ import { useT } from '../../i18n';
 import { useAuth } from '../../auth/AuthContext';
 import {
   TOUR_RESTART_EVENT,
+  isTourDismissedInSession,
   isTourDone,
   isTourSuppressed,
   markTourDone,
+  markTourSessionDismissed,
   tourSteps,
   type TourRole,
 } from './tour';
 
-/** The tour opens only for a role that has not seen it — and never while suppressed (ANA-141). */
+/**
+ * The tour opens only for a role that has not seen it — not in this session (ANA-187), and never
+ * while suppressed (ANA-141).
+ */
 function shouldOpen(role: TourRole | null | undefined): boolean {
-  return !!role && !isTourDone(role) && !isTourSuppressed();
+  return !!role && !isTourDone(role) && !isTourDismissedInSession() && !isTourSuppressed();
 }
 
 /**
@@ -23,6 +28,8 @@ function shouldOpen(role: TourRole | null | undefined): boolean {
  * «Пройти тур заново» in Help clears the flag and restarts it. ANA-141: the tour is an overlay,
  * never a render gate — page content is always in the DOM under it, and `?tour=0` (or the
  * `qa-notour` flag) keeps it closed entirely for automated checks and repeat users.
+ * ANA-187: a dismissal is also marked in sessionStorage, so the tour never reopens on page
+ * reloads within the same browser session.
  */
 export function OnboardingTour({
   role,
@@ -60,6 +67,9 @@ export function OnboardingTour({
 
   const finish = (): void => {
     if (role) markTourDone(role);
+    // ANA-187: the dismissal also holds for the rest of the session, so the tour does not
+    // reappear on every page load when the persistent flag is lost or blocked.
+    markTourSessionDismissed();
     setOpen(false);
   };
 

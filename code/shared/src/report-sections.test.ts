@@ -8,7 +8,11 @@ import type {
   SolutionHypothesis,
 } from './index';
 import { reportSections } from './index';
-import { aiHypothesisSections, aiDecisionSections } from './report-section-helpers';
+import {
+  aiHypothesisSections,
+  aiDecisionSections,
+  hypothesisStatement,
+} from './report-section-helpers';
 
 const genProblem = (over: Partial<ProblemHypothesis> = {}): ProblemHypothesis => ({
   id: 'P01',
@@ -404,6 +408,32 @@ describe('reportSections — structure', () => {
     expect(headings).not.toContain('Develop — решенческие гипотезы (обзор)');
     expect(headings).not.toContain('Проблемные гипотезы (AI)');
     expect(headings).not.toContain('Решенческие гипотезы (AI)');
+  });
+});
+
+describe('hypothesisStatement (ANA-187: без «if если»-дублирования)', () => {
+  it('keeps the RU joiner for a plain condition', () => {
+    expect(hypothesisStatement(hyp({ condition: 'нет лендинга' }))).toBe(
+      '«слушатель не покупает билет, если нет лендинга»',
+    );
+  });
+
+  it('does not duplicate «если» when the stored condition already opens with it', () => {
+    expect(hypothesisStatement(hyp({ condition: 'если конверсия ниже 50%' }))).toBe(
+      '«слушатель не покупает билет, если конверсия ниже 50%»',
+    );
+    expect(hypothesisStatement(hyp({ condition: 'Если CTA-блок на главной' }))).toBe(
+      '«слушатель не покупает билет, Если CTA-блок на главной»',
+    );
+  });
+
+  it('EN report: an EN joiner never precedes a Russian «если» condition', () => {
+    expect(hypothesisStatement(hyp({ condition: 'если CR вырастет' }), 'en')).toBe(
+      '“слушатель не покупает билет, если CR вырастет”',
+    );
+    expect(hypothesisStatement(hyp({ condition: 'CR grows' }), 'en')).toBe(
+      '“слушатель не покупает билет, if CR grows”',
+    );
   });
 });
 

@@ -65,10 +65,24 @@ const KEY = (role: TourRole): string => `pca.tour.v1.${role}`;
 export const TOUR_RESTART_EVENT = 'pca:tour-restart';
 /** localStorage flag (ANA-141): scripts and repeat visitors suppress the tour entirely. */
 export const TOUR_OFF_KEY = 'qa-notour';
+/**
+ * Session-scoped dismissal (ANA-187): «Пропустить»/Escape/«Завершить» mark the tour seen for the
+ * rest of the browser session even when the persistent localStorage flag is lost or blocked —
+ * the regression saw «ШАГ 1 ИЗ 5» reopen on every page load within a session.
+ */
+export const TOUR_SESSION_KEY = 'pca.tour.session.dismissed';
 
 function storage(): Storage | null {
   try {
     return typeof window === 'undefined' ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function session(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.sessionStorage;
   } catch {
     return null;
   }
@@ -95,7 +109,30 @@ export function isTourDone(role: TourRole): boolean {
 }
 
 export function markTourDone(role: TourRole): void {
-  storage()?.setItem(KEY(role), 'done');
+  try {
+    storage()?.setItem(KEY(role), 'done');
+  } catch {
+    // Blocked storage cannot persist the flag — the session mark (ANA-187) still applies.
+  }
+}
+
+/** True when the tour was dismissed earlier in this browser session (ANA-187). */
+export function isTourDismissedInSession(): boolean {
+  return session()?.getItem(TOUR_SESSION_KEY) === '1';
+}
+
+/** Best-effort session mark: survives reloads even where localStorage does not persist. */
+export function markTourSessionDismissed(): void {
+  try {
+    session()?.setItem(TOUR_SESSION_KEY, '1');
+  } catch {
+    // No writable storage at all — nothing more we can do.
+  }
+}
+
+/** Forget the session dismissal — part of «Пройти тур заново». */
+export function clearTourSessionDismissal(): void {
+  session()?.removeItem(TOUR_SESSION_KEY);
 }
 
 /** Forget the «seen» flag for every role and ask a mounted tour to start again. */
@@ -103,5 +140,6 @@ export function restartTour(): void {
   const s = storage();
   s?.removeItem(KEY('admin'));
   s?.removeItem(KEY('analyst'));
+  clearTourSessionDismissal();
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(TOUR_RESTART_EVENT));
 }
