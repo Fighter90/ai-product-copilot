@@ -21,6 +21,7 @@ interface SankeyOption {
     label: { formatter: (p: { name: string }) => string };
     labelLayout?: { hideOverlap?: boolean };
     nodeGap?: number;
+    bottom?: number;
     data: { name: string }[];
     links: { source: string; target: string; value: number }[];
   }[];
@@ -116,6 +117,13 @@ describe('utmSankeyOption', () => {
     // hide colliding labels and to space the nodes wider than the 8px default.
     expect(o.series[0]?.labelLayout).toEqual({ hideOverlap: true });
     expect(o.series[0]?.nodeGap).toBeGreaterThanOrEqual(12);
+  });
+
+  it('ANA-197: the bottom node does not clip against the card edge — explicit bottom margin', () => {
+    const o = parse(utmSankeyOption([utmStat({})]));
+    // The sankey layout bounds default to 5% margins, which clipped the bottom node at the
+    // card's chart height; the explicit margin keeps it inside the canvas.
+    expect(o.series[0]?.bottom).toBeGreaterThanOrEqual(24);
   });
 
   it('formats node labels by stripping the internal namespace prefix', () => {

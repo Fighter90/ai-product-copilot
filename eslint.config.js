@@ -12,6 +12,7 @@ export default tseslint.config(
       'data/**',
       '.qwen/**',
       'QA/**',
+      '.swarm-worktree/**',
       '**/*.config.js',
       '**/*.config.ts',
     ],

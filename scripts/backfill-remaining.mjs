@@ -9,8 +9,7 @@ const ADMIN = {
   password: process.env.PCA_ADMIN_PASSWORD ?? '',
 };
 if (!ADMIN.password) {
-  console.error('Set PCA_ADMIN_PASSWORD (demo admin login password).');
-  process.exit(1);
+  throw new Error('Set PCA_ADMIN_PASSWORD (demo admin login password).');
 }
 const PAUSE_MS = 45_000;
 const CHUNK = 10;

@@ -104,6 +104,9 @@ function buildUtmSankey(utm: UtmStat[]): object {
       {
         type: 'sankey',
         emphasis: { focus: 'adjacency' },
+        // ANA-197: the bottom node clipped against the card edge — an explicit bottom margin
+        // (the ECharts sankey default of 5% was too tight at the card's chart height).
+        bottom: 28,
         nodeAlign: 'left',
         // ANA-184 (регресс 15.11): метки перекрывались в плотных кластерах — больше вертикального
         // воздуха между узлами и скрытие пересекающихся меток (тултип остаётся на hover).
