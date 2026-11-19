@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@fastify/swagger": "^9.9.2",
-    "@fastify/swagger-ui": "^6.1.2",
+    "@fastify/swagger-ui": "^6.1.4",
     "@pca/shared": "workspace:*",
     "better-sqlite3": "^11.10.0",
     "docx": "^9.14.0",
